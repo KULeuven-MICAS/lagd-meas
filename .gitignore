@@ -1,0 +1,10 @@
+# Autotest results
+results/
+
+# Vivado genearted files
+**/output/**
+*.log
+*.jou
+*.pb
+**/xsim.dir/**
+
