@@ -3,166 +3,295 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Author: Jiacong Sun <jiacong.sun@kuleuven.be>
+// Assisted by Copilot (2026)
 //
-// Source file is written by Thomas Bos
-// Description:
-// CHIP_CONTROLLER
+//   Upstream FIFO read interface
+//             |
+//             v
+//   +-----------------------------+
+//   | FIFO-to-AXI-stream adapter  |
+//   +-----------------------------+
+//             |
+//             v
+//   +-----------------------------+
+//   |        State machine        |
+//   +-----------------------------+
+//        |                     |
+//        v                     v
+//   SPI interface        FIFO write interface
+//
+//   The module reads commands/data from the upstream FIFO,
+//   converts the FIFO input into a streaming handshake, and then
+//   routes each transaction either to the SPI master or to the
+//   output FIFO for writeback.
 
-// Processes the FIFO-CHIP commands as defined by the CHIP_COMMAND API
-
-// CHANGELOG
-// v1.0, 17-12-2021  Start basic controller with write_back functionality. (copied from previous repo)
-//                   The afe_XX commands and signals are here to serve as an example
-
-
-module chip_controller(
-  input  clk,
-  (* direct_reset = "yes" *) input  rst,
-
-  // Connection to fifo
-  // chip fifo input (from linux)
-  (* mark_debug = "true" *) output reg        fifo_chip_rd_en,
-  (* mark_debug = "true" *) input             fifo_chip_empty,
-  (* mark_debug = "true" *) input  [31:0]     fifo_chip_dout,
-  // chip fifo output (to linux)
-  (* mark_debug = "true" *) output reg        fifo_chip_wr_en,
-                            input             fifo_chip_full,
-  (* mark_debug = "true" *) output reg [31:0] fifo_chip_din,
-
-  // Project specific pins
-  output reg afe_arstn_i  // _i naming = relative to chip (same FPGA IO names as chip IO)
-
+module chip_controller#(
+    parameter int CLK_HZ = 100_000_000,
+    parameter int SCK_HZ = 25_000_000
+)(
+    input  logic clk_i,
+    (* direct_reset = "yes" *) input  logic rst_i,
+    // FIFO read intface
+    (* mark_debug = "true" *) output logic       fifo_chip_rd_en_o,
+    (* mark_debug = "true" *) input  logic       fifo_chip_empty_i,
+    (* mark_debug = "true" *) input  logic [31:0] fifo_chip_dout_i,
+    // FIFO write interface
+    (* mark_debug = "true" *) output logic       fifo_chip_wr_en_o,
+    (* mark_debug = "true" *) input  logic       fifo_chip_full_i,
+    (* mark_debug = "true" *) output logic [31:0] fifo_chip_din_o,
+    // Quad-SPI interface to chip
+    output logic chip_sck_o,
+    output logic chip_csb_o,
+        input  logic [3:0] chip_sd_i,
+        output logic [3:0] chip_sd_o,
+        output logic [3:0] chip_sd_oe_o,
+    // control signals to chip
+    output logic clk_chip_o,
+    output logic chip_arst_no
   );
 
-  /////////////////////////////////////
-  ////    INSTRUCTION HANDLING     ////
-  /////////////////////////////////////
+    typedef enum logic [3:0] {
+        IDLE,
+        DECODE_CMD,
+        FETCH_DATA_ADDR,
+        FETCH_DATA_WORD,
+        SPI_CFG_START,
+        SPI_CFG_WAIT,
+        SPI_WRITE_START,
+        SPI_WRITE_WAIT,
+        SPI_READ_START,
+        SPI_READ_WAIT,
+        SPI_READ_PUSH,
+        WRITEBACK_PUSH
+    } chip_ctrl_state_t;
 
-  // make falltrough fifo for READ FIFO
-  logic fifo_chip_ft_empty;
-  (* mark_debug = "true" *) logic[31:0] fifo_chip_ft_dout;
-  (* mark_debug = "true" *) logic fifo_chip_ft_re;
-  non_fallthrough_to_fallthrough#(.width(32)) nftf_chip_inst(
-    .clk          (clk),
-    .rst          (rst),
-    .fifo_empty   (fifo_chip_empty),
-    .fifo_data    (fifo_chip_dout),
-    .fifo_re      (fifo_chip_rd_en),
-    .output_empty (fifo_chip_ft_empty),
-    .output_data  (fifo_chip_ft_dout),
-    .output_re    (fifo_chip_ft_re));
+    (* mark_debug = "true" *) chip_ctrl_state_t state_current;
+    (* mark_debug = "true" *) logic [31:0] cmd_word_r;
+    (* mark_debug = "true" *) logic [31:0] addr_word_r;
+    (* mark_debug = "true" *) logic [31:0] data_word_r;
+    (* mark_debug = "true" *) logic [31:0] readback_word_r;
 
-  // chip_command
-  //  actual chip_command API: see chip_command_api.sv
-  (* mark_debug = "true" *) chip_command_t  chip_command;
-  (* mark_debug = "true" *) logic           chip_command_we;
-  (* mark_debug = "true" *) logic [3:0]     chip_command_opcode;
+    (* mark_debug = "true" *) logic fifo_rd_valid;
+    (* mark_debug = "true" *) logic [31:0] fifo_rd_dout;
+    (* mark_debug = "true" *) logic fifo_rd_ready;
 
-  reg_rst #(.WIDTH(32)) chip_command_reg_inst (
-    .clk  (clk),
-    .rst  (rst),
-    .din  (fifo_chip_ft_dout),
-    .qout (chip_command.bitwise),
-    .wen  (chip_command_we)
-  );
+    (* mark_debug = "true" *) logic chip_clk_en_r;
+    (* mark_debug = "true" *) logic chip_rstn_r;
 
-  assign chip_command_opcode = chip_command.afe_config.opcode;
+    (* mark_debug = "true" *) logic spi_start_o;
+    (* mark_debug = "true" *) logic spi_quad_mode_o;
+    (* mark_debug = "true" *) logic spi_read_dir_o;
+    (* mark_debug = "true" *) logic [7:0] spi_cmd_o;
+    (* mark_debug = "true" *) logic [31:0] spi_addr_o;
+    (* mark_debug = "true" *) logic [31:0] spi_data_o;
+    (* mark_debug = "true" *) logic spi_busy_o;
+    (* mark_debug = "true" *) logic spi_done_o;
+    (* mark_debug = "true" *) logic spi_read_valid_o;
+    (* mark_debug = "true" *) logic [31:0] spi_read_data_o;
 
-  /////////////////////////////////////
-  ////    CHIP CONTROL MASTER FSM    ////
-  /////////////////////////////////////
-  // FSM STATE AND NEXTSTATE
-  typedef enum {IDLE, PROCESS} chip_ctrl_state_t;
-  (* mark_debug = "true" *) chip_ctrl_state_t CS;   // current state
-  chip_ctrl_state_t NS;                             // next state
+    fifo_to_axi_stream_adapter#(
+            .DATA_WIDTH(32)
+        ) adapter_inst (
+            .clk_i           (clk_i             ),
+            .rst_i           (rst_i             ),
+            .fifo_empty_i    (fifo_chip_empty_i ),
+            .fifo_rdata_i    (fifo_chip_dout_i  ),
+            .fifo_rden_o     (fifo_chip_rd_en_o ),
+            .m_axis_tvalid_o (fifo_rd_valid     ),
+            .m_axis_tdata_o  (fifo_rd_dout      ),
+            .m_axis_tready_i (fifo_rd_ready     )
+    );
 
-  always @(posedge clk) begin
-      if(rst) begin
-          CS <= IDLE;
-      end else begin
-          CS <= NS;
-      end
-  end
+    quad_spi_master #(
+        .CLK_HZ(CLK_HZ),
+        .SCK_HZ(SCK_HZ)
+    ) spi_master_inst (
+        .clk_i          (clk_i            ),
+        .rst_i          (rst_i            ),
+        .start_i        (spi_start_o      ),
+        .quad_mode_i    (spi_quad_mode_o  ),
+        .read_i         (spi_read_dir_o   ),
+        .cmd_i          (spi_cmd_o        ),
+        .addr_i         (spi_addr_o       ),
+        .wdata_i        (spi_data_o       ),
+        .busy_o         (spi_busy_o       ),
+        .done_o         (spi_done_o       ),
+        .read_valid_o   (spi_read_valid_o ),
+        .read_data_o    (spi_read_data_o  ),
+        .chip_sck_o     (chip_sck_o       ),
+        .chip_csb_o     (chip_csb_o       ),
+        .chip_sd_i      (chip_sd_i        ),
+        .chip_sd_o      (chip_sd_o        ),
+        .chip_sd_oe_o   (chip_sd_oe_o     )
+    );
 
-  // FSM CONTROL SIGNALS
-  logic writeback_chip_command;   // writeback chip_command in writeback buffer
-  logic update_afe_config;        // update all AFE_CONFIG regs
+    // chip_command
+    //  actual chip_command API: see chip_command_api.sv
+    (* mark_debug = "true" *) chip_command_t chip_command;
+    (* mark_debug = "true" *) logic [3:0]    chip_command_opcode;
 
-  // ACTUAL FSM
-  always_comb begin
-      // default values
-      NS <= CS;
-      writeback_chip_command  <= 0;
-      update_afe_config       <= 0;
-      // Xillybus FIFO control commands
-      fifo_chip_ft_re <= 0;   // read enable
-      chip_command_we <= 0;   // chip command write enable
+    assign chip_command.bitwise = cmd_word_r;
+    assign chip_command_opcode = chip_command.chip_config.opcode;
+    assign clk_chip_o = chip_clk_en_r ? clk_i : 1'b1;
+    assign chip_arst_no = chip_rstn_r;
 
-      case(CS)
-          IDLE: begin
-              fifo_chip_ft_re <= 1;
-              if(!fifo_chip_ft_empty) begin
-                  NS <= PROCESS;
-                  chip_command_we <= 1;
-              end
-          end
-          PROCESS: begin
-              case(chip_command_opcode)
-                  AFE_CONFIG: begin
-                      NS <= IDLE;
-                      update_afe_config <= 1;
-                  end
-                  TEST_WRITEBACK_CHIPFIFO: begin
-                      NS <= IDLE;
-                      writeback_chip_command <= 1;
-                  end
-              endcase
-          end
+    always_ff @(posedge clk_i or posedge rst_i) begin
+        if (rst_i) begin
+            state_current     <= IDLE;
+            cmd_word_r        <= '0;
+            addr_word_r       <= '0;
+            data_word_r       <= '0;
+            readback_word_r   <= '0;
+            fifo_chip_wr_en_o <= 1'b0;
+            fifo_chip_din_o   <= '0;
+            fifo_rd_ready     <= 1'b0;
+            spi_start_o       <= 1'b0;
+            spi_quad_mode_o   <= 1'b0;
+            spi_read_dir_o    <= 1'b0;
+            spi_cmd_o         <= '0;
+            spi_addr_o        <= '0;
+            spi_data_o        <= '0;
+            chip_clk_en_r     <= 1'b0;
+            chip_rstn_r       <= 1'b1;
+        end else begin
+            fifo_chip_wr_en_o <= 1'b0;
+            fifo_rd_ready     <= 1'b0;
+            spi_start_o       <= 1'b0;
 
-          default: begin
-              NS <= IDLE;
-          end
-      endcase
-  end
+            case (state_current)
+                IDLE: begin
+                    fifo_rd_ready <= 1'b1;
+                    if (fifo_rd_valid) begin
+                        cmd_word_r    <= fifo_rd_dout;
+                        state_current <= DECODE_CMD;
+                    end
+                end
 
-  /////////////////////////////////////
-  ////    WRITE BACK BUFFER        ////
-  /////////////////////////////////////
-  // write back buffer
-  always_comb begin
-      // default value
-      fifo_chip_wr_en <= 0;
+                DECODE_CMD: begin
+                    case (chip_command_opcode)
+                        CONFIG_CLK_RST: begin
+                            chip_clk_en_r <= chip_command.chip_config.chip_clk_en;
+                            chip_rstn_r   <= chip_command.chip_config.chip_rstn;
+                            state_current <= IDLE;
+                        end
 
-      // enable fifo
-      if(!fifo_chip_full && ( writeback_chip_command ) ) begin
-          fifo_chip_wr_en <= 1;
-      end
+                        CONFIG_SPI_SLAVE: begin
+                            spi_quad_mode_o <= 1'b0;
+                            spi_read_dir_o  <= 1'b0;
+                            spi_cmd_o       <= 8'h01; // align with ETHz SPI slave IP (config)
+                            spi_addr_o      <= '0;
+                            spi_data_o      <= '0;
+                            state_current   <= SPI_CFG_START;
+                        end
 
-      // mux data
-      if ( writeback_chip_command ) begin
-        fifo_chip_din <= chip_command.bitwise;
-      end else begin
-        fifo_chip_din <= 'b0;
-      end
-  end
+                        DATA_WRITE: begin
+                            state_current <= FETCH_DATA_ADDR;
+                        end
 
-  /////////////////////////////////////
-  ////        AFE_CONFIG           ////
-  /////////////////////////////////////
-  // Configure the main state of AFE
-  //  At update_afe_config: copy all config from chip_command
-  logic afe_clk_en;
+                        DATA_READ: begin
+                            state_current <= FETCH_DATA_ADDR;
+                        end
 
-  always_ff @(posedge clk) begin
-      if (rst) begin
-          afe_clk_en    <= 0;
-          afe_arstn_i   <= 0;
-      end else if (update_afe_config) begin
-          afe_clk_en    <= chip_command.afe_config.afe_clk_en;
-          afe_arstn_i   <= chip_command.afe_config.afe_rstn;
-      end
-  end
+                        WRITEBACK_FIFO: begin
+                            readback_word_r <= cmd_word_r;
+                            state_current   <= WRITEBACK_PUSH;
+                        end
 
+                        default: begin
+                            state_current <= IDLE;
+                        end
+                    endcase
+                end
 
+                FETCH_DATA_ADDR: begin
+                    fifo_rd_ready <= 1'b1;
+                    if (fifo_rd_valid) begin
+                        addr_word_r <= fifo_rd_dout;
+                        if (chip_command_opcode == DATA_WRITE) begin
+                            state_current <= FETCH_DATA_WORD;
+                        end else begin
+                            spi_quad_mode_o <= 1'b1;
+                            spi_read_dir_o  <= 1'b1;
+                            spi_cmd_o       <= 8'h0B; // align with ETHz SPI slave IP (read)
+                            spi_addr_o      <= fifo_rd_dout;
+                            spi_data_o      <= '0;
+                            state_current   <= SPI_READ_START;
+                        end
+                    end
+                end
+
+                FETCH_DATA_WORD: begin
+                    fifo_rd_ready <= 1'b1;
+                    if (fifo_rd_valid) begin
+                        data_word_r     <= fifo_rd_dout;
+                        spi_quad_mode_o <= 1'b1;
+                        spi_read_dir_o  <= 1'b0;
+                        spi_cmd_o       <= 8'h02; // align with ETHz SPI slave IP (write)
+                        spi_addr_o      <= addr_word_r;
+                        spi_data_o      <= fifo_rd_dout;
+                        state_current   <= SPI_WRITE_START;
+                    end
+                end
+
+                SPI_CFG_START: begin
+                    spi_start_o    <= 1'b1;
+                    state_current  <= SPI_CFG_WAIT;
+                end
+
+                SPI_CFG_WAIT: begin
+                    if (spi_done_o) begin
+                        state_current <= IDLE;
+                    end
+                end
+
+                SPI_WRITE_START: begin
+                    spi_start_o    <= 1'b1;
+                    state_current  <= SPI_WRITE_WAIT;
+                end
+
+                SPI_WRITE_WAIT: begin
+                    if (spi_done_o) begin
+                        state_current <= IDLE;
+                    end
+                end
+
+                SPI_READ_START: begin
+                    spi_start_o    <= 1'b1;
+                    state_current  <= SPI_READ_WAIT;
+                end
+
+                SPI_READ_WAIT: begin
+                    if (spi_done_o) begin
+                        if (spi_read_valid_o) begin
+                            readback_word_r <= spi_read_data_o;
+                            state_current   <= SPI_READ_PUSH;
+                        end else begin
+                            state_current <= IDLE;
+                        end
+                    end
+                end
+
+                SPI_READ_PUSH: begin
+                    if (!fifo_chip_full_i) begin
+                        fifo_chip_din_o   <= readback_word_r;
+                        fifo_chip_wr_en_o <= 1'b1;
+                        state_current     <= IDLE;
+                    end
+                end
+
+                WRITEBACK_PUSH: begin
+                    if (!fifo_chip_full_i) begin
+                        fifo_chip_din_o   <= cmd_word_r;
+                        fifo_chip_wr_en_o <= 1'b1;
+                        state_current     <= IDLE;
+                    end
+                end
+
+                default: begin
+                    state_current <= IDLE;
+                end
+            endcase
+        end
+    end
 
 endmodule

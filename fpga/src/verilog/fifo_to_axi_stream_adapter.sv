@@ -36,7 +36,7 @@ module fifo_to_axi_stream_adapter #(parameter int DATA_WIDTH = 32) (
   assign fifo_rden_o = !fifo_empty_i && (m_axis_tready_i || !skid_valid_reg);
 
   // Track if a read was requested in the previous cycle (data phase)
-  always_ff @(posedge clk or posedge rst) begin
+  always_ff @(posedge clk_i or posedge rst_i) begin
     if (rst_i) begin
       fifo_data_phase <= 1'b0;
     end else begin
@@ -53,7 +53,7 @@ module fifo_to_axi_stream_adapter #(parameter int DATA_WIDTH = 32) (
   //----------------------------------------------------------------
   // Skid Buffer Storage
   //----------------------------------------------------------------
-  always_ff @(posedge clk or posedge rst) begin
+  always_ff @(posedge clk_i or posedge rst_i) begin
     if (rst_i) begin
       skid_valid_reg <= 1'b0;
       skid_data_reg  <= '0;

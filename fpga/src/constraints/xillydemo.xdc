@@ -1,3 +1,9 @@
+## Copyright 2025 KU Leuven.
+## Licensed under the Apache License, Version 2.0, see LICENSE for details.
+## SPDX-License-Identifier: Apache-2.0
+
+## Author: Jiacong Sun <jiacong.sun@kuleuven.be>
+
 create_clock -name gclk -period 10 [get_ports "clk_100"]
 set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets "clk_100"]
 
@@ -50,8 +56,8 @@ set_property -dict "PACKAGE_PIN U10 IOSTANDARD LVCMOS33" [get_ports "PS_GPIO[4]"
 set_property -dict "PACKAGE_PIN AB12 IOSTANDARD LVCMOS33" [get_ports "PS_GPIO[5]"]
 set_property -dict "PACKAGE_PIN AA12 IOSTANDARD LVCMOS33" [get_ports "PS_GPIO[6]"]
 
-# On-board LEDs. Note that only for LEDs are allocated, as opposed to
-# Digilent's eight, and all placements that follow are shifted by four.
+# On-board LEDs. Note that only 4 LEDs are allocated, as opposed to
+# Digilent's eight, and all placements that follow are shifted by 4.
 # There was no other choice, as the tools don't allow unplaced PS GPIO pins.
 #   [TBOS EDIT]: swap PS_GPIO[7..10] with unused HDMI "video data input" pins
 #                 this way we can acces LEDs LD[7:4] with user_led[3:0]
@@ -87,6 +93,15 @@ set_property -dict "PACKAGE_PIN P16 IOSTANDARD LVCMOS33" [get_ports "PS_GPIO[23]
 # JA1-JA4, JA7-JA10 are unused (chip SPI moved to the FMC connector).
 # PS_GPIO[24:29] are left without physical-pin assignments; those PS EMIO
 # indices will float (harmless – the PS will not configure them as outputs).
+
+## Pmod JA clock exports for waveform observation.
+##      Pmod JA1   / Y11      # clk_chip_ctrl_o
+##      Pmod JA2   / AA11     # clk_perip_ctrl_o
+## These two pins are intended for probing clk_chip_ctrl_o and clk_perip_ctrl_o on a scope or logic analyzer.
+set_property PACKAGE_PIN Y11 [get_ports clk_chip_ctrl_o]
+set_property PACKAGE_PIN AA11 [get_ports clk_perip_ctrl_o]
+set_property IOSTANDARD LVCMOS33 [get_ports clk_chip_ctrl_o]
+set_property IOSTANDARD LVCMOS33 [get_ports clk_perip_ctrl_o]
 
 set_property -dict "PACKAGE_PIN AB9  IOSTANDARD LVCMOS33" [get_ports "PS_GPIO[30]"]
 set_property -dict "PACKAGE_PIN AA8  IOSTANDARD LVCMOS33" [get_ports "PS_GPIO[31]"]
@@ -157,54 +172,42 @@ set_property -dict "PACKAGE_PIN AB2 IOSTANDARD LVCMOS33" [get_ports "audio_mclk"
 ################################################################################
 ## Pins connected to the FMC connector
 ################################################################################
-## -- DAC
-set_property PACKAGE_PIN B22 [get_ports dac1_sclk]
-set_property PACKAGE_PIN A21 [get_ports dac1_sdin]
-set_property PACKAGE_PIN C15 [get_ports dac1_sdo]
-set_property PACKAGE_PIN A22 [get_ports dac1_syncbar]
-set_property PACKAGE_PIN B15 [get_ports dac2_sclk]
-set_property PACKAGE_PIN B17 [get_ports dac2_sdin]
-set_property PACKAGE_PIN B16 [get_ports dac2_sdo]
-set_property PACKAGE_PIN B21 [get_ports dac2_syncbar]
-
-## -- ADC
-set_property PACKAGE_PIN E21 [get_ports adc1_sclk]
-set_property PACKAGE_PIN D22 [get_ports adc1_sdin]
-set_property PACKAGE_PIN E18 [get_ports adc1_sdo]
-set_property PACKAGE_PIN D21 [get_ports adc1_csbar]
-set_property PACKAGE_PIN A18 [get_ports adc1_convstbar]
-set_property PACKAGE_PIN C22 [get_ports adc1_status]
-## ADC2 dropped: its pins P17/P18 conflict with chip-SPI on FMC H7/H8.
-## ADC2 signals are tied off inside xillydemo.v (no top-level ports, no constraints).
-set_property PACKAGE_PIN A19 [get_ports adc3_sdin]
-set_property PACKAGE_PIN C17 [get_ports adc3_sdo]
-set_property PACKAGE_PIN A16 [get_ports adc3_csbar]
-set_property PACKAGE_PIN C18 [get_ports adc3_convstbar]
-set_property PACKAGE_PIN A17 [get_ports adc3_status]
-
-## -- CHIP QUAD-SPI (freq_sel_controller + spi_image_tester → custom chip SPI slave)
-##    Routed over the FMC-LPC connector to the UPS daughter-card SPI block.
 ##    IOSTANDARD LVCMOS18 inherited from the bank-34/35 blanket rule below.
-##    FMC pin → ZedBoard FPGA pin mapping verified against
-##    doc/avnet_zedboard/zedboard_master_UCF_RevC_v3.ucf.
-##      FMC pin H7  / LA02_P (P17) = chip_sck    → UPS_SPI_SCK
-##      FMC pin H8  / LA02_N (P18) = chip_csb    → UPS_SPI_CSB
-##      FMC pin H10 / LA04_P (M21) = chip_sd[0]  ↔ UPS_SPI_IO_0  (MOSI / Quad bit 0)
-##      FMC pin H11 / LA04_N (M22) = chip_sd[1]  ↔ UPS_SPI_IO_1  (MISO / Quad bit 1)
-##      FMC pin H13 / LA07_P (T16) = chip_sd[2]  ↔ UPS_SPI_IO_2
-##      FMC pin H14 / LA07_N (T17) = chip_sd[3]  ↔ UPS_SPI_IO_3
-set_property PACKAGE_PIN P17 [get_ports chip_sck]
-set_property PACKAGE_PIN P18 [get_ports chip_csb]
-set_property PACKAGE_PIN M21 [get_ports {chip_sd[0]}]
-set_property PACKAGE_PIN M22 [get_ports {chip_sd[1]}]
-set_property PACKAGE_PIN T16 [get_ports {chip_sd[2]}]
-set_property PACKAGE_PIN T17 [get_ports {chip_sd[3]}]
+##      FMC pin    / LA33_N  (B22)  # dac_sclk_o
+##      FMC pin    / LA32_P  (A21)  # dac_sdin_o
+##      FMC pin    / LA32_N  (A22)  # dac_csb_o
+##      FMC pin    / LA30_N  (B15)  # dac_shdn_o
+##      FMC pin    / LA31_N  (B17)  # dac_rstn_o
+##      FMC pin H7  / LA02_P  (P17) # chip_sck_o
+##      FMC pin H8  / LA02_N  (P18) # chip_csb_o
+##      FMC pin H10 / LA04_P  (M21) # chip_sd_io[0]
+##      FMC pin H11 / LA04_N  (M22) # chip_sd_io[1]
+##      FMC pin H13 / LA07_P  (T16) # chip_sd_io[2]
+##      FMC pin H14 / LA07_N  (T17) # chip_sd_io[3]
+##      FMC pin    / LA27_P  (E21)  # clk_chip_o
+##      FMC pin    / LA25_P  (D22)  # chip_arst_no
+## DAC
+set_property PACKAGE_PIN B22 [get_ports dac_sclk_o]
+set_property PACKAGE_PIN A21 [get_ports dac_sdin_o]
+set_property PACKAGE_PIN A22 [get_ports dac_csb_o]
+set_property PACKAGE_PIN B15 [get_ports dac_shdn_o]
+set_property PACKAGE_PIN B17 [get_ports dac_rstn_o]
+
+## CHIP QUAD-SPI
+set_property PACKAGE_PIN P17 [get_ports chip_sck_o]
+set_property PACKAGE_PIN P18 [get_ports chip_csb_o]
+set_property PACKAGE_PIN M21 [get_ports {chip_sd_io[0]}]
+set_property PACKAGE_PIN M22 [get_ports {chip_sd_io[1]}]
+set_property PACKAGE_PIN T16 [get_ports {chip_sd_io[2]}]
+set_property PACKAGE_PIN T17 [get_ports {chip_sd_io[3]}]
+set_property PACKAGE_PIN E21 [get_ports clk_chip_o]
+set_property PACKAGE_PIN D22 [get_ports chip_arst_no]
 
 # SPI outputs / bidirectional data: slow 1 MHz signals; exclude from timing.
-set_false_path -to   [get_ports chip_sck]
-set_false_path -to   [get_ports chip_csb]
-set_false_path -to   [get_ports {chip_sd[*]}]
-set_false_path -from [get_ports {chip_sd[*]}]
+# set_false_path -to   [get_ports chip_sck_o]
+# set_false_path -to   [get_ports chip_csb_o]
+# set_false_path -to   [get_ports {chip_sd_io[*]}]
+# set_false_path -from [get_ports {chip_sd_io[*]}]
 
 ################################################################################
 ## FMC PIN PROPERTIES
@@ -216,91 +219,42 @@ set_property IOSTANDARD LVCMOS18 [get_ports -of_objects [get_iobanks 34]]
 set_property IOSTANDARD LVCMOS18 [get_ports -of_objects [get_iobanks 35]]
 
 # -- DAC
-set_property DRIVE 24 [get_ports dac1_sclk]
-set_property DRIVE 24 [get_ports dac1_sdin]
-set_property DRIVE 24 [get_ports dac1_syncbar]
-set_property DRIVE 24 [get_ports dac2_sclk]
-set_property DRIVE 24 [get_ports dac2_sdin]
-set_property DRIVE 24 [get_ports dac2_syncbar]
-# -- ADC
-set_property DRIVE 24 [get_ports adc1_sclk]
-set_property DRIVE 24 [get_ports adc1_sdin]
-set_property DRIVE 24 [get_ports adc1_csbar]
-set_property DRIVE 24 [get_ports adc1_convstbar]
-set_property DRIVE 24 [get_ports adc3_sdin]
-set_property DRIVE 24 [get_ports adc3_csbar]
-set_property DRIVE 24 [get_ports adc3_convstbar]
+set_property DRIVE 24 [get_ports dac_sclk_o]
+set_property DRIVE 24 [get_ports dac_sdin_o]
+set_property DRIVE 24 [get_ports dac_csb_o]
+set_property DRIVE 24 [get_ports dac_shdn_o]
+set_property DRIVE 24 [get_ports dac_rstn_o]
 
 ################################################################################
 ## SPECIFY IO DELAY CONSTRAINTS
 ################################################################################
 #originating from kgoetsch
-## -- DAC1 SPI CONTROL --
-# setup and hold timing for AD5724 in time unit [ns]
+## -- DAC SPI CONTROL --
+# setup and hold timing for the DAC in time unit [ns]
 # margins for pcb delay differences
-#get clock as comes out:
-create_generated_clock -name clk_dac1_sclk -source [get_pins perip_controller_inst/dac1_controller/spi_interface/bufgce_i0/O] -divide_by 1 [get_ports dac1_sclk]
-#2 per datasheet, 0.5 margin [data hold]
-set_output_delay -clock [get_clocks clk_dac1_sclk] -clock_fall -min -add_delay -2.500 [get_ports dac1_sdin]
-#7 per datasheet, 3 margin [data setup]
-set_output_delay -clock [get_clocks clk_dac1_sclk] -clock_fall -max -add_delay 10.000 [get_ports dac1_sdin]
-#13 per datasheet, 0.5 margin [syncb hold]
-set_output_delay -clock [get_clocks clk_dac1_sclk] -clock_fall -min -add_delay -13.500 [get_ports dac1_syncbar]
-#13 per datasheet, 2 margin [syncb setup]
-set_output_delay -clock [get_clocks clk_dac1_sclk] -clock_fall -max -add_delay 15.000 [get_ports dac1_syncbar]
+create_generated_clock -name clk_dac_sclk -source [get_ports clk_100] -divide_by 4 [get_ports dac_sclk_o]
+create_generated_clock -name clk_chip_sclk -source [get_ports clk_100] -divide_by 4 [get_ports chip_sck_o]
+# Observation clocks exported to FMC: map them to the internal bus clock so
+# the timing tools understand these pins are synchronous to `clk_100`.
+create_generated_clock -name clk_chip_o -source [get_ports clk_100] -divide_by 1 [get_ports clk_chip_o]
+create_generated_clock -name clk_chip_ctrl -source [get_ports clk_100] -divide_by 1 [get_ports clk_chip_ctrl_o]
+create_generated_clock -name clk_perip_ctrl -source [get_ports clk_100] -divide_by 1 [get_ports clk_perip_ctrl_o]
 
-## -- DAC2 SPI CONTROL --
-create_generated_clock -name clk_dac2_sclk -source [get_pins perip_controller_inst/dac2_controller/spi_interface/bufgce_i0/O] -divide_by 1 [get_ports dac2_sclk]
-#margins for pcb delay differences
-#2 per datasheet, 0.5 margin
-set_output_delay -clock [get_clocks clk_dac2_sclk] -clock_fall -min -add_delay -2.500 [get_ports dac2_sdin]
-#7 per datasheet, 3 margin
-set_output_delay -clock [get_clocks clk_dac2_sclk] -clock_fall -max -add_delay 10.000 [get_ports dac2_sdin]
-#13 per datasheet, 0.5 margin
-set_output_delay -clock [get_clocks clk_dac2_sclk] -clock_fall -min -add_delay -13.500 [get_ports dac2_syncbar]
-#13 per datasheet, 2 margin
-set_output_delay -clock [get_clocks clk_dac2_sclk] -clock_fall -max -add_delay 15.000 [get_ports dac2_syncbar]
+# Prevent cross-clock timing analysis between the fast generated DAC SCLK
+# and the exported observation clocks. The DAC SCLK is a divided/derived
+# clock used for an external SPI interface; treat it as asynchronous to the
+# observation/export clocks to avoid false cross-domain failures.
+set_clock_groups -asynchronous -group [get_clocks clk_dac_sclk clk_chip_sclk] -group [get_clocks clk_chip_o clk_chip_ctrl clk_perip_ctrl]
 
-#originating from kgoetsch
-## -- ADC1 SPI CONTROL --
-# setup and hold timing for ADS833x in time unit [ns]
-# margins for pcb delay differences
-create_generated_clock -name clk_adc1_clk -source [get_pins perip_controller_inst/bufgce_adc_sclk/O] -divide_by 1 [get_ports adc1_sclk]
-#tsu4 (+0.5) th3 (+2) [sdin setup and hold]
-set_output_delay -clock [get_clocks clk_adc1_clk] -clock_fall -min -add_delay -8.500 [get_ports adc1_sdin]
-set_output_delay -clock [get_clocks clk_adc1_clk] -clock_fall -max -add_delay 10.000 [get_ports adc1_sdin]
-#tsu5. (+1) [csbar setup]
-set_output_delay -clock [get_clocks clk_adc1_clk] -clock_fall -min -add_delay -11.000 [get_ports adc1_csbar]
-#tsu3 (+1) [csbar hold most strict criterium]
-set_output_delay -clock [get_clocks clk_adc1_clk] -clock_fall -max -add_delay 9.000 [get_ports adc1_csbar]
-#text in 9.4.2 (+2)
-set_output_delay -clock [get_clocks clk_adc1_clk] -max -add_delay 22.000 [get_ports adc1_convstbar]
-set_output_delay -clock [get_clocks clk_adc1_clk] -min -add_delay 0.000 [get_ports adc1_convstbar]
-#td1 and td2 [sdo input delay]
-set_input_delay -clock [get_clocks clk_adc1_clk] -clock_fall -min -add_delay 3.000 [get_ports adc1_sdo]
-set_input_delay -clock [get_clocks clk_adc1_clk] -clock_fall -max -add_delay 22.000 [get_ports adc1_sdo]
-##eoc (status) synchronized on fpga with synchronizer
-##set_input_delay -clock [get_clocks clk_pl_1] -clock_fall -min -add_delay  3.000 [get_ports adc1_status]
-##set_input_delay -clock [get_clocks clk_pl_1] -clock_fall -max -add_delay 22.000 [get_ports adc1_status]
 
-## -- ADC2 SPI CONTROL: dropped (pins reclaimed for chip-SPI on FMC H7/H8) --
+set_output_delay -clock [get_clocks clk_dac_sclk] -min -add_delay 5 [get_ports {dac_sdin_o}]
+set_output_delay -clock [get_clocks clk_dac_sclk] -min -add_delay 5 [get_ports {dac_csb_o}]
+set_output_delay -clock [get_clocks clk_dac_sclk] -min -add_delay 5 [get_ports {dac_shdn_o}]
+set_output_delay -clock [get_clocks chip_sck_o] -min -add_delay 5 [get_ports {chip_csb_o}]
+set_output_delay -clock [get_clocks chip_sck_o] -min -add_delay 5 [get_ports {chip_sd_io[*]}]
 
-## -- ADC3 SPI CONTROL --
-# shared sclk
-#create_generated_clock -name clk_adc1_clk -source [get_pins perip_controller_inst/bufgce_adc_sclk/O] -divide_by 1 [get_ports adc1_sclk]
-#tsu4 (+0.5) th3 (+2) [sdin setup and hold]
-set_output_delay -clock [get_clocks clk_adc1_clk] -clock_fall -min -add_delay -8.500 [get_ports adc3_sdin]
-set_output_delay -clock [get_clocks clk_adc1_clk] -clock_fall -max -add_delay 10.000 [get_ports adc3_sdin]
-#tsu5. (+1) [csbar setup]
-set_output_delay -clock [get_clocks clk_adc1_clk] -clock_fall -min -add_delay -11.000 [get_ports adc3_csbar]
-#tsu3 (+1) [csbar hold most strict criterium]
-set_output_delay -clock [get_clocks clk_adc1_clk] -clock_fall -max -add_delay 9.000 [get_ports adc3_csbar]
-#text in 9.4.2 (+2)
-set_output_delay -clock [get_clocks clk_adc1_clk] -max -add_delay 22.000 [get_ports adc3_convstbar]
-set_output_delay -clock [get_clocks clk_adc1_clk] -min -add_delay 0.000 [get_ports adc3_convstbar]
-#td1 and td2 [sdo input delay]
-set_input_delay -clock [get_clocks clk_adc1_clk] -clock_fall -min -add_delay 3.000 [get_ports adc3_sdo]
-set_input_delay -clock [get_clocks clk_adc1_clk] -clock_fall -max -add_delay 22.000 [get_ports adc3_sdo]
-##eoc (status) synchronized on fpga with synchronizer
-##set_input_delay -clock [get_clocks clk_pl_1] -clock_fall -min -add_delay  3.000 [get_ports adc1_status]
-##set_input_delay -clock [get_clocks clk_pl_1] -clock_fall -max -add_delay 22.000 [get_ports adc1_status]
+set_output_delay -clock [get_clocks clk_dac_sclk] -max -add_delay 5 [get_ports {dac_sdin_o}]
+set_output_delay -clock [get_clocks clk_dac_sclk] -max -add_delay 5 [get_ports {dac_csb_o}]
+set_output_delay -clock [get_clocks clk_dac_sclk] -max -add_delay 5 [get_ports {dac_shdn_o}]
+set_output_delay -clock [get_clocks chip_sck_o] -max -add_delay 5 [get_ports {chip_csb_o}]
+set_output_delay -clock [get_clocks chip_sck_o] -max -add_delay 5 [get_ports {chip_sd_io[*]}]
