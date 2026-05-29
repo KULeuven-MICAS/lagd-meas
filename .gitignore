@@ -8,3 +8,8 @@ results/
 *.pb
 **/xsim.dir/**
 
+# python specific
+*__pycache__
+
+# vim
+*.swp
