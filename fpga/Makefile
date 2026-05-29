@@ -5,7 +5,6 @@
 # Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 
 SHELL := /bin/bash
-VIVADO_SOURCE ?= source /esat/micas-data/data/design/scripts/xilinx_vitis_vivado_2023.2.rc
 
 export FPGA_ROOT ?= $(shell realpath ./)
 export FPGA_OUTPUT_DIR ?= $(FPGA_ROOT)/output
@@ -22,9 +21,15 @@ export SYNTH_DIR ?= $(XILLINUX_DIR)/verilog/vivado/xillydemo.runs/synth_1
 export BITSTREAM_SRC ?= $(FPGA_ROOT)/scripts/build_batch.tcl
 export OUTPUT_XPR ?= $(XILLINUX_DIR)/verilog/vivado/xillydemo.xpr
 
-.PHONY: links
+.PHONY: links check-vivado
 
 all: links bitstream
+
+check-vivado:
+	@if ! which vivado >/dev/null 2>&1; then \
+		echo "ERROR: 'vivado' not found on PATH. Please source your Vivado settings script first (e.g. 'source /path/to/Vivado/settings64.sh')."; \
+		exit 1; \
+	fi
 
 links: $(XILLINUX_DIR)
 
@@ -46,7 +51,7 @@ $(XILLINUX_DIR): $(XILLINUX_ZIP)
 	cp "$(COREBUNDLE_DIR)/xillybus_core.v" "$(XILLINUX_DIR)/verilog/src/xillybus_core.v"
 	cp "$(COREBUNDLE_DIR)/xillybus_core.ngc" "$(XILLINUX_DIR)/cores/xillybus_core.ngc"
 
-bitstream: $(BITSTREAM_SRC)
+bitstream: check-vivado $(BITSTREAM_SRC)
 	mkdir -p "$(LOGS_DIR)"
 	cd "$(LOGS_DIR)" && \
 	rm -f vivado*.jou vivado*.log && \
@@ -60,7 +65,7 @@ bitstream: $(BITSTREAM_SRC)
 	@echo "Synthesis log: $(LOGS_DIR)/synth.log"
 	@echo "Implementation log: $(LOGS_DIR)/impl.log"
 
-gui: $(OUTPUT_XPR)
+gui: check-vivado $(OUTPUT_XPR)
 	cd "$(LOGS_DIR)" && \
 	$(VIVADO_SOURCE) && \
 	vivado -mode gui $(OUTPUT_XPR)
