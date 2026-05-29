@@ -1,15 +1,22 @@
-import os
-import sys
-from lib.Bcolors import Bcolors as Bc
+# Copyright 2025 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Jiacong Sun <jiacong.sun@kuleuven.be>
+
+import logging
 import struct
+from types import TracebackType
+from typing import List, Optional, Type
+
+logger = logging.getLogger(__name__)
 
 class WritePort:
 	writePortCount = 0
-	
-	def __init__(self, devfile, width, dummy=False):
-	
+	def __init__(self, devfile: str, width: int) -> None:
+
 		if width%8 != 0:
-			Bc.printError("width: " + str(width) + " is no multiple of 8 bits (1 byte)")
+			logger.error("width: %s is no multiple of 8 bits (1 byte)", width)
 		else:
 			self.devfile = devfile
 			self.width = width
@@ -17,93 +24,65 @@ class WritePort:
 			self.totalBytesForTransmission = 0
 			self.totalBytesTransmitted = 0
 			WritePort.writePortCount += 1
-			self.dummy = dummy
-			self.dummyId = 0
 			self.port_open = False
-	
-	def __exit__(self, exc_type, exc_value, traceback):
-		self.closePort
-		
-	def openPort(self):
+
+	def __exit__(self, exc_type: Optional[Type[BaseException]], exc_value: Optional[BaseException], traceback: Optional[TracebackType]) -> None:
+		self.closePort()
+
+	def openPort(self) -> bool:
 		self.portId = open(self.devfile, 'wb',0)
 		if self.portId == 0:
-			Bc.printError("Could not open " + devfile + " for write")
+			logger.error("Could not open %s for write", self.devfile)
 			return False
 		else:
-			#Bc.printInfo("Succesfully opened write port to " + self.devfile)
 			self.port_open = True
-			if self.dummy:
-				self.dummyId = open("./writeLog_" + str(WritePort.writePortCount), 'w')
-				Bc.printInfo("Opened dummy port with id " + str(self.dummyId))
-			
+			logger.info("Opened write port to %s", self.devfile)
 			return True
-			
-	def closePort(self):
+
+	def closePort(self) -> None:
 		self.portId.close()
 		self.port_open = False
-		if self.dummy:
-			os.close(self.dummyId)
-	
-	def __sendData(self, data):
-		#print("Sending " + str(data))
-		sizeReq = len(data)
-		#try:
-		sizeSend = self.portId.write(data)
-		#except ValueError:
-		#	if self.port_open:
-		#		Bc.printWarning("File unexpectedly closed, kicking it's butt and trying again...")
-		#		self.closePort()
-		#		self.openPort()
-		#		sizeSend = self.portId.write(data)
+		logger.info("Closed write port to %s", self.devfile)
 
-		#self.portId.write("")
-		#self.totalBytesForTransmission += sizeReq
-		#self.totalBytesTransmitted += sizeSend
-		#if(sizeReq != sizeSend):
-		#	print(Bcolors.WARNING + "WARNING: Not all data transmitted" + Bcolors.ENDC)
-		#	return False
-		#else:
-		#	if self.dummy:
-		#		self.dummyId.write(data)
-		#		print("Send data is:")
-		#		print(str(struct.unpack('i',data)[0]))
-		#	
+	def __sendData(self, data: bytes) -> bool:
+		logger.debug("Sending %d bytes", len(data))
+		self.portId.write(data)
 		return True
-			
-	def sendString(self,data):
+
+	def sendString(self, data: bytes) -> bool:
 		return self.__sendData(data)
-	
-	def sendByte(self,num):
+
+	def sendByte(self, num: int) -> bool:
 		data = struct.pack("B",num)
 		return self.__sendData(data)
-					
-	def sendInt(self,num):
+
+	def sendInt(self, num: int) -> bool:
 		data = struct.pack("I",num)
 		return self.__sendData(data)
-	
-	def sendIntArray(self, array):
+
+	def sendIntArray(self, array: List[int]) -> bool:
 		data = struct.pack("%si" % len(array),*array)
 		return self.__sendData(data)
-			
-	def sendFloat(self,num):
+
+	def sendFloat(self, num: float) -> bool:
 		data = struct.pack("f",num)
 		return self.__sendData(data)
-			
-	def sendFloatArray(self, array):
+
+	def sendFloatArray(self, array: List[float]) -> bool:
 		data = struct.pack("%sf" % len(array),*array)
 		return self.__sendData(data)
-	
-	def sendDouble(self,num):
+
+	def sendDouble(self, num: float) -> bool:
 		data = struct.pack("d",num)
 		return self.__sendData(data)
-			
-	def sendDoubleArray(self, array):
+
+	def sendDoubleArray(self, array: List[float]) -> bool:
 		data = struct.pack("%sd" % len(array),*array)
 		return self.__sendData(data)
 
-	def sendHex(self,num):
+	def sendHex(self, num: str) -> bool:
 		data = struct.pack("I",int(num,0))
 		return self.__sendData(data)
-			
-	def getBytesLost(self):
+
+	def getBytesLost(self) -> int:
 		return self.totalBytesForTransmission - self.totalBytesTransmitted

@@ -1,4 +1,9 @@
 #!/usr/bin/env python
+# Copyright 2025 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 #
 # Commands for controlling the ADC ADS8331
 #
@@ -125,26 +130,26 @@ def ADC_calibrate_channel(dac_channel, adc_channel, writeport, readport, dumpall
 	# set channel to 0V
 	dacc.DAC_set_voltage(dac_channel['bus'], dac_channel['channel'], 0, writeport)
 	time.sleep(1)
-	
+
 	nb_samples = 20000
 	window_size = 500
 	hex_samples = ADC_measure_samples(adc_channel['bus'], adc_channel['channel'], nb_samples, writeport, readport)
-	
+
 	# check if the samples are sampled correctly
 	if len(hex_samples) == 0:
 		Bcolors.printError("number of samples is 0")
 		return -1
-	
+
 	if len(hex_samples) < nb_samples:
 		Bcolors.printWarning("only "+str(len(hex_samples))+" acquired during calibration")
-	
+
 	samples = np.array(hex_samples)*1/(16*1000)
 	#print(samples)
-	
+
 	# moving avg
 	filtered_samples = moving_avg(samples,window_size)
 	#filtered_samples = samples
-	
+
 	# check if the stdev is less then 1mv
 	#if stat.stdev(filtered_samples) >= 0.002: # resolution is 0.001
 	#	Bcolors.printError("standard deviation is larger than min. resolution: "+str(stat.stdev(filtered_samples)))
@@ -152,7 +157,7 @@ def ADC_calibrate_channel(dac_channel, adc_channel, writeport, readport, dumpall
 	#		return filtered_samples
 	#	else:
 	#		return -2
-	
+
 	if dumpall:
 		return filtered_samples
 	else:

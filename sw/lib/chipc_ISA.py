@@ -1,3 +1,9 @@
+# Copyright 2025 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Jiacong Sun <jiacong.sun@kuleuven.be>
+
 # ISA of the chip controller
 # Must stay in sync with fpga/src/verilog/chip_command_api.sv
 #

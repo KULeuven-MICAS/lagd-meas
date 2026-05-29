@@ -1,4 +1,8 @@
+# Copyright 2025 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
 
+# Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 
 class Bcolors:
 	HEADER = '\033[95m'
@@ -9,19 +13,19 @@ class Bcolors:
 	ENDC = '\033[0m'
 	BOLD = '\033[1m'
 	UNDERLINE = '\033[4m'
-	
+
 	@staticmethod
 	def printInfo(string):
 		print(Bcolors.OKBLUE + "INFO: " + string + Bcolors.ENDC)
-		
+
 	@staticmethod
 	def printPassed(string):
 		print(Bcolors.OKGREEN + "PASSED: " + string + Bcolors.ENDC)
-		
+
 	@staticmethod
 	def printWarning(string):
 		print(Bcolors.WARNING + "WARNING: " + string + Bcolors.ENDC)
-		
+
 	@staticmethod
 	def printError(string):
 		print(Bcolors.FAIL + "ERROR: " + string + Bcolors.ENDC)
