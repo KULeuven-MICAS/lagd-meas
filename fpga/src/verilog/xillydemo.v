@@ -396,9 +396,9 @@ module xillydemo
   wire rst_perip_ctrl; // active high
   reg[2:0] rst_chip_ctrl_pipe;
   reg[2:0] rst_perip_ctrl_pipe;
-  wire [3:0] chip_sd_i;
-  wire [3:0] chip_sd_o;
-  wire [3:0] chip_sd_oe_o;
+  wire [3:0] chip_sdi;
+  wire [3:0] chip_sdo;
+  wire [3:0] chip_sd_oe;
 
   ///////////////////////////////
   ////    CLOCKS + RESET     ////
@@ -418,9 +418,9 @@ module xillydemo
   generate
     for (chip_sd_idx = 0; chip_sd_idx < 4; chip_sd_idx = chip_sd_idx + 1) begin : gen_chip_sd_iobuf
       IOBUF chip_sd_iobuf (
-        .I (chip_sd_o[chip_sd_idx]),
-        .O (chip_sd_i[chip_sd_idx]),
-        .T (~chip_sd_oe_o[chip_sd_idx]),
+        .I (chip_sdo[chip_sd_idx]),
+        .O (chip_sdi[chip_sd_idx]),
+        .T (~chip_sd_oe[chip_sd_idx]),
         .IO(chip_sd_io[chip_sd_idx])
       );
     end
@@ -584,9 +584,9 @@ module xillydemo
     // Quad-SPI interface to chip
     .chip_sck_o        (chip_sck_o     ),
     .chip_csb_o        (chip_csb_o     ),
-    .chip_sd_i         (chip_sd_i      ),
-    .chip_sd_o         (chip_sd_o      ),
-    .chip_sd_oe_o      (chip_sd_oe_o   ),
+    .chip_sd_i         (chip_sdi       ),
+    .chip_sd_o         (chip_sdo       ),
+    .chip_sd_oe_o      (chip_sd_oe     ),
     // control signals to chip
     .clk_chip_o        (clk_chip_o     ),
     .chip_arst_no      (chip_arst_no   )
