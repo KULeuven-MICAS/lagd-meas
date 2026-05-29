@@ -49,13 +49,13 @@ $(XILLINUX_DIR): $(XILLINUX_ZIP)
 bitstream: $(BITSTREAM_SRC)
 	mkdir -p "$(LOGS_DIR)"
 	cd "$(LOGS_DIR)" && \
-	rm -f "vivado*.jou" "vivado*.log" && \
+	rm -f vivado*.jou vivado*.log && \
 	$(VIVADO_SOURCE) && \
 	vivado -mode batch -source $(BITSTREAM_SRC) \
 		-tclargs "$(FPGA_ROOT)" \
 		-log "bitstream.log" \
 		-journal "bitstream.jou"
-	@rm -f "$(LOGS_DIR)/*.pb"
+	@rm -f $(LOGS_DIR)/*.pb
 	@echo "Bitstream generation ($(LINKS_DIR)/xillydemo.bit) completed at: $(shell date)"
 	@echo "Synthesis log: $(LOGS_DIR)/synth.log"
 	@echo "Implementation log: $(LOGS_DIR)/impl.log"
