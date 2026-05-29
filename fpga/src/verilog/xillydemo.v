@@ -418,10 +418,10 @@ module xillydemo
   generate
     for (chip_sd_idx = 0; chip_sd_idx < 4; chip_sd_idx = chip_sd_idx + 1) begin : gen_chip_sd_iobuf
       IOBUF chip_sd_iobuf (
-        .I (chip_sdo[chip_sd_idx]),
-        .O (chip_sdi[chip_sd_idx]),
-        .T (~chip_sd_oe[chip_sd_idx]),
-        .IO(chip_sd_io[chip_sd_idx])
+        .I  (chip_sdo[chip_sd_idx]   ),
+        .O  (chip_sdi[chip_sd_idx]   ),
+        .T  (~chip_sd_oe[chip_sd_idx]),
+        .IO (chip_sd_io[chip_sd_idx] )
       );
     end
   endgenerate
@@ -464,15 +464,15 @@ module xillydemo
   wire [31:0] fifo_chip_dout;
 
   fifo_dualport_32x512 fifo_chip_xillinux_to_fpga (
-   .rst           (rst_chip_ctrl       ), // input wire rst
-   .wr_clk        (bus_clk             ), // input wire wr_clk
-   .rd_clk        (clk_chip_ctrl       ), // input wire rd_clk
-   .din           (user_w_write_32_data), // input wire [31 : 0] din
-   .wr_en         (user_w_write_32_wren), // input wire wr_en
-   .rd_en         (fifo_chip_rd_en     ), // input wire rd_en
-   .dout          (fifo_chip_dout      ), // output wire [31 : 0] dout
-   .full          (user_w_write_32_full), // output wire full
-   .empty         (fifo_chip_empty     )  // output wire empty
+   .rst    (rst_chip_ctrl       ), // input wire rst
+   .wr_clk (bus_clk             ), // input wire wr_clk
+   .rd_clk (clk_chip_ctrl       ), // input wire rd_clk
+   .din    (user_w_write_32_data), // input wire [31 : 0] din
+   .wr_en  (user_w_write_32_wren), // input wire wr_en
+   .rd_en  (fifo_chip_rd_en     ), // input wire rd_en
+   .dout   (fifo_chip_dout      ), // output wire [31 : 0] dout
+   .full   (user_w_write_32_full), // output wire full
+   .empty  (fifo_chip_empty     ) // output wire empty
   );
 
   // READ FIFO
@@ -481,15 +481,15 @@ module xillydemo
   (* mark_debug = "true" *) wire [31:0] fifo_chip_din;
 
   fifo_dualport_32x512 fifo_chip_fpga_to_xillinux (
-    .rst           (rst_chip_ctrl       ), // input wire rst
-    .wr_clk        (clk_chip_ctrl       ), // input wire wr_clk
-    .rd_clk        (bus_clk             ), // input wire rd_clk
-    .din           (fifo_chip_din       ), // input wire [31 : 0] din
-    .wr_en         (fifo_chip_wr_en     ), // input wire wr_en
-    .rd_en         (user_r_read_32_rden ), // input wire rd_en
-    .dout          (user_r_read_32_data ), // output wire [31 : 0] dout
-    .full          (fifo_chip_full      ), // output wire full
-    .empty         (user_r_read_32_empty)  // output wire empty
+    .rst    (rst_chip_ctrl       ), // input wire rst
+    .wr_clk (clk_chip_ctrl       ), // input wire wr_clk
+    .rd_clk (bus_clk             ), // input wire rd_clk
+    .din    (fifo_chip_din       ), // input wire [31 : 0] din
+    .wr_en  (fifo_chip_wr_en     ), // input wire wr_en
+    .rd_en  (user_r_read_32_rden ), // input wire rd_en
+    .dout   (user_r_read_32_data ), // output wire [31 : 0] dout
+    .full   (fifo_chip_full      ), // output wire full
+    .empty  (user_r_read_32_empty) // output wire empty
   );
 
   assign  user_r_read_32_eof = 0;
@@ -503,15 +503,15 @@ module xillydemo
   wire [31:0] fifo_perip_dout;
 
   fifo_dualport_32x512 fifo_perip_xillinux_to_fpga (
-    .rst           (rst_perip_ctrl        ), // input wire rst
-    .wr_clk        (bus_clk               ), // input wire wr_clk
-    .rd_clk        (clk_perip_ctrl        ), // input wire rd_clk
-    .din           (user_w_write_32_2_data), // input wire [7 : 0] din
-    .wr_en         (user_w_write_32_2_wren), // input wire wr_en
-    .rd_en         (fifo_perip_rd_en      ), // input wire rd_en
-    .dout          (fifo_perip_dout       ), // output wire [7 : 0] dout
-    .full          (user_w_write_32_2_full), // output wire full
-    .empty         (fifo_perip_empty      )  // output wire empty
+    .rst    (rst_perip_ctrl        ), // input wire rst
+    .wr_clk (bus_clk               ), // input wire wr_clk
+    .rd_clk (clk_perip_ctrl        ), // input wire rd_clk
+    .din    (user_w_write_32_2_data), // input wire [7 : 0] din
+    .wr_en  (user_w_write_32_2_wren), // input wire wr_en
+    .rd_en  (fifo_perip_rd_en      ), // input wire rd_en
+    .dout   (fifo_perip_dout       ), // output wire [7 : 0] dout
+    .full   (user_w_write_32_2_full), // output wire full
+    .empty  (fifo_perip_empty      ) // output wire empty
   );
 
   // READ FIFO
@@ -520,15 +520,15 @@ module xillydemo
   (* mark_debug = "true" *) wire [31:0] fifo_perip_din;
 
   fifo_dualport_32x512 fifo_perip_fpga_to_xillinux (
-    .rst           (rst_perip_ctrl        ), // input wire rst
-    .wr_clk        (clk_perip_ctrl        ), // input wire wr_clk
-    .rd_clk        (bus_clk               ), // input wire rd_clk
-    .din           (fifo_perip_din        ), // input wire [7 : 0] din
-    .wr_en         (fifo_perip_wr_en      ), // input wire wr_en
-    .rd_en         (user_r_read_32_2_rden ), // input wire rd_en
-    .dout          (user_r_read_32_2_data ), // output wire [7 : 0] dout
-    .full          (fifo_perip_full       ), // output wire full
-    .empty         (user_r_read_32_2_empty)  // output wire empty
+    .rst    (rst_perip_ctrl        ), // input wire rst
+    .wr_clk (clk_perip_ctrl        ), // input wire wr_clk
+    .rd_clk (bus_clk               ), // input wire rd_clk
+    .din    (fifo_perip_din        ), // input wire [7 : 0] din
+    .wr_en  (fifo_perip_wr_en      ), // input wire wr_en
+    .rd_en  (user_r_read_32_2_rden ), // input wire rd_en
+    .dout   (user_r_read_32_2_data ), // output wire [7 : 0] dout
+    .full   (fifo_perip_full       ), // output wire full
+    .empty  (user_r_read_32_2_empty) // output wire empty
   );
 
   assign  user_r_read_32_2_eof = 0;
@@ -597,23 +597,23 @@ module xillydemo
   wire perip_dac_rstn;
 
   perip_controller #(
-    .CLK_HZ            (CLK_HZ           ),
-    .SCK_HZ            (SCK_HZ           ),
-    .CSB_HOLD_CYCLES   (CSB_HOLD_CYCLES  )
+    .CLK_HZ             (CLK_HZ          ),
+    .SCK_HZ             (SCK_HZ          ),
+    .CSB_HOLD_CYCLES    (CSB_HOLD_CYCLES )
   ) perip_controller_inst (
-    .clk_i             (clk_perip_ctrl   ),
-    .rst_i             (rst_perip_ctrl   ),
-    .fifo_perip_rd_en_o(fifo_perip_rd_en ),
-    .fifo_perip_empty_i(fifo_perip_empty ),
-    .fifo_perip_dout_i (fifo_perip_dout  ),
-    .fifo_perip_wr_en_o(fifo_perip_wr_en ),
-    .fifo_perip_full_i (fifo_perip_full  ),
-    .fifo_perip_din_o  (fifo_perip_din   ),
-    .dac_clk_o         (dac_sclk_o       ),
-    .dac_csb_o         (dac_csb_o        ),
-    .dac_sdi_o         (dac_sdin_o       ),
-    .dac_shdn_o        (dac_shdn_o       ),
-    .dac_rstn_o        (dac_rstn_o       )
+    .clk_i              (clk_perip_ctrl  ),
+    .rst_i              (rst_perip_ctrl  ),
+    .fifo_perip_rd_en_o (fifo_perip_rd_en),
+    .fifo_perip_empty_i (fifo_perip_empty),
+    .fifo_perip_dout_i  (fifo_perip_dout ),
+    .fifo_perip_wr_en_o (fifo_perip_wr_en),
+    .fifo_perip_full_i  (fifo_perip_full ),
+    .fifo_perip_din_o   (fifo_perip_din  ),
+    .dac_clk_o          (dac_sclk_o      ),
+    .dac_csb_o          (dac_csb_o       ),
+    .dac_sdi_o          (dac_sdin_o      ),
+    .dac_shdn_o         (dac_shdn_o      ),
+    .dac_rstn_o         (dac_rstn_o      )
   );
 
 endmodule

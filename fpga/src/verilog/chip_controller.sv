@@ -90,39 +90,39 @@ module chip_controller#(
     (* mark_debug = "true" *) logic [31:0] spi_read_data_o;
 
     fifo_to_axi_stream_adapter#(
-            .DATA_WIDTH(32)
+            .DATA_WIDTH      (32               )
         ) adapter_inst (
-            .clk_i           (clk_i             ),
-            .rst_i           (rst_i             ),
-            .fifo_empty_i    (fifo_chip_empty_i ),
-            .fifo_rdata_i    (fifo_chip_dout_i  ),
-            .fifo_rden_o     (fifo_chip_rd_en_o ),
-            .m_axis_tvalid_o (fifo_rd_valid     ),
-            .m_axis_tdata_o  (fifo_rd_dout      ),
-            .m_axis_tready_i (fifo_rd_ready     )
+            .clk_i           (clk_i            ),
+            .rst_i           (rst_i            ),
+            .fifo_empty_i    (fifo_chip_empty_i),
+            .fifo_rdata_i    (fifo_chip_dout_i ),
+            .fifo_rden_o     (fifo_chip_rd_en_o),
+            .m_axis_tvalid_o (fifo_rd_valid    ),
+            .m_axis_tdata_o  (fifo_rd_dout     ),
+            .m_axis_tready_i (fifo_rd_ready    )
     );
 
     quad_spi_master #(
-        .CLK_HZ(CLK_HZ),
-        .SCK_HZ(SCK_HZ)
+        .CLK_HZ       (CLK_HZ          ),
+        .SCK_HZ       (SCK_HZ          )
     ) spi_master_inst (
-        .clk_i          (clk_i            ),
-        .rst_i          (rst_i            ),
-        .start_i        (spi_start_o      ),
-        .quad_mode_i    (spi_quad_mode_o  ),
-        .read_i         (spi_read_dir_o   ),
-        .cmd_i          (spi_cmd_o        ),
-        .addr_i         (spi_addr_o       ),
-        .wdata_i        (spi_data_o       ),
-        .busy_o         (spi_busy_o       ),
-        .done_o         (spi_done_o       ),
-        .read_valid_o   (spi_read_valid_o ),
-        .read_data_o    (spi_read_data_o  ),
-        .chip_sck_o     (chip_sck_o       ),
-        .chip_csb_o     (chip_csb_o       ),
-        .chip_sd_i      (chip_sd_i        ),
-        .chip_sd_o      (chip_sd_o        ),
-        .chip_sd_oe_o   (chip_sd_oe_o     )
+        .clk_i        (clk_i           ),
+        .rst_i        (rst_i           ),
+        .start_i      (spi_start_o     ),
+        .quad_mode_i  (spi_quad_mode_o ),
+        .read_i       (spi_read_dir_o  ),
+        .cmd_i        (spi_cmd_o       ),
+        .addr_i       (spi_addr_o      ),
+        .wdata_i      (spi_data_o      ),
+        .busy_o       (spi_busy_o      ),
+        .done_o       (spi_done_o      ),
+        .read_valid_o (spi_read_valid_o),
+        .read_data_o  (spi_read_data_o ),
+        .chip_sck_o   (chip_sck_o      ),
+        .chip_csb_o   (chip_csb_o      ),
+        .chip_sd_i    (chip_sd_i       ),
+        .chip_sd_o    (chip_sd_o       ),
+        .chip_sd_oe_o (chip_sd_oe_o    )
     );
 
     // chip_command

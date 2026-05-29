@@ -83,36 +83,36 @@ module perip_controller #(
 
     // fifo_cmd_r.bitwise mirrors fifo_word_r (updated in the FSM)
     fifo_to_axi_stream_adapter#(
-            .DATA_WIDTH(32)
+            .DATA_WIDTH      (32                )
         ) adapter_inst (
-            .clk_i           (clk_i              ),
-            .rst_i           (rst_i              ),
-            .fifo_empty_i    (fifo_perip_empty_i ),
-            .fifo_rdata_i    (fifo_perip_dout_i  ),
-            .fifo_rden_o     (fifo_perip_rd_en_o ),
-            .m_axis_tvalid_o (fifo_rd_valid      ),
-            .m_axis_tdata_o  (fifo_rd_dout       ),
-            .m_axis_tready_i (fifo_rd_ready      )
+            .clk_i           (clk_i             ),
+            .rst_i           (rst_i             ),
+            .fifo_empty_i    (fifo_perip_empty_i),
+            .fifo_rdata_i    (fifo_perip_dout_i ),
+            .fifo_rden_o     (fifo_perip_rd_en_o),
+            .m_axis_tvalid_o (fifo_rd_valid     ),
+            .m_axis_tdata_o  (fifo_rd_dout      ),
+            .m_axis_tready_i (fifo_rd_ready     )
     );
 
     dac_spi_driver #(
-        .CLK_HZ(CLK_HZ),
-        .SCK_HZ(SCK_HZ),
-        .CSB_HOLD_CYCLES(CSB_HOLD_CYCLES)
+        .CLK_HZ          (CLK_HZ         ),
+        .SCK_HZ          (SCK_HZ         ),
+        .CSB_HOLD_CYCLES (CSB_HOLD_CYCLES)
     ) dac_driver_inst (
-        .clk_i       (clk_i              ),
-        .rst_i       (rst_i              ),
-        .load_i      (dac_load_o         ),
-        .rstn_i      (fifo_cmd_rstn_r    ),
-        .shdn_i      (fifo_cmd_shdn_r    ),
-        .addr_i      (fifo_cmd_addr_r    ),
-        .data_i      (fifo_cmd_data_r    ),
-        .busy_o      (dac_busy_o         ),
-        .dac_clk_o   (dac_clk_o          ),
-        .dac_csb_o   (dac_csb_o          ),
-        .dac_sdi_o   (dac_sdi_o          ),
-        .dac_shdn_o  (dac_shdn_o         ),
-        .dac_rstn_o  (dac_rstn_o         )
+        .clk_i           (clk_i          ),
+        .rst_i           (rst_i          ),
+        .load_i          (dac_load_o     ),
+        .rstn_i          (fifo_cmd_rstn_r),
+        .shdn_i          (fifo_cmd_shdn_r),
+        .addr_i          (fifo_cmd_addr_r),
+        .data_i          (fifo_cmd_data_r),
+        .busy_o          (dac_busy_o     ),
+        .dac_clk_o       (dac_clk_o      ),
+        .dac_csb_o       (dac_csb_o      ),
+        .dac_sdi_o       (dac_sdi_o      ),
+        .dac_shdn_o      (dac_shdn_o     ),
+        .dac_rstn_o      (dac_rstn_o     )
     );
 
     always_ff @(posedge clk_i or posedge rst_i) begin
