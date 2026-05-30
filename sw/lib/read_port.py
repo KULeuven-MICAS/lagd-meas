@@ -5,65 +5,75 @@
 # Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 
 import os
-import io
 import struct
-from .Bcolors import Bcolors as Bc
-import numpy as np
+import logging
 import time
+import numpy as np
+from types import TracebackType
+from typing import Optional, Tuple, Type, Union
+
+logger = logging.getLogger(__name__)
+
 
 class ReadPort:
 	readPortCount = 0
 
-	def __init__(self, devfile, width):
-
+	def __init__(self, devfile: str, width: int) -> None:
 		if width%8 != 0:
-			Bc.printError(" width: " + str(width) + " is no multiple of 8 bits (1 byte)")
+			logger.error("width: %s is no multiple of 8 bits (1 byte)", width)
 		else:
 			self.devfile = devfile
 			self.width = width
 			self.nbBytes = width/8
 			self.portId = 0
+			self.port_open = False
 			ReadPort.readPortCount += 1
 
-	def __exit__(self, exc_type, exc_value, traceback):
-		self.closePort
+	def __enter__(self) -> "ReadPort":
+		self.openPort()
+		return self
 
-	def openPort(self):
-		self.portId = os.open(self.devfile, os.O_RDONLY | os.O_NONBLOCK)
-		if self.portId == 0:
-			Bc.printError("Could not open " + devfile + " for read")
+	def __exit__(self, exc_type: Optional[Type[BaseException]], exc_value: Optional[BaseException], traceback: Optional[TracebackType]) -> None:
+		self.closePort()
+
+	def openPort(self) -> bool:
+		try:
+			self.portId = os.open(self.devfile, os.O_RDONLY | os.O_NONBLOCK)
+		except OSError:
+			logger.error("Could not open %s for read", self.devfile)
 			return False
-		else:
-			return True
+		self.port_open = True
+		logger.info("Opened read port to %s", self.devfile)
+		return True
 
-	def closePort(self):
+	def closePort(self) -> None:
 		os.close(self.portId)
 		self.portId = 0
-		#self.portId.close()
+		self.port_open = False
+		logger.info("Closed read port to %s", self.devfile)
 
-
-	def readString(self, size):
+	def readString(self, size: int) -> Union[bytes, str]:
 		try:
 			data = os.read(self.portId,size)
 			return data
 		except:
 			return ""
-	def readByte(self):
+
+	def readByte(self) -> Optional[int]:
 		try:
 			data = os.read(self.portId,1)
 			return struct.unpack("B",data)[0]
 		except:
 			return None
 
-	def readInt(self):
+	def readInt(self) -> Optional[int]:
 		try:
 			data = os.read(self.portId,4)
 			return struct.unpack("I",data)[0]
 		except:
 			return None
 
-
-	def readIntArray(self,length):
+	def readIntArray(self, length: int) -> np.ndarray:
 		buffer = bytearray(length*4)
 		offset = 0
 		while offset<length*4:
@@ -76,33 +86,32 @@ class ReadPort:
 			offset += len(thesebytes)
 		return np.frombuffer(buffer, np.uint32)
 
-	def readFloat(self):
+	def readFloat(self) -> float:
 		data = os.read(self.portId,4)
 		return struct.unpack("f",data)[0]
 
-	def readFloatArray(self,length):
+	def readFloatArray(self, length: int) -> Tuple[float, ...]:
 		data = os.read(self.portId,4*length)
 		return struct.unpack("%sf" % length, data)
 
-	def readDouble(self):
+	def readDouble(self) -> float:
 		data = os.read(self.portId,8)
 		return struct.unpack("d",data)[0]
 
-	def readDoubleArray(self,length):
+	def readDoubleArray(self, length: int) -> Tuple[float, ...]:
 		data = os.read(self.portId,8*length)
 		return struct.unpack("%sd" % length, data)
 
-	def readHex(self):
+	def readHex(self) -> str:
 		try:
 			data = os.read(self.portId,4)
 			return hex(struct.unpack("I",data)[0])
 		except:
 			return ""
 
-	def flushBuffer(self,printData=False):
+	def flushBuffer(self, printData: bool = False) -> None:
 		data = self.readInt()
 		while data != None:
 			if printData:
 				print(hex(data))
 			data = self.readInt()
-

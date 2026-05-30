@@ -3,71 +3,75 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Author: Jiacong Sun <jiacong.sun@kuleuven.be>
-// The code is assisted by Gemini, 2026-05-27
+//
+// Adapts a standard (non-fallthrough) FIFO read interface - where read data
+// appears one cycle after `fifo_rden_o` is asserted - to an AXI-Stream
+// valid/ready output.
+//
+// Implemented as a small DEPTH-entry FIFO that absorbs the source's 1-cycle
+// read latency. A read is issued only when its result (arriving next cycle) is
+// guaranteed a free slot, accounting for both the words already stored and any
+// read already in flight; a concurrent pop frees a slot, so back-to-back reads
+// sustain full throughput (one word per cycle) without ever dropping a word.
+// DEPTH must be a power of two and >= 2 (2 fully hides the 1-cycle latency).
 
-module fifo_to_axi_stream_adapter #(parameter int DATA_WIDTH = 32) (
-  input  logic                    clk_i,
-  (* direct_reset = "yes" *) 
-  input  logic                    rst_i,
+module fifo_to_axi_stream_adapter #(
+  parameter int DATA_WIDTH = 32,
+  parameter int DEPTH      = 2
+) (
+  input  logic                  clk_i,
+  (* direct_reset = "yes" *)
+  input  logic                  rst_i,
 
-  // Standard FIFO Interface (Non-Fallthrough)
-  input  logic                    fifo_empty_i,
-  input  logic [DATA_WIDTH-1:0]   fifo_rdata_i,
-  output logic                    fifo_rden_o,
+  // Standard FIFO interface (non-fallthrough)
+  input  logic                  fifo_empty_i,
+  input  logic [DATA_WIDTH-1:0] fifo_rdata_i,
+  output logic                  fifo_rden_o,
 
-  // AXI-Stream / Valid-Ready Interface
-  output logic                    m_axis_tvalid_o,
-  input  logic                    m_axis_tready_i,
-  output logic [DATA_WIDTH-1:0]   m_axis_tdata_o
+  // AXI-Stream / valid-ready interface
+  output logic                  m_axis_tvalid_o,
+  input  logic                  m_axis_tready_i,
+  output logic [DATA_WIDTH-1:0] m_axis_tdata_o
 );
 
-  //----------------------------------------------------------------
-  // Internal Registers & Signals
-  //----------------------------------------------------------------
-  logic [DATA_WIDTH-1:0] skid_data_reg;
-  logic                  skid_valid_reg;
-  logic                  fifo_data_phase;
+  localparam int PTRW = (DEPTH < 2) ? 1 : $clog2(DEPTH);
 
-  //----------------------------------------------------------------
-  // Control Logic
-  //----------------------------------------------------------------
-  
-  // Read from FIFO if it has data AND (downstream is ready OR skid buffer is empty)
-  assign fifo_rden_o = !fifo_empty_i && (m_axis_tready_i || !skid_valid_reg);
+  logic [DATA_WIDTH-1:0] mem [DEPTH];
+  logic [PTRW-1:0]       wr_ptr, rd_ptr;
+  logic [PTRW:0]         count;        // occupancy, 0 .. DEPTH
+  logic                  rd_inflight;  // a read was issued last cycle: data is on fifo_rdata_i now
 
-  // Track if a read was requested in the previous cycle (data phase)
+  wire push = rd_inflight;                              // a read result lands this cycle
+  wire pop  = m_axis_tvalid_o && m_axis_tready_i;       // downstream consumes a word
+
+  assign m_axis_tvalid_o = (count != '0);
+  assign m_axis_tdata_o  = mem[rd_ptr];
+
+  // "committed" = words stored + read already in flight. Issue a new read only
+  // if its result will have a slot; a pop happening this cycle frees one.
+  wire [PTRW+1:0] committed = count + {{(PTRW+1){1'b0}}, rd_inflight};
+  assign fifo_rden_o = !fifo_empty_i && (committed < (DEPTH + (pop ? 1 : 0)));
+
   always_ff @(posedge clk_i or posedge rst_i) begin
     if (rst_i) begin
-      fifo_data_phase <= 1'b0;
+      wr_ptr      <= '0;
+      rd_ptr      <= '0;
+      count       <= '0;
+      rd_inflight <= 1'b0;
     end else begin
-      fifo_data_phase <= fifo_rden_o;
-    end
-  end
-
-  // Output is valid if we have stalled data in the skid register OR new data just arrived
-  assign m_axis_tvalid_o = skid_valid_reg || fifo_data_phase;
-
-  // Prioritize the skid register data over the direct FIFO output
-  assign m_axis_tdata_o  = skid_valid_reg ? skid_data_reg : fifo_rdata_i;
-
-  //----------------------------------------------------------------
-  // Skid Buffer Storage
-  //----------------------------------------------------------------
-  always_ff @(posedge clk_i or posedge rst_i) begin
-    if (rst_i) begin
-      skid_valid_reg <= 1'b0;
-      skid_data_reg  <= '0;
-    end else begin
-      if (m_axis_tvalid_o && !m_axis_tready_i) begin
-        // Downstream stall: catch incoming FIFO data before it overwrites the bus
-        if (!skid_valid_reg && fifo_data_phase) begin
-          skid_valid_reg <= 1'b1;
-          skid_data_reg  <= fifo_rdata_i;
-        end
-      end else if (m_axis_tready_i) begin
-        // Downstream consumed the data; clear the skid buffer
-        skid_valid_reg <= 1'b0;
+      rd_inflight <= fifo_rden_o;
+      if (push) begin
+        mem[wr_ptr] <= fifo_rdata_i;
+        wr_ptr      <= wr_ptr + 1'b1;   // DEPTH is a power of two: wraps naturally
       end
+      if (pop) begin
+        rd_ptr <= rd_ptr + 1'b1;
+      end
+      case ({push, pop})
+        2'b10:   count <= count + 1'b1;
+        2'b01:   count <= count - 1'b1;
+        default: count <= count;
+      endcase
     end
   end
 

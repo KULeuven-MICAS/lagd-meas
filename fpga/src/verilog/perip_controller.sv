@@ -22,11 +22,12 @@
 //
 //   The module reads 32-bit command words from the upstream FIFO via the
 //   `fifo_to_axi_stream_adapter` and converts the FIFO input into a streaming
-//   handshake for the controller FSM. The FSM decodes each word and routes the
-//   transaction as follows:
-//   - If `valid` is low the word is ignored.
-//   - If `writeback` is set the controller writes the full 32-bit word back to
-//     the output FIFO and skips the DAC transaction.
+//   handshake for the controller FSM. Command framing matches chip_command_api:
+//   a word is a command only when its top nibble (marker) equals 0xF. The FSM
+//   decodes each word and routes the transaction as follows:
+//   - If the marker (`[31:28]`) is not 0xF the word is ignored.
+//   - If the opcode (`[27:20]`) is 0xFF the controller writes the full 32-bit
+//     word back to the output FIFO and skips the DAC transaction.
 //   - If `rstn` is deasserted the controller drives `dac_rstn_o` low and does
 //     not start an SPI transfer.
 //   - Otherwise the controller starts `dac_spi_driver` to perform a 12-bit
@@ -83,7 +84,8 @@ module perip_controller #(
 
     // fifo_cmd_r.bitwise mirrors fifo_word_r (updated in the FSM)
     fifo_to_axi_stream_adapter#(
-            .DATA_WIDTH      (32                )
+            .DATA_WIDTH      (32                ),
+            .DEPTH           (2                 )
         ) adapter_inst (
             .clk_i           (clk_i             ),
             .rst_i           (rst_i             ),
@@ -102,11 +104,11 @@ module perip_controller #(
     ) dac_driver_inst (
         .clk_i           (clk_i          ),
         .rst_i           (rst_i          ),
-        .load_i          (dac_load_o     ),
-        .rstn_i          (fifo_cmd_rstn_r),
-        .shdn_i          (fifo_cmd_shdn_r),
-        .addr_i          (fifo_cmd_addr_r),
-        .data_i          (fifo_cmd_data_r),
+        .load_i          (dac_load_o                 ),
+        .rstn_i          (fifo_cmd_r.dac_config.rstn ),
+        .shdn_i          (fifo_cmd_r.dac_config.shdn ),
+        .addr_i          (fifo_cmd_r.dac_config.addr ),
+        .data_i          (fifo_cmd_r.dac_config.data ),
         .busy_o          (dac_busy_o     ),
         .dac_clk_o       (dac_clk_o      ),
         .dac_csb_o       (dac_csb_o      ),
@@ -140,9 +142,9 @@ module perip_controller #(
                 end
 
                 DECODE: begin
-                    if (!fifo_cmd_r.dac_config.valid) begin
-                        state_current <= IDLE;
-                    end else if (fifo_cmd_r.dac_config.writeback) begin
+                    if (fifo_cmd_r.dac_config.marker != PERIP_CMD_MARKER) begin
+                        state_current <= IDLE;  // not a command: ignore
+                    end else if (fifo_cmd_r.dac_config.opcode == PERIP_OP_WRITEBACK) begin
                         state_current <= WRITEBACK_WAIT;
                     end else begin
                         dac_load_o <= 1'b1;

@@ -4,53 +4,51 @@
 
 # Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 
-# Interactive session + writeback self-test for the chip ports.
+# Interactive session + writeback self-test for the periphery (DAC) ports.
 #
-# The reusable chip command layer lives in lib/chip_driver.py (ChipDriver);
+# The reusable periphery command layer lives in lib/perip_driver.py (PeripDriver);
 # this file just wires it up and runs a writeback stress test.
 #
-# Interactive helpers (after `python -i chip_test.py`):
-#   open_ports()                    # open the ports -> module-global `chip`
-#   chip.init_spi()                 # enable Quad-SPI on the chip's SPI slave
-#   chip.config_clk_rst(en, rstn)   # drive chip_clk_en / chip_rstn
-#   chip.write_mem(addr, data)      # single or burst write (data: int or list)
-#   chip.read_mem(addr, length)     # single or burst read -> list of ints
-#   chip.writeback(payload)         # loopback self-test primitive
+# Interactive helpers (after `python -i perip_test.py`):
+#   open_ports()                    # open the ports -> module-global `perip`
+#   perip.dac_write(addr, data)     # write one DAC register (12-bit load)
+#   perip.dac_reset()               # hold the DAC in reset (no SPI transfer)
+#   perip.writeback(payload)        # loopback self-test primitive
 #
 # Running this file directly executes the writeback stress test (see main()).
 #
-# See: fpga/src/verilog/chip_controller.sv and chip_command_api.sv
+# See: fpga/src/verilog/perip_controller.sv and perip_command_api.sv
 
 import sys
 import random
 
-from lib.chip_driver import ChipDriver
-from lib.chip_command_api import WRITEBACK_FIFO, make_command
+from lib.perip_driver import PeripDriver
+from lib.perip_command_api import OP_WRITEBACK, make_command
 
-# Device files for the chip write/read ports (cwp/crp).
-WRITE_DEV = '/dev/xillybus_write_32'
-READ_DEV = '/dev/xillybus_read_32'
+# Device files for the periphery (DAC) write/read ports.
+WRITE_DEV = '/dev/xillybus_write_32_2'
+READ_DEV = '/dev/xillybus_read_32_2'
 
 # Populated by open_ports(); declared here so the interactive helpers below
-# (and `python -i chip_test.py` sessions) can refer to it as a global.
-chip: ChipDriver
+# (and `python -i perip_test.py` sessions) can refer to it as a global.
+perip: PeripDriver
 
 
 def open_ports():
-    """Open the chip ports, exposing them via the module-global `chip` driver."""
-    global chip
-    chip = ChipDriver(WRITE_DEV, READ_DEV)
-    chip.open()
+    """Open the periphery ports, exposing them via the module-global `perip`."""
+    global perip
+    perip = PeripDriver(WRITE_DEV, READ_DEV)
+    perip.open()
 
 
 def test_writeback(payload=0xADBEE):
-    """Send one WRITEBACK_FIFO command and check it loops back unchanged.
+    """Send one writeback command and check it loops back unchanged.
 
     The marker + opcode occupy the top 12 bits, so the payload that survives in
     the echoed word is the low 20 bits ([19:0]).
     """
-    command = make_command(WRITEBACK_FIFO, payload)
-    received = chip.writeback(payload)
+    command = make_command(OP_WRITEBACK, payload)
+    received = perip.writeback(payload)
     if received is None:
         print('FAIL: Data sent: 0x%08X, Data received: None' % command)
         return False
@@ -64,14 +62,11 @@ def test_writeback(payload=0xADBEE):
 
 
 def example_with_driver():
-    """Reference example: drive the chip via ChipDriver as a context manager."""
-    with ChipDriver(WRITE_DEV, READ_DEV) as chip:
-        chip.init_spi()
-        # Burst-write two words to address 0x0, then read them back.
-        chip.write_mem(0x0, [0xDEAD, 0xBEEF])
-        readback = chip.read_mem(0x0, length=2)
+    """Reference example: drive the DAC via PeripDriver as a context manager."""
+    with PeripDriver(WRITE_DEV, READ_DEV) as perip:
+        perip.dac_reset()                  # bring the DAC out of/into reset as needed
+        perip.dac_write(addr=0x1, data=0x80)
     # The ports are closed automatically on exiting the `with` block above.
-    return readback
 
 
 def main():

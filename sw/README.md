@@ -1,6 +1,6 @@
 # Python scripts and libs for Xillybus/Zedboard control
 
-Author: Jiacong Sun <jiacong.sun@kuleuven.be>. (Built based on MICAS inheritance)
+Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 
 This folder holds python scripts and libraries for LAGD project for controlling Xillybus on Zedboard environment.
 
@@ -95,40 +95,27 @@ This results in a linux device tree with the following files:
 - /dev/xillybus_read_32_2: the second readport, used for periphery control, also called 'periphery read port': prp
 - /dev/xillybus_write_32_2: the second writeport, used for periphery control, also called 'periphery write port': pwp
 
-When using the zedboard with the bare minimum fpga code from the zedboard_bitstream project, the following holds:
-- the periphery write port acts as a command + data buffer, where the 4 MSBs are the opcode
-- the periphery read port acts as a result dump
-- an opcode is implemented for loop-back: 0xe: the whole command is dumped into the prp.
-- the controller for the DAC is implemented on the fpga
+The chip control protocol is defined by `fpga/src/verilog/chip_command_api.sv`: a 32-bit
+word is a command only when its top nibble (the handshake marker) equals 0xF; the next byte
+is the opcode. The software mirror of this ISA lives in `lib/chip_command_api.py`.
+
+The periphery port (prp/pwp) drives the on-chip DAC via `fpga/src/verilog/perip_command_api.sv`,
+which uses the same framing as the chip controller: a 32-bit word is a command only when its top
+nibble (marker) equals 0xF, with the opcode in the next byte (0xFF selects writeback, any other
+value performs a DAC transaction). The whole DAC payload (rstn/shdn/addr/data) fits in that single
+word. The software mirror of this ISA lives in `lib/perip_command_api.py`.
 
 ## directory and file description
 The ipython interpreter (or whatever files you are running) is supposed to be run in this folder.
-Some main example files are in the top level:
-- chip_test.py:
+The two top-level scripts test one controller each (interactive session + writeback stress test):
+- chip_test.py: wires up a ChipDriver on the chip ports (cwp/crp) and runs main()
+- perip_test.py: wires up a PeripDriver on the periphery ports (pwp/prp) and runs main()
 
-Furthermore, the lib folder contains all files that assemble instructions and read back results in a more human-readable way.
-Common stuff is:
-- Bcolors.py: a library to print nice colors on your terminal.
-- ReadPort.py: handles the readports
-- WritePort.py: handles the writeports
-
-## TODO: below is to be clean
-
-Specific periphery stuff is:
-- perip_ISA: a mapping of the opcodes to a more human-readable format. This should hold the same ops as the perip_command_api.sv
-- commands_leds_zedboard: lib to handle the leds
-- commands_ADS8331: lib to configure and pull data from the adcs, requires channel map to be configured
-- commands_DAC5724: lib to configure and push data to the dacs, requires channel map to be configured
-- supply: high level file to set the supplies using the channel map
-- voltage_configs: this folder contains your voltage configurations. channel_map_class.py an example. you could add multiple copies of this file in this folder, each with a specific configuration. Then, it''s just the matter of loading the correct one.
-
-Specific chip stuff is:
-- chipc_ISA
-
-## channel maps ##
-The channel maps are located in the lib/voltage_configs folder.
-A channel map contains two dictionaries:
-- a dac dictionary: contains for each named supply: the channel and bus number, minimum, maximum and nominal voltages. This is useful in combination with the dac file, since it checks if a user-input voltage is within range and there is a function to set all the channels to their nominal voltage.
-- an adc dictionary: contains for each named channel: the channel and number, the midpoint voltage, gain and shunt resistance: this enables a correct current measurement using the adc file
-
-
+Furthermore, the lib folder contains the reusable building blocks:
+- port_driver.py: PortDriver -- shared base owning a read+write port (open/close as a context manager, word send, read polling, writeback loopback); subclassed by the two drivers below
+- chip_driver.py: ChipDriver -- exposes the chip command set (init_spi, config_clk_rst, write_mem, read_mem, writeback)
+- chip_command_api.py: chip controller ISA (command-word builders + opcodes); the software mirror of `chip_command_api.sv` and must stay in sync with it
+- perip_driver.py: PeripDriver -- exposes the periphery/DAC command set (dac_write, dac_reset, writeback)
+- perip_command_api.py: periphery controller ISA (command-word builders + opcodes); the software mirror of `perip_command_api.sv` and must stay in sync with it
+- read_port.py: ReadPort -- handles the readports
+- write_port.py: WritePort -- handles the writeports
