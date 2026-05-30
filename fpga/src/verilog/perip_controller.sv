@@ -117,23 +117,26 @@ module perip_controller #(
         .dac_rstn_o      (dac_rstn_o     )
     );
 
+    // Combinational read-ready: request a word only while in IDLE. Driving this
+    // from the FSM register would keep it asserted one cycle into DECODE and then
+    // pop (and drop) the next word; combinational keeps it asserted exactly one
+    // cycle, so each command consumes exactly one FIFO word.
+    assign fifo_rd_ready = (state_current == IDLE);
+
     always_ff @(posedge clk_i or posedge rst_i) begin
         if (rst_i) begin
             state_current      <= IDLE;
             fifo_word_r        <= '0;
             fifo_perip_wr_en_o <= 1'b0;
             fifo_perip_din_o   <= '0;
-            fifo_rd_ready      <= 1'b0;
             dac_load_o         <= 1'b0;
         end else begin
             fifo_perip_wr_en_o <= 1'b0;
             fifo_perip_din_o   <= '0;
-            fifo_rd_ready      <= 1'b0;
             dac_load_o         <= 1'b0;
 
             case (state_current)
                 IDLE: begin
-                    fifo_rd_ready <= 1'b1;
                     if (fifo_rd_valid) begin
                         fifo_word_r   <= fifo_rd_dout;
                         fifo_cmd_r.bitwise <= fifo_rd_dout;
