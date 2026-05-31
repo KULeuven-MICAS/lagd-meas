@@ -23,6 +23,10 @@
 
 import sys
 import random
+import logging
+
+# Configure logging: include timestamp and level
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 from lib.chip_driver import ChipDriver
 from lib.chip_command_api import WRITEBACK_FIFO, make_command
@@ -52,14 +56,14 @@ def test_writeback(payload=0xADBEE):
     command = make_command(WRITEBACK_FIFO, payload)
     received = chip.writeback(payload)
     if received is None:
-        print('FAIL: Data sent: 0x%08X, Data received: None' % command)
+        logging.error('FAIL: Data sent: 0x%08X, Data received: None', command)
         return False
 
     if received == command:
-        print('PASS: Data sent: 0x%08X, Data received: 0x%08X' % (command, received))
+        logging.info('PASS: Data sent: 0x%08X, Data received: 0x%08X', command, received)
         return True
     else:
-        print('FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X' % (command, received))
+        logging.error('FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', command, received)
         return False
 
 
@@ -87,7 +91,7 @@ def main():
             pass_cnt += 1
         else:
             fail_cnt += 1
-    print(f'Test results - Passed: {pass_cnt}, Failed: {fail_cnt}')
+    logging.info('Test results - Passed: %d, Failed: %d', pass_cnt, fail_cnt)
     return 0 if fail_cnt == 0 else 1
 
 
