@@ -25,11 +25,11 @@ import sys
 import random
 import logging
 
-# Configure logging: include timestamp and level
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
-
 from lib.chip_driver import ChipDriver
 from lib.chip_command_api import WRITEBACK_FIFO, make_command
+
+# Configure logging: include timestamp and level
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 # Device files for the chip write/read ports (cwp/crp).
 WRITE_DEV = '/dev/xillybus_write_32'

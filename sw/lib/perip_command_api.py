@@ -35,7 +35,6 @@ SHDN_BIT     = 12
 ADDR_SHIFT   = 8
 # data occupies [7:0]
 
-from typing import List
 
 
 def make_command(opcode, payload=0) -> int:
@@ -48,7 +47,7 @@ def make_command(opcode, payload=0) -> int:
          | (payload & 0x000FFFFF)
 
 
-def cmd_dac_write(addr, data, rstn=1, shdn=1) -> List[int]:
+def cmd_dac_write(addr, data, rstn=1, shdn=1) -> list[int]:
     """Word list for one DAC register write (a 12-bit {addr, data} load).
 
     rstn / shdn are the active-low control bits (default 1 = normal operation).
@@ -59,13 +58,13 @@ def cmd_dac_write(addr, data, rstn=1, shdn=1) -> List[int]:
     return [make_command(OP_DAC, payload)]
 
 
-def cmd_dac_reset(shdn=1) -> List[int]:
+def cmd_dac_reset(shdn=1) -> list[int]:
     """Word list to hold the DAC in reset (rstn=0): drives dac_rstn low, no SPI."""
     payload = (0 << RSTN_BIT) | ((shdn & 1) << SHDN_BIT)
     return [make_command(OP_DAC, payload)]
 
 
-def cmd_writeback(payload=0) -> List[int]:
+def cmd_writeback(payload=0) -> list[int]:
     """Word list for a writeback loopback test (opcode 0xFF).
 
     The marker + opcode occupy the top 12 bits, so the echoable payload is the

@@ -11,7 +11,6 @@
 # command layer without copy-pasting it or relying on globals.
 
 import time
-from typing import List, Optional, Union
 
 from lib.port_driver import PortDriver
 from lib.chip_command_api import (
@@ -44,14 +43,14 @@ class ChipDriver(PortDriver):
         """Drive the chip clock enable (bit 1) and reset-n (bit 0)."""
         self._send_words(cmd_config_clk_rst(chip_clk_en, chip_rstn))
 
-    def write_mem(self, addr: int, data_words: Union[int, List[int]]) -> None:
+    def write_mem(self, addr: int, data_words: int | list[int]) -> None:
         """Single or burst memory write. data_words: int or list of ints.
 
         Burst writes go to consecutive word addresses (addr, addr+4, ...).
         """
         self._send_words(cmd_write(addr, data_words))
 
-    def read_mem(self, addr: int, length: int = 1, timeout: float = 0.5) -> List[int]:
+    def read_mem(self, addr: int, length: int = 1, timeout: float = 0.5) -> list[int]:
         """Single or burst memory read.
 
         Returns a list of up to `length` ints (fewer if the read times out).
@@ -60,7 +59,7 @@ class ChipDriver(PortDriver):
         self.rp.flushBuffer()
         self._send_words(cmd_read(addr, length))
 
-        out: List[int] = []
+        out: list[int] = []
         deadline = time.time() + timeout
         while len(out) < length and time.time() < deadline:
             word = self.rp.readInt()
@@ -70,7 +69,7 @@ class ChipDriver(PortDriver):
                 time.sleep(0.001)
         return out
 
-    def writeback(self, payload: int = 0xADBEE) -> Optional[int]:
+    def writeback(self, payload: int = 0xADBEE) -> int | None:
         """Send one WRITEBACK_FIFO command; return the echoed word (or None).
 
         The chip_controller loops the exact command word back into the read

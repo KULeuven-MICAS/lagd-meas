@@ -22,15 +22,13 @@
 # See: fpga/src/verilog/perip_controller.sv and perip_command_api.sv
 
 import sys
-import time
-import pdb
 import logging
-
-# Configure logging: include timestamp and level
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 from lib.perip_driver import PeripDriver
 from lib.perip_command_api import OP_WRITEBACK, make_command
+
+# Configure logging: include timestamp and level
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 # Device files for the periphery (DAC) write/read ports.
 WRITE_DEV = '/dev/xillybus_write_32_2'
@@ -80,8 +78,8 @@ def example_with_driver():
         # Set channel 1 to 0.6 V; set channel 2 by raw code.
         code = perip.set_voltage(channel=1, volts=0.6, vref=VREF)
         perip.set_code(channel=2, code=0x40)
-        logging.info('ch1 -> code 0x%02X (%.3f V), ch2 -> 0x%02X (%.3f V)'
-                % (code, perip.get_voltage(1, VREF), perip.get_code(2), perip.get_voltage(2, VREF)))
+        logging.info(f'ch1 -> code 0x{code:02X} ({perip.get_voltage(1, VREF):.3f} V), '
+                 f'ch2 -> 0x{perip.get_code(2):02X} ({perip.get_voltage(2, VREF):.3f} V)')
     # The ports are closed automatically on exiting the `with` block above.
 
 

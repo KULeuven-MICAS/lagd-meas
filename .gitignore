@@ -13,3 +13,6 @@ results/
 
 # vim
 *.swp
+
+# claude
+docs/

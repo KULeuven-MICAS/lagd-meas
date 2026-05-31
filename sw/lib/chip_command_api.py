@@ -79,7 +79,7 @@ def cmd_write(addr, data_words):
         data_words = [data_words]
     n = len(data_words)
     if not (1 <= n <= MAX_BURST_LEN):
-        raise ValueError("write length %d out of range 1..%d" % (n, MAX_BURST_LEN))
+        raise ValueError(f"write length {n} out of range 1..{MAX_BURST_LEN}")
     return [make_command(DATA_WRITE, n), addr & 0xFFFFFFFF] \
          + [d & 0xFFFFFFFF for d in data_words]
 
@@ -91,7 +91,7 @@ def cmd_read(addr, length=1):
     start_addr+4, ...
     """
     if not (1 <= length <= MAX_BURST_LEN):
-        raise ValueError("read length %d out of range 1..%d" % (length, MAX_BURST_LEN))
+        raise ValueError(f"read length {length} out of range 1..{MAX_BURST_LEN}")
     return [make_command(DATA_READ, length), addr & 0xFFFFFFFF]
 
 

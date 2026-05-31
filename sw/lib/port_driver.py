@@ -12,7 +12,7 @@
 # PeripDriver) subclass this and add their own command methods.
 
 import time
-from typing import List, Optional, TypeVar
+from typing import TypeVar
 
 from lib.write_port import WritePort
 from lib.read_port import ReadPort
@@ -51,12 +51,12 @@ class PortDriver:
         self.close()
 
     # ---- low-level helpers ----
-    def _send_words(self, words: List[int]) -> None:
+    def _send_words(self, words: list[int]) -> None:
         """Send a list of 32-bit words to the write port."""
         for word in words:
             self.wp.sendInt(word)
 
-    def read_word(self, timeout: float = 0.1) -> Optional[int]:
+    def read_word(self, timeout: float = 0.1) -> int | None:
         """Poll the (non-blocking) read port until one 32-bit word arrives.
 
         Returns the word as an int, or None if nothing came back within timeout.
@@ -69,7 +69,7 @@ class PortDriver:
             time.sleep(0.001)
         return None
 
-    def _loopback(self, command_word: int, timeout: float = 0.1) -> Optional[int]:
+    def _loopback(self, command_word: int, timeout: float = 0.1) -> int | None:
         """Send one writeback command word and return the echoed word (or None).
 
         The controller loops the exact command word straight back into the read
