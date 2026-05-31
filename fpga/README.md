@@ -26,7 +26,7 @@ read FIFO — but they target different devices and use different SPI modes.
 | Interface | Controller | Device | FIFOs | SPI mode |
 |-----------|------------|--------|-------|----------|
 | Quad-SPI to chip | [chip_controller.sv](src/verilog/chip_controller.sv) + [quad_spi_master.sv](src/verilog/quad_spi_master.sv) | chip's on-chip `axi_spi_slave` (register/memory) | `/dev/xillybus_{write,read}_32` | mode 0, quad, bursts |
-| DAC SPI | [perip_controller.sv](src/verilog/perip_controller.sv) + [dac_spi_driver.sv](src/verilog/dac_spi_driver.sv) | on-board DAC (DAC5724) | `/dev/xillybus_{write,read}_32_2` | mode 3, 1-bit, single word |
+| DAC SPI | [perip_controller.sv](src/verilog/perip_controller.sv) + [dac_spi_driver.sv](src/verilog/dac_spi_driver.sv) | on-board DAC (DAC8802) | `/dev/xillybus_{write,read}_32_2` | mode 3, 1-bit, single word |
 
 ---
 
