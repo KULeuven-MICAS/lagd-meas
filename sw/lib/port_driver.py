@@ -56,7 +56,7 @@ class PortDriver:
         for word in words:
             self.wp.sendInt(word)
 
-    def read_word(self, timeout: float = 0.02) -> Optional[int]:
+    def read_word(self, timeout: float = 0.1) -> Optional[int]:
         """Poll the (non-blocking) read port until one 32-bit word arrives.
 
         Returns the word as an int, or None if nothing came back within timeout.
@@ -69,7 +69,7 @@ class PortDriver:
             time.sleep(0.001)
         return None
 
-    def _loopback(self, command_word: int, timeout: float = 0.02) -> Optional[int]:
+    def _loopback(self, command_word: int, timeout: float = 0.1) -> Optional[int]:
         """Send one writeback command word and return the echoed word (or None).
 
         The controller loops the exact command word straight back into the read
