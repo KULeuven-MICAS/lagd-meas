@@ -115,7 +115,7 @@ Furthermore, the lib folder contains the reusable building blocks:
 - port_driver.py: PortDriver -- shared base owning a read+write port (open/close as a context manager, word send, read polling, writeback loopback); subclassed by the two drivers below
 - chip_driver.py: ChipDriver -- exposes the chip command set (init_spi, config_clk_rst, write_mem, read_mem, writeback)
 - chip_command_api.py: chip controller ISA (command-word builders + opcodes); the software mirror of `chip_command_api.sv` and must stay in sync with it
-- perip_driver.py: PeripDriver -- exposes the periphery/DAC command set (dac_write, dac_reset, writeback)
+- perip_driver.py: PeripDriver -- exposes the periphery/DAC command set: raw register ops (dac_write, dac_reset, writeback) plus AD8802 channel/voltage helpers (set_code/get_code, set_voltage/get_voltage with V_REF as an argument, set_all_code/set_all_voltage, midscale, reset, shutdown) backed by a host-side write cache
 - perip_command_api.py: periphery controller ISA (command-word builders + opcodes); the software mirror of `perip_command_api.sv` and must stay in sync with it
 - read_port.py: ReadPort -- handles the readports
 - write_port.py: WritePort -- handles the writeports
