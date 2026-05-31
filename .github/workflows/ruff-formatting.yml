@@ -55,10 +55,10 @@ jobs:
 
       - name: Install requirements
         run: |
-          if [ -f requirements.txt ]; then
+          if [ -f sw/requirements.txt ]; then
             pip install -r sw/requirements.txt
-            pip install ruff
-          fi 
+          fi
+          pip install ruff
 
       - name: Run Ruff Check
         run: ruff check sw/
