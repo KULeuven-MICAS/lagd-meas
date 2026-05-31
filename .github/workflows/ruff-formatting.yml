@@ -1,0 +1,90 @@
+name: Ruff Code Quality
+
+on:
+  push:  # Triggers on ALL branches
+  pull_request:  # Triggers on ALL pull requests
+
+# Prevent multiple runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  ################
+  # Verible Lint #
+  ################
+  verible-lint:
+    name: Lint Verilog sources
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Verible linter check
+        uses: chipsalliance/verible-linter-action@main
+        with:
+          paths: |
+            ./fpga/src/
+          # exclude_paths: |
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          fail_on_error: true
+          reviewdog_reporter: github-check
+          extra_args: >
+            "--waiver_files=tools/lint/verible.waivers
+            --flagfile=tools/lint/.verible.flags"
+          verible_version: "v0.0-3318-g8d254167"
+
+  ########################
+  # Check Python Sources #
+  ########################
+  python-lint:
+    runs-on: ubuntu-latest
+    # Skip if commit message contains [skip ci]
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'  # Use the latest Python 3 version
+
+      - name: Install requirements
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r sw/requirements.txt
+            pip install ruff
+          fi 
+
+      - name: Run Ruff Check
+        run: ruff check sw/
+
+
+      # Show which branch triggered this run
+      - name: Show branch info
+        run: |
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Actor: ${{ github.actor }}"
+
+  ######################
+  # Lint Editor Config #
+  ######################
+  # Detect trailing whitespaces, missing new lines and wrong file encodings.
+  editorconfig-lint:
+    name: Lint Editorconfig
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Get Editconfig
+        uses: editorconfig-checker/action-editorconfig-checker@main
+      -
+        name: Run Editconfig
+        run: editorconfig-checker -v -format github-actions
