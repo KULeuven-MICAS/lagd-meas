@@ -2,6 +2,10 @@
 line-length = 120
 indent-width = 4
 cache-dir = ".cache/ruff"
+# Code must run on Python 3.6 (lab measurement machines). py37 is the lowest
+# target ruff supports; it keeps annotation lints (list[int], X | Y, etc.) from
+# suggesting syntax that fails at runtime on old interpreters.
+target-version = "py37"
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "UP", "TID252", "A", "PTH", "PLC", "PLE"]
