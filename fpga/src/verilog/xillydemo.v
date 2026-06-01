@@ -48,6 +48,7 @@ module xillydemo
   (* mark_debug = "true" *) inout  [3:0] chip_sd_io,   // Quad-SPI bidirectional data
   (* mark_debug = "true" *) output clk_chip_o,
   (* mark_debug = "true" *) output chip_arst_no, // active low reset to chip
+  (* mark_debug = "true" *) output chip_rtc_o,   // ~32.768 kHz real-time-clock reference to chip
   // DAC SPI
   (* mark_debug = "true" *) output dac_sclk_o,
   (* mark_debug = "true" *) output dac_csb_o,
@@ -451,6 +452,32 @@ module xillydemo
     rst_perip_ctrl_pipe <= {rst_perip_ctrl_pipe[1:0],(!user_w_write_32_2_open && !user_r_read_32_2_open)};
   end
   assign rst_perip_ctrl = rst_perip_ctrl_pipe[2];
+
+  ///////////////////////////////
+  ////    RTC CLOCK GEN       ////
+  ///////////////////////////////
+  // The chip's rtc_i is the Cheshire CLINT real-time-clock reference. The SoC is
+  // configured for RtcFreq = 32_768 Hz (see lagd-im/hw/rtl/lagd_pkg.sv), so the
+  // mtime counter assumes this exact tick rate. We approximate it by integer-
+  // dividing the 100 MHz bus clock. The reference need not be clean or aligned
+  // to clk_100 -- the CLINT just counts its edges.
+  //   half period = 100e6 / (2 * 32768) = 1525 cycles  -> f = 100e6 / 3050
+  //               = 32_787 Hz (~0.06% high), close enough for bring-up.
+  localparam integer RTC_HZ          = 32_768;
+  localparam integer RTC_HALF_CYCLES = 100_000_000 / (2 * RTC_HZ); // = 1525
+  reg [11:0] rtc_div_cnt = 12'd0;
+  reg        rtc_clk     = 1'b0;
+
+  always @(posedge clk_100) begin
+    if (rtc_div_cnt == RTC_HALF_CYCLES - 1) begin
+      rtc_div_cnt <= 12'd0;
+      rtc_clk     <= ~rtc_clk;
+    end else begin
+      rtc_div_cnt <= rtc_div_cnt + 12'd1;
+    end
+  end
+
+  assign chip_rtc_o = rtc_clk;
 
   ///////////////////////////////////////
   ////    XILLINUX <-> FPGA FIFOs    ////
