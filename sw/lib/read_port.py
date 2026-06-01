@@ -10,6 +10,7 @@ import logging
 import time
 import numpy as np
 from types import TracebackType
+from typing import Optional, Tuple, Type, Union
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +35,9 @@ class ReadPort:
 
     def __exit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
+        exc_type: Optional[Type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
     ) -> None:
         self.closePort()
 
@@ -56,21 +57,21 @@ class ReadPort:
         self.port_open = False
         logger.info("Closed read port to %s", self.devfile)
 
-    def readString(self, size: int) -> bytes | str:
+    def readString(self, size: int) -> Union[bytes, str]:
         try:
             data = os.read(self.portId, size)
             return data
         except Exception:
             return ""
 
-    def readByte(self) -> int | None:
+    def readByte(self) -> Optional[int]:
         try:
             data = os.read(self.portId, 1)
             return struct.unpack("B", data)[0]
         except Exception:
             return None
 
-    def readInt(self) -> int | None:
+    def readInt(self) -> Optional[int]:
         try:
             data = os.read(self.portId, 4)
             return struct.unpack("I", data)[0]
@@ -94,7 +95,7 @@ class ReadPort:
         data = os.read(self.portId, 4)
         return struct.unpack("f", data)[0]
 
-    def readFloatArray(self, length: int) -> tuple[float, ...]:
+    def readFloatArray(self, length: int) -> Tuple[float, ...]:
         data = os.read(self.portId, 4 * length)
         return struct.unpack(f"{length}f", data)
 
@@ -102,7 +103,7 @@ class ReadPort:
         data = os.read(self.portId, 8)
         return struct.unpack("d", data)[0]
 
-    def readDoubleArray(self, length: int) -> tuple[float, ...]:
+    def readDoubleArray(self, length: int) -> Tuple[float, ...]:
         data = os.read(self.portId, 8 * length)
         return struct.unpack(f"{length}d", data)
 

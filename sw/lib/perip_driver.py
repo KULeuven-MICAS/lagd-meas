@@ -14,6 +14,8 @@
 #     volts = V_REF * code / 256          (code is 0..255)
 #     code  = round(volts / V_REF * 256)  (clamped to 0..255)
 
+from typing import List, Optional
+
 from lib.port_driver import PortDriver
 from lib.perip_command_api import (
     OP_WRITEBACK,
@@ -57,7 +59,7 @@ class PeripDriver(PortDriver):
     def __init__(self, write_dev: str, read_dev: str, width: int = 32) -> None:
         super().__init__(write_dev, read_dev, width)
         # Last code written per channel (None = unknown / never written).
-        self._codes: list[int | None] = [None] * DAC_NUM_CHANNELS
+        self._codes = [None] * DAC_NUM_CHANNELS  # type: List[Optional[int]]
 
     # ---- raw command set (see perip_command_api.sv) ----
     def dac_write(self, addr: int, data: int, rstn: int = 1, shdn: int = 1) -> None:
@@ -76,7 +78,7 @@ class PeripDriver(PortDriver):
         self._send_words(cmd_dac_reset(shdn))
         self._codes = [DAC_MIDSCALE] * DAC_NUM_CHANNELS
 
-    def writeback(self, payload: int = 0xADBEE) -> int | None:
+    def writeback(self, payload: int = 0xADBEE) -> Optional[int]:
         """Send one writeback command (opcode 0xFF); return the echoed word.
 
         The perip_controller loops the exact command word back into the read
@@ -92,7 +94,7 @@ class PeripDriver(PortDriver):
         self._check_channel(channel)
         self.dac_write(channel, code & 0xFF, rstn=1, shdn=shdn)
 
-    def get_code(self, channel: int) -> int | None:
+    def get_code(self, channel: int) -> Optional[int]:
         """Last code written to a channel (None if never written). Host-side cache."""
         self._check_channel(channel)
         return self._codes[channel]
@@ -106,7 +108,7 @@ class PeripDriver(PortDriver):
         self.set_code(channel, code, shdn=shdn)
         return code
 
-    def get_voltage(self, channel: int, vref: float) -> float | None:
+    def get_voltage(self, channel: int, vref: float) -> Optional[float]:
         """Output voltage implied by the last code written (None if unknown)."""
         code = self.get_code(channel)
         return None if code is None else code_to_volts(code, vref)

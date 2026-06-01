@@ -8,6 +8,7 @@ import os
 import struct
 import logging
 from types import TracebackType
+from typing import List, Optional, Type
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +35,9 @@ class WritePort:
 
     def __exit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
+        exc_type: Optional[Type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
     ) -> None:
         self.closePort()
 
@@ -72,7 +73,7 @@ class WritePort:
         data = struct.pack("I", num)
         return self.__sendData(data)
 
-    def sendIntArray(self, array: list[int]) -> bool:
+    def sendIntArray(self, array: List[int]) -> bool:
         data = struct.pack(f"{len(array)}i", *array)
         return self.__sendData(data)
 
@@ -80,7 +81,7 @@ class WritePort:
         data = struct.pack("f", num)
         return self.__sendData(data)
 
-    def sendFloatArray(self, array: list[float]) -> bool:
+    def sendFloatArray(self, array: List[float]) -> bool:
         data = struct.pack(f"{len(array)}f", *array)
         return self.__sendData(data)
 
@@ -88,7 +89,7 @@ class WritePort:
         data = struct.pack("d", num)
         return self.__sendData(data)
 
-    def sendDoubleArray(self, array: list[float]) -> bool:
+    def sendDoubleArray(self, array: List[float]) -> bool:
         data = struct.pack(f"{len(array)}d", *array)
         return self.__sendData(data)
 

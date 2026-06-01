@@ -119,3 +119,10 @@ Furthermore, the lib folder contains the reusable building blocks:
 - perip_command_api.py: periphery controller ISA (command-word builders + opcodes); the software mirror of `perip_command_api.sv` and must stay in sync with it
 - read_port.py: ReadPort -- handles the readports
 - write_port.py: WritePort -- handles the writeports
+
+The tools folder contains the program loader (load an ELF onto the chip and run it):
+- tools/elf_loader.py: transport-agnostic ELF reader (pure stdlib `struct`, no pyelftools). Parses PT_LOAD segments + entry point; reusable by SPI/JTAG/UART loaders. Run standalone to inspect an ELF: `python3 tools/elf_loader.py tests/helloworld.spm.elf`
+- tools/spi_program_loader.py: SPI-specific loader. Writes each segment over SPI via a ChipDriver, hands the entry point to the bootrom via the SCRATCH registers, and launches. Run: `python3 tools/spi_program_loader.py tests/helloworld.spm.elf [--verify] [--wait]` (boot_mode must be 0; the loader drives chip_clk_en/rstn unless `--no-clk-rst`).
+- tests/: prebuilt ELFs (e.g. helloworld.spm.elf) copied from the lagd-im SW build, plus their .dump disassembly for reference.
+
+See `docs/spi_program_loading.md` for the full SPI load-and-launch background.
