@@ -106,12 +106,7 @@ value performs a DAC transaction). The whole DAC payload (rstn/shdn/addr/data) f
 word. The software mirror of this ISA lives in `lib/perip_command_api.py`.
 
 ## directory and file description
-The ipython interpreter (or whatever files you are running) is supposed to be run in this folder.
-The two top-level scripts test one controller each (interactive session + writeback stress test):
-- chip_test.py: wires up a ChipDriver on the chip ports (cwp/crp) and runs main()
-- perip_test.py: wires up a PeripDriver on the periphery ports (pwp/prp) and runs main()
-
-Furthermore, the lib folder contains the reusable building blocks:
+The lib folder contains the reusable building blocks:
 - port_driver.py: PortDriver -- shared base owning a read+write port (open/close as a context manager, word send, read polling, writeback loopback); subclassed by the two drivers below
 - chip_driver.py: ChipDriver -- exposes the chip command set (init_spi, config_clk_rst, write_mem, read_mem, writeback)
 - chip_command_api.py: chip controller ISA (command-word builders + opcodes); the software mirror of `chip_command_api.sv` and must stay in sync with it
@@ -125,4 +120,4 @@ The tools folder contains the program loader (load an ELF onto the chip and run 
 - tools/spi_program_loader.py: SPI-specific loader. Writes each segment over SPI via a ChipDriver, hands the entry point to the bootrom via the SCRATCH registers, and launches. Run: `python3 tools/spi_program_loader.py tests/helloworld.spm.elf [--verify] [--wait]` (boot_mode must be 0; the loader drives chip_clk_en/rstn unless `--no-clk-rst`).
 - tests/: prebuilt ELFs (e.g. helloworld.spm.elf) copied from the lagd-im SW build, plus their .dump disassembly for reference.
 
-See `docs/spi_program_loading.md` for the full SPI load-and-launch background.
+See `doc/spi_program_loading.md` for the full SPI load-and-launch background.
