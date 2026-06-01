@@ -178,14 +178,25 @@ set_property -dict "PACKAGE_PIN AB2 IOSTANDARD LVCMOS33" [get_ports "audio_mclk"
 ##      FMC pin    / LA32_N  (A22)  # dac_csb_o
 ##      FMC pin    / LA30_N  (B15)  # dac_shdn_o
 ##      FMC pin    / LA31_N  (B17)  # dac_rstn_o
-##      FMC pin H7  / LA02_P  (P17) # chip_sck_o
-##      FMC pin H8  / LA02_N  (P18) # chip_csb_o
-##      FMC pin H10 / LA04_P  (M21) # chip_sd_io[0]
-##      FMC pin H11 / LA04_N  (M22) # chip_sd_io[1]
-##      FMC pin H13 / LA07_P  (T16) # chip_sd_io[2]
-##      FMC pin H14 / LA07_N  (T17) # chip_sd_io[3]
-##      FMC pin    / LA27_P  (E21)  # clk_chip_o
-##      FMC pin    / LA25_P  (D22)  # chip_arst_no
+##      FMC pin H7  / LA02_P  (P17) # pad_spi_sck_i
+##      FMC pin H8  / LA02_N  (P18) # pad_spi_cs_i
+##      FMC pin H10 / LA04_P  (M21) # pad_spi_sd_0_io
+##      FMC pin H11 / LA04_N  (M22) # pad_spi_sd_1_io
+##      FMC pin H13 / LA07_P  (T16) # pad_spi_sd_2_io
+##      FMC pin H14 / LA07_N  (T17) # pad_spi_sd_3_io
+##      FMC pin    / LA27_P  (E21)  # pad_clk_i
+##      FMC pin    / LA25_P  (D22)  # pad_rst_ni
+##      FMC pin C14 / LA10_P    (R19) # pad_rtc_i (forwarded clock out; regular pin OK)
+## PLL (reserved for future integration; no set_property yet)
+##      FMC pin D11 / LA05_P    (J18) # pad_clk_sel_i
+##      FMC pin D12 / LA05_N    (K18) # pad_pll_strb_i
+##      FMC pin C10 / LA06_P    (L21) # pad_pll_data_i
+##      FMC pin C11 / LA06_N    (L22) # pad_pll_data_o
+##      FMC pin G12 / LA08_P    (J21) # pad_pll_cfg_vld_strb_i
+##      FMC pin G6  / LA00_CC_P (M19) # pad_pll_fb_clk_io (clock-capable pin)
+## BOOT MODE (reserved for future integration; no set_property yet)
+##      FMC pin D14 / LA09_P    (R20) # pad_boot_mode_0_i
+##      FMC pin D15 / LA09_N    (R21) # pad_boot_mode_1_i
 ## DAC
 set_property PACKAGE_PIN B22 [get_ports dac_sclk_o]
 set_property PACKAGE_PIN A21 [get_ports dac_sdin_o]
@@ -202,6 +213,10 @@ set_property PACKAGE_PIN T16 [get_ports {chip_sd_io[2]}]
 set_property PACKAGE_PIN T17 [get_ports {chip_sd_io[3]}]
 set_property PACKAGE_PIN E21 [get_ports clk_chip_o]
 set_property PACKAGE_PIN D22 [get_ports chip_arst_no]
+
+## Others
+set_property PACKAGE_PIN R20 [get_ports {chip_bootmode_o[0]}]
+set_property PACKAGE_PIN R21 [get_ports {chip_bootmode_o[1]}]
 
 # SPI outputs / bidirectional data: slow 1 MHz signals; exclude from timing.
 # set_false_path -to   [get_ports chip_sck_o]
@@ -252,9 +267,11 @@ set_output_delay -clock [get_clocks clk_dac_sclk] -min -add_delay 5 [get_ports {
 set_output_delay -clock [get_clocks clk_dac_sclk] -min -add_delay 5 [get_ports {dac_shdn_o}]
 set_output_delay -clock [get_clocks chip_sck_o] -min -add_delay 5 [get_ports {chip_csb_o}]
 set_output_delay -clock [get_clocks chip_sck_o] -min -add_delay 5 [get_ports {chip_sd_io[*]}]
+set_output_delay -clock [get_clocks chip_sck_o] -min -add_delay 5 [get_ports {chip_bootmode_o[*]}]
 
 set_output_delay -clock [get_clocks clk_dac_sclk] -max -add_delay 5 [get_ports {dac_sdin_o}]
 set_output_delay -clock [get_clocks clk_dac_sclk] -max -add_delay 5 [get_ports {dac_csb_o}]
 set_output_delay -clock [get_clocks clk_dac_sclk] -max -add_delay 5 [get_ports {dac_shdn_o}]
 set_output_delay -clock [get_clocks chip_sck_o] -max -add_delay 5 [get_ports {chip_csb_o}]
 set_output_delay -clock [get_clocks chip_sck_o] -max -add_delay 5 [get_ports {chip_sd_io[*]}]
+set_output_delay -clock [get_clocks chip_sck_o] -max -add_delay 5 [get_ports {chip_bootmode_o[*]}]

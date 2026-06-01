@@ -53,7 +53,9 @@ module xillydemo
   (* mark_debug = "true" *) output dac_csb_o,
   (* mark_debug = "true" *) output dac_sdin_o,
   (* mark_debug = "true" *) output dac_shdn_o,
-  (* mark_debug = "true" *) output dac_rstn_o
+  (* mark_debug = "true" *) output dac_rstn_o,
+  // Others
+  (* mark_debug = "true" *) output [1:0] chip_bootmode_o
 );
 
 
@@ -615,5 +617,7 @@ module xillydemo
     .dac_shdn_o         (dac_shdn_o      ),
     .dac_rstn_o         (dac_rstn_o      )
   );
+
+  assign chip_bootmode_o = 2'b00; // default boot mode (00): passive boot
 
 endmodule
