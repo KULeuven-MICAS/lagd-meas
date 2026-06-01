@@ -25,7 +25,9 @@
 # Targets Python 3.6 (the locked Zedboard runtime): no 3.7+ `from __future__
 # import annotations`, no 3.10+ `X | Y` annotations -- uses the typing module.
 
+import argparse
 import struct
+from pathlib import Path
 from typing import List, NamedTuple
 
 # ELF identification
@@ -65,16 +67,16 @@ def parse_elf(path: str) -> ElfImage:
     Supports little-endian ELF32 and ELF64 (the LAGD toolchain emits
     elf64-littleriscv). Raises ValueError on anything unexpected.
     """
-    with open(path, "rb") as f:
+    with Path(path).open("rb") as f:
         blob = f.read()
 
     if blob[:4] != _ELF_MAGIC:
-        raise ValueError("%s: not an ELF file (bad magic)" % path)
+        raise ValueError(f"{path}: not an ELF file (bad magic)")
 
     ei_class = blob[4]
     ei_data = blob[5]
     if ei_data != _ELFDATA2LSB:
-        raise ValueError("%s: only little-endian ELF is supported" % path)
+        raise ValueError(f"{path}: only little-endian ELF is supported")
 
     if ei_class == _ELFCLASS64:
         # ELF64 header field offsets
@@ -90,7 +92,7 @@ def parse_elf(path: str) -> ElfImage:
         (e_phnum,) = struct.unpack_from("<H", blob, 0x2C)
         is_64 = False
     else:
-        raise ValueError("%s: unknown ELF class %d" % (path, ei_class))
+        raise ValueError(f"{path}: unknown ELF class {ei_class}")
 
     segments: List[Segment] = []
     for i in range(e_phnum):
@@ -124,7 +126,7 @@ def parse_elf(path: str) -> ElfImage:
         segments.append(Segment(p_paddr & 0xFFFFFFFF if not is_64 else p_paddr, data))
 
     if not segments:
-        raise ValueError("%s: no PT_LOAD segments found" % path)
+        raise ValueError(f"{path}: no PT_LOAD segments found")
 
     return ElfImage(entry=e_entry, is_64bit=is_64, segments=segments)
 
@@ -138,7 +140,7 @@ def bytes_to_words(data: bytes) -> List[int]:
     """
     if len(data) % 4:
         data = data + b"\x00" * (4 - len(data) % 4)
-    return list(struct.unpack("<%dI" % (len(data) // 4), data))
+    return list(struct.unpack(f"<{len(data) // 4}I", data))
 
 
 def _main() -> int:
@@ -146,18 +148,16 @@ def _main() -> int:
 
     Needs no hardware -- useful to sanity-check parsing against the .dump file.
     """
-    import argparse
-
     ap = argparse.ArgumentParser(description="Inspect an ELF's loadable segments")
     ap.add_argument("elf", help="path to the .elf file")
     args = ap.parse_args()
 
     img = parse_elf(args.elf)
-    print("ELF%s, entry = 0x%08X" % ("64" if img.is_64bit else "32", img.entry))
-    print("%-18s %-12s %s" % ("load_addr", "bytes", "words"))
+    print(f"ELF{'64' if img.is_64bit else '32'}, entry = 0x{img.entry:08X}")
+    print(f"{'load_addr':<18} {'bytes':<12} words")
     for seg in img.segments:
-        print("0x%016X %-12d %d" % (seg.addr, len(seg.data), len(bytes_to_words(seg.data))))
-    print("total: %d bytes across %d segment(s)" % (img.total_bytes, len(img.segments)))
+        print(f"0x{seg.addr:016X} {len(seg.data):<12} {len(bytes_to_words(seg.data))}")
+    print(f"total: {img.total_bytes} bytes across {len(img.segments)} segment(s)")
     return 0
 
 

@@ -14,7 +14,7 @@
 #     volts = V_REF * code / 256          (code is 0..255)
 #     code  = round(volts / V_REF * 256)  (clamped to 0..255)
 
-from typing import List, Optional
+from typing import Optional
 
 from lib.port_driver import PortDriver
 from lib.perip_command_api import (

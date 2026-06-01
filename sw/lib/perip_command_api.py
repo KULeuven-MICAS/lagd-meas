@@ -22,6 +22,8 @@
 #   [11:8]  addr   : 4-bit DAC register address
 #   [7:0]   data   : 8-bit register data
 
+from typing import List
+
 # Handshake marker and opcodes (mirror perip_command_api.sv / chip values).
 CMD_MARKER   = 0xF
 OP_DAC       = 0x00  # any opcode other than WRITEBACK performs a DAC transaction
@@ -34,8 +36,6 @@ RSTN_BIT     = 13
 SHDN_BIT     = 12
 ADDR_SHIFT   = 8
 # data occupies [7:0]
-
-from typing import List
 
 
 def make_command(opcode, payload=0) -> int:

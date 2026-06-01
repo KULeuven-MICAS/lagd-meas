@@ -27,9 +27,13 @@
 #
 # Targets Python 3.6 (locked Zedboard runtime): typing module, no 3.10 syntax.
 
-from typing import List, Optional
 
-from tools.elf_loader import ElfImage, parse_elf, bytes_to_words
+import argparse
+import sys
+import time
+from pathlib import Path
+
+from tools.elf_loader import parse_elf, bytes_to_words
 
 # Cheshire register block base and SCRATCH offsets.
 # __base_regs = 0x0300_0000 (lagd-im sw/link/common.ldh); SCRATCH_n at +4*n
@@ -50,7 +54,7 @@ SCRATCH2_DONE_BIT = 1 << 0
 MAX_BURST_WORDS = 0xFFFF
 
 
-class SpiProgramLoader(object):
+class SpiProgramLoader:
     """Load + launch an ELF over SPI using a ChipDriver.
 
     `chip` is an already-open lib.chip_driver.ChipDriver (or anything exposing
@@ -83,8 +87,7 @@ class SpiProgramLoader(object):
         """Write every PT_LOAD segment of a parsed ELF image to the chip."""
         for seg in img.segments:
             words = bytes_to_words(seg.data)
-            self._log("segment -> 0x%08X  %d bytes (%d words)"
-                      % (seg.addr & 0xFFFFFFFF, len(seg.data), len(words)))
+            self._log(f"segment -> 0x{seg.addr & 0xFFFFFFFF:08X}  {len(seg.data)} bytes ({len(words)} words)")
             self.write_segment(seg.addr & 0xFFFFFFFF, words)
 
     def verify_image(self, img):
@@ -99,10 +102,9 @@ class SpiProgramLoader(object):
             if got != expected:
                 ok = False
                 first = _first_mismatch(expected, got)
-                self._log("VERIFY FAIL @0x%08X: %s" % (seg.addr & 0xFFFFFFFF, first))
+                self._log(f"VERIFY FAIL @0x{seg.addr & 0xFFFFFFFF:08X}: {first}")
             else:
-                self._log("verify OK -> 0x%08X (%d words)"
-                          % (seg.addr & 0xFFFFFFFF, len(expected)))
+                self._log(f"verify OK -> 0x{seg.addr & 0xFFFFFFFF:08X} ({len(expected)} words)")
         return ok
 
     def set_entry(self, entry):
@@ -121,7 +123,6 @@ class SpiProgramLoader(object):
         timeout. The bootrom's _exit writes (retval << 1) | 1, so the exit code
         is value >> 1.
         """
-        import time
         deadline = time.time() + timeout
         while time.time() < deadline:
             vals = self.chip.read_mem(SCRATCH_2, length=1)
@@ -137,8 +138,7 @@ class SpiProgramLoader(object):
         and prints the exit code.
         """
         img = parse_elf(elf_path)
-        self._log("%s: entry 0x%08X, %d segment(s), %d bytes"
-                  % (elf_path, img.entry, len(img.segments), img.total_bytes))
+        self._log(f"{elf_path}: entry 0x{img.entry:08X}, {len(img.segments)} segment(s), {img.total_bytes} bytes")
 
         if init_spi:
             self._log("enabling Quad-SPI on the chip's SPI slave")
@@ -149,7 +149,7 @@ class SpiProgramLoader(object):
         if verify and not self.verify_image(img):
             raise RuntimeError("readback verification failed; not launching")
 
-        self._log("setting entry 0x%08X and launching" % img.entry)
+        self._log(f"setting entry 0x{img.entry:08X} and launching")
         self.set_entry(img.entry)
         self.launch()
 
@@ -158,29 +158,25 @@ class SpiProgramLoader(object):
             if code is None:
                 self._log("timed out waiting for end-of-computation")
             else:
-                self._log("program finished, exit code = %d" % code)
+                self._log(f"program finished, exit code = {code}")
         return img
 
 
 def _first_mismatch(expected, got):
     """Human-readable description of the first differing word (for verify)."""
     if len(got) != len(expected):
-        return "length %d != expected %d" % (len(got), len(expected))
+        return f"length {len(got)} != expected {len(expected)}"
     for i, (e, g) in enumerate(zip(expected, got)):
         if e != g:
-            return "word %d: got 0x%08X, expected 0x%08X" % (i, g, e)
+            return f"word {i}: got 0x{g:08X}, expected 0x{e:08X}"
     return "no mismatch"
 
 
 def _main():
     """CLI: load (and optionally verify/run) an ELF onto the chip over SPI."""
-    import argparse
-    import sys
-    import os
-
     # Allow `python3 sw/tools/spi_program_loader.py ...` from the sw/ dir by
     # putting sw/ on the path so `tools.*` and `lib.*` import cleanly.
-    sw_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sw_dir = str(Path(__file__).resolve().parent.parent)
     if sw_dir not in sys.path:
         sys.path.insert(0, sw_dir)
 
@@ -198,7 +194,9 @@ def _main():
                     help="poll for end-of-computation and print the exit code")
     args = ap.parse_args()
 
-    from lib.chip_driver import ChipDriver
+    # Deferred until after the sys.path fix above: chip_driver pulls in the
+    # hardware/port dependencies, unlike the pure-stdlib elf_loader.
+    from lib.chip_driver import ChipDriver  # noqa: PLC0415
 
     with ChipDriver(args.write_dev, args.read_dev) as chip:
         if not args.no_clk_rst:
