@@ -217,6 +217,7 @@ set_property PACKAGE_PIN D22 [get_ports chip_arst_no]
 ## Others
 set_property PACKAGE_PIN R20 [get_ports {chip_bootmode_o[0]}]
 set_property PACKAGE_PIN R21 [get_ports {chip_bootmode_o[1]}]
+set_property PACKAGE_PIN R19 [get_ports chip_rtc_o]
 
 # SPI outputs / bidirectional data: slow 1 MHz signals; exclude from timing.
 # set_false_path -to   [get_ports chip_sck_o]
@@ -233,18 +234,27 @@ set_property PACKAGE_PIN R21 [get_ports {chip_bootmode_o[1]}]
 set_property IOSTANDARD LVCMOS18 [get_ports -of_objects [get_iobanks 34]]
 set_property IOSTANDARD LVCMOS18 [get_ports -of_objects [get_iobanks 35]]
 
-# -- DAC
+# DAC
 set_property DRIVE 24 [get_ports dac_sclk_o]
 set_property DRIVE 24 [get_ports dac_sdin_o]
 set_property DRIVE 24 [get_ports dac_csb_o]
 set_property DRIVE 24 [get_ports dac_shdn_o]
 set_property DRIVE 24 [get_ports dac_rstn_o]
 
+# Chip Quad-SPI
+set_property DRIVE 24 [get_ports chip_sck_o]
+set_property DRIVE 24 [get_ports chip_csb_o]
+set_property DRIVE 24 [get_ports {chip_sd_io[*]}]
+set_property DRIVE 24 [get_ports clk_chip_o]
+set_property DRIVE 24 [get_ports chip_arst_no]
+
+# Others
+set_property DRIVE 24 [get_ports chip_rtc_o]
+set_property DRIVE 24 [get_ports {chip_bootmode_o[*]}]
+
 ################################################################################
 ## SPECIFY IO DELAY CONSTRAINTS
 ################################################################################
-#originating from kgoetsch
-## -- DAC SPI CONTROL --
 # setup and hold timing for the DAC in time unit [ns]
 # margins for pcb delay differences
 create_generated_clock -name clk_dac_sclk -source [get_ports clk_100] -divide_by 4 [get_ports dac_sclk_o]
@@ -268,6 +278,7 @@ set_output_delay -clock [get_clocks clk_dac_sclk] -min -add_delay 5 [get_ports {
 set_output_delay -clock [get_clocks chip_sck_o] -min -add_delay 5 [get_ports {chip_csb_o}]
 set_output_delay -clock [get_clocks chip_sck_o] -min -add_delay 5 [get_ports {chip_sd_io[*]}]
 set_output_delay -clock [get_clocks chip_sck_o] -min -add_delay 5 [get_ports {chip_bootmode_o[*]}]
+set_output_delay -clock [get_clocks chip_sck_o] -min -add_delay 5 [get_ports chip_rtc_o]
 
 set_output_delay -clock [get_clocks clk_dac_sclk] -max -add_delay 5 [get_ports {dac_sdin_o}]
 set_output_delay -clock [get_clocks clk_dac_sclk] -max -add_delay 5 [get_ports {dac_csb_o}]
@@ -275,3 +286,4 @@ set_output_delay -clock [get_clocks clk_dac_sclk] -max -add_delay 5 [get_ports {
 set_output_delay -clock [get_clocks chip_sck_o] -max -add_delay 5 [get_ports {chip_csb_o}]
 set_output_delay -clock [get_clocks chip_sck_o] -max -add_delay 5 [get_ports {chip_sd_io[*]}]
 set_output_delay -clock [get_clocks chip_sck_o] -max -add_delay 5 [get_ports {chip_bootmode_o[*]}]
+set_output_delay -clock [get_clocks chip_sck_o] -max -add_delay 5 [get_ports chip_rtc_o]
