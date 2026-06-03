@@ -1,0 +1,22 @@
+{
+  // Limit SystemVerilog indexing to hand-written sources.
+  "systemverilog.includeIndexing": [
+    "**/*.{sv,svh,v,vh}"
+  ],
+  // Exclude Vivado-generated / build / simulation output directories.
+  "systemverilog.excludeIndexing": "**/{output,xsim.dir,xillinux_template,vivado_ip,.cache}/**/*.{sv,svh,v,vh}",
+
+  // Also keep the file watcher and search out of those dirs (general speedup).
+  "files.watcherExclude": {
+    "**/fpga/output/**": true,
+    "**/fpga/xsim.dir/**": true,
+    "**/fpga/xillinux_template/**": true,
+    "**/fpga/src/vivado_ip/**": true
+  },
+  "search.exclude": {
+    "**/fpga/output/**": true,
+    "**/fpga/xsim.dir/**": true,
+    "**/fpga/xillinux_template/**": true,
+    "**/fpga/src/vivado_ip/**": true
+  }
+}
