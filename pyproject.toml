@@ -13,3 +13,7 @@ ignore = ["PT", "E731"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F403"]
+
+[tool.pylint.MASTER]
+# Files or directories to skip
+ignore = ["fpga/"]
