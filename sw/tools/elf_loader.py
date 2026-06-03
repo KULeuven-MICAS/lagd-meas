@@ -8,12 +8,8 @@
 # Transport-agnostic ELF reader for the LAGD (Cheshire) RISC-V SoC.
 #
 # This module ONLY parses an already-built ELF (produced by riscv-gcc in the
-# lagd-im SW build) into loadable segments + the entry point. It knows nothing
-# about how the bytes reach the chip -- the same output feeds the SPI loader
-# today and could feed a JTAG or UART loader later. The only transport-specific
-# part of "loading a program" is who writes the bytes and how the core is
-# launched; that lives in the per-transport backend (e.g. spi_program_loader.py),
-# not here.
+# lagd-im SW build) into loadable segments + the entry point.
+# This module can be reused for SPI, JTAG, and UART loaders.
 #
 # Pure standard library (struct only): no pyelftools dependency, so it runs on
 # the locked Zedboard Python (3.6.15, numpy-only) as well as a dev machine.
@@ -22,7 +18,7 @@
 # get_entry): iterate PT_LOAD program headers, take each one's PHYSICAL load
 # address (p_paddr) and bytes, and report e_entry.
 #
-# Targets Python 3.6 (the locked Zedboard runtime): no 3.7+ `from __future__
+# Targets Python 3.6 (the locked Zedboard runtime): no 3.7+ `from __future__`
 # import annotations`, no 3.10+ `X | Y` annotations -- uses the typing module.
 
 import argparse

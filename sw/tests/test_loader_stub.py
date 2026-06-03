@@ -90,7 +90,7 @@ class TestElfLoader(unittest.TestCase):
     """The transport-agnostic ELF reader."""
 
     def test_parse_helloworld(self):
-        img = parse_elf(ELF_PATH)
+        img: ElfImage = parse_elf(ELF_PATH)
         self.assertTrue(img.is_64bit)
         self.assertEqual(img.entry, HELLO_ENTRY)
         self.assertEqual(len(img.segments), 1)
@@ -227,4 +227,9 @@ class TestMultiSegment(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    # The individual test_* methods are never called explicitly. unittest finds
+    # them by reflection: it scans this module for unittest.TestCase subclasses,
+    # then within each runs every method whose name starts with "test" (creating
+    # a fresh instance and calling setUp() before each one). unittest.main()
+    # below is what triggers that scan
     unittest.main(verbosity=2)

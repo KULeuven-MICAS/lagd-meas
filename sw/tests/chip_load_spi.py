@@ -36,9 +36,14 @@
 
 import sys
 import logging
+from pathlib import Path
 
-from lib.chip_driver import ChipDriver
-from tools.spi_program_loader import SpiProgramLoader, SCRATCH_0
+# Allow running this file directly (`python tests/chip_load_spi.py`): put sw/ on
+# the path so `lib`/`tools` are importable. Harmless under `python -m ...`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from lib.chip_driver import ChipDriver  # noqa: E402
+from tools.spi_program_loader import SpiProgramLoader, SCRATCH_0  # noqa: E402
 
 # Configure logging: include timestamp and level (matches chip_test.py).
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')

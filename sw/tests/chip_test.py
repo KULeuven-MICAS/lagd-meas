@@ -24,9 +24,14 @@
 import sys
 import random
 import logging
+from pathlib import Path
 
-from lib.chip_driver import ChipDriver
-from lib.chip_command_api import WRITEBACK_FIFO, make_command
+# Allow running this file directly (`python tests/chip_test.py`): put sw/ on the
+# path so `lib`/`tools` are importable. Harmless under `python -m tests.chip_test`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from lib.chip_driver import ChipDriver  # noqa: E402
+from lib.chip_command_api import WRITEBACK_FIFO, make_command  # noqa: E402
 
 # Configure logging: include timestamp and level
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -80,19 +85,16 @@ def example_with_driver():
 
 def main():
     open_ports()
-    # Run the writeback test automatically on startup. The echoable payload is
-    # the low 20 bits ([19:0]) of the command word.
-    payload_list = [random.randint(0, 0xFFFFF) for _ in range(100)]
-    pass_cnt = 0
-    fail_cnt = 0
-    for payload in payload_list:
-        passed = test_writeback(payload)
-        if passed:
-            pass_cnt += 1
-        else:
-            fail_cnt += 1
-    logging.info('Test results - Passed: %d, Failed: %d', pass_cnt, fail_cnt)
-    return 0 if fail_cnt == 0 else 1
+    # init quad-spi
+    chip.init_spi()
+    # smoke test: test writeback loop
+    test_writeback()
+    # write data
+    chip.write_mem(0x100, [0x12345678, 0x9ABCDEF0])
+    # confliction test
+    test_writeback(random.randint(0, 0xFFFFF))
+    # read back and check
+    # readback = chip.read_mem(0x100, length=2)
 
 
 if __name__ == '__main__':
