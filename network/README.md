@@ -1,0 +1,1 @@
+This folder contains scripts that are useful after the Xillinux is set up on the FPGA.
