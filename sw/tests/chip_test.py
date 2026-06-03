@@ -25,7 +25,6 @@
 import sys
 import random
 import logging
-import time
 from pathlib import Path
 
 # Allow running this file directly (`python tests/chip_test.py`): put sw/ on the
