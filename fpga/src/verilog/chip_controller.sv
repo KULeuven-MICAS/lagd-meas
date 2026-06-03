@@ -54,7 +54,10 @@ module chip_controller#(
         output logic [3:0] chip_sd_oe_o,
     // control signals to chip
     output logic clk_chip_o,
-    output logic chip_arst_no
+    output logic chip_arst_no,
+    // status / activity outputs (for LED indication)
+    output logic chip_clk_en_o,      // 1 = chip clock currently enabled
+    output logic chip_write_pulse_o  // 1-cycle pulse when a write transaction starts
   );
 
     typedef enum logic [3:0] {
@@ -150,8 +153,20 @@ module chip_controller#(
 
     assign chip_command.bitwise = cmd_word_r;
     assign chip_command_opcode  = chip_command.chip_burst.opcode; // same bits for all views
+
+    // DATA_WRITE_LOOPBACK behaves exactly like DATA_WRITE (real SPI write) but
+    // also mirrors each streamed data word into the output FIFO, so software can
+    // read back precisely what was sent. cmd_word_r holds the command for the
+    // whole transaction, so this view is valid throughout SPI_WRITE_STREAM.
+    wire write_is_loopback = (chip_command_opcode == DATA_WRITE_LOOPBACK);
     assign clk_chip_o = chip_clk_en_r ? clk_i : 1'b1;
     assign chip_arst_no = chip_rstn_r;
+
+    // Activity/status for LEDs. SPI_WRITE_START is a single-cycle state reached
+    // only by DATA_WRITE / DATA_WRITE_LOOPBACK (reads use SPI_READ_START), so it
+    // is a clean one-cycle "a chip write started" pulse.
+    assign chip_clk_en_o      = chip_clk_en_r;
+    assign chip_write_pulse_o = (state_current == SPI_WRITE_START);
 
     // ------------------------------------------------------------------
     // Streaming data path / handshake (combinational)
@@ -171,9 +186,16 @@ module chip_controller#(
             FETCH_DATA_ADDR: fifo_rd_ready = 1'b1; // pull the address word
 
             SPI_WRITE_STREAM: begin
-                spi_wdata       = fifo_rd_dout;
-                spi_wdata_valid = fifo_rd_valid;
-                fifo_rd_ready   = spi_wdata_ready; // dequeue exactly when master pulls
+                // Stream input FIFO -> SPI master. For DATA_WRITE_LOOPBACK, also
+                // echo each word into the output FIFO and only advance when it has
+                // room (!full), so no streamed word is ever dropped. The SPI master
+                // handshakes at word boundaries (waiting in Q_WRITE_FETCH), so a
+                // full output FIFO merely pauses SCK between words -- no data loss.
+                spi_wdata         = fifo_rd_dout;
+                spi_wdata_valid   = fifo_rd_valid   && (!write_is_loopback || !fifo_chip_full_i);
+                fifo_rd_ready     = spi_wdata_ready && (!write_is_loopback || !fifo_chip_full_i);
+                fifo_chip_din_o   = fifo_rd_dout;
+                fifo_chip_wr_en_o = write_is_loopback && fifo_rd_valid && spi_wdata_ready && !fifo_chip_full_i;
             end
 
             SPI_READ_STREAM: begin
@@ -241,7 +263,7 @@ module chip_controller#(
                             state_current   <= SPI_CFG_START;
                         end
 
-                        DATA_WRITE: begin
+                        DATA_WRITE, DATA_WRITE_LOOPBACK: begin
                             burst_len_r   <= chip_command.chip_burst.burst_length;
                             state_current <= FETCH_DATA_ADDR;
                         end
@@ -270,7 +292,8 @@ module chip_controller#(
                         if (burst_len_r == 16'd0) begin
                             // length 0 is a no-op (address word still consumed)
                             state_current <= IDLE;
-                        end else if (chip_command_opcode == DATA_WRITE) begin
+                        end else if (chip_command_opcode == DATA_WRITE ||
+                                     chip_command_opcode == DATA_WRITE_LOOPBACK) begin
                             spi_read_dir_o <= 1'b0;
                             spi_cmd_o      <= 8'h02; // SPI slave: write mem
                             state_current  <= SPI_WRITE_START;

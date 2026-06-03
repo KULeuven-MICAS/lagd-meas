@@ -20,8 +20,15 @@ from lib.chip_command_api import (
     cmd_config_spi_slave,
     cmd_config_clk_rst,
     cmd_write,
+    cmd_write_loopback,
     cmd_read,
 )
+
+# Depth of the FPGA-to-xillinux readback FIFO (fifo_dualport_32x512). A loopback
+# write echoes one word per data word; since verify_write_mem sends the whole
+# burst before draining, the burst must fit in this FIFO or the controller stalls
+# mid-burst waiting for software to drain it. Chunk longer data into <= this.
+READBACK_FIFO_DEPTH = 512
 
 
 class ChipDriver(PortDriver):
@@ -64,6 +71,44 @@ class ChipDriver(PortDriver):
         deadline = time.time() + timeout
         while len(out) < length and time.time() < deadline:
             word = self.rp.readInt()
+            if word is not None:
+                out.append(word)
+            else:
+                time.sleep(0.001)
+        return out
+
+    def verify_write_mem(self, addr: int, data_words: Union[int, List[int]],
+                         timeout: float = 0.5) -> List[int]:
+        """Loopback write: write a burst AND read back the controller's echo.
+
+        Sends a DATA_WRITE_LOOPBACK frame (a real SPI write) and drains the data
+        words the controller mirrors into the read FIFO. The returned list should
+        equal the words written, letting software confirm exactly what was
+        streamed onto the Quad-SPI bus:
+
+            sent = [0xDEAD, 0xBEEF]
+            assert chip.verify_write_mem(0x0, sent) == sent
+
+        Returns up to len(data_words) ints (fewer if the read times out). Because
+        the whole burst is sent before draining, it must fit in the readback FIFO
+        (READBACK_FIFO_DEPTH); longer bursts would stall the controller mid-burst.
+        """
+        if isinstance(data_words, int):
+            data_words = [data_words]
+        n = len(data_words)
+        if n > READBACK_FIFO_DEPTH:
+            raise ValueError(
+                f"verify_write_mem burst {n} exceeds readback FIFO depth "
+                f"{READBACK_FIFO_DEPTH}; split into smaller chunks"
+            )
+
+        self.rp.flushBuffer()
+        self._send_words(cmd_write_loopback(addr, data_words))
+
+        out = []  # type: List[int]
+        deadline = time.time() + timeout
+        while len(out) < n and time.time() < deadline:
+            word = self.read_word(timeout)
             if word is not None:
                 out.append(word)
             else:

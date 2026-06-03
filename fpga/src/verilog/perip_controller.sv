@@ -59,7 +59,9 @@ module perip_controller #(
     (* mark_debug = "true" *) output logic dac_csb_o,
     (* mark_debug = "true" *) output logic dac_sdi_o,
     (* mark_debug = "true" *) output logic dac_shdn_o,
-    (* mark_debug = "true" *) output logic dac_rstn_o
+    (* mark_debug = "true" *) output logic dac_rstn_o,
+    // activity output (for LED): 1-cycle pulse when a DAC write transfer is issued
+    output logic perip_write_pulse_o
 );
 
     typedef enum logic [1:0] {
@@ -71,6 +73,9 @@ module perip_controller #(
 
     (* mark_debug = "true" *) perip_state_t state_current;
     (* mark_debug = "true" *) logic [31:0] fifo_word_r;
+    // Set when the current DAC command should also echo its command word back
+    // (PERIP_OP_DAC_LOOPBACK): drives the DAC AND loops the word to the read FIFO.
+    (* mark_debug = "true" *) logic loopback_r;
 
     // Command decoded via typedef in perip_command_api.sv
     (* mark_debug = "true" *) perip_command_t fifo_cmd_r;
@@ -123,10 +128,15 @@ module perip_controller #(
     // cycle, so each command consumes exactly one FIFO word.
     assign fifo_rd_ready = (state_current == IDLE);
 
+    // dac_load_o pulses for one cycle exactly when a real DAC transfer is issued
+    // (writeback / invalid commands never set it), so it is the "perip write" event.
+    assign perip_write_pulse_o = dac_load_o;
+
     always_ff @(posedge clk_i or posedge rst_i) begin
         if (rst_i) begin
             state_current      <= IDLE;
             fifo_word_r        <= '0;
+            loopback_r         <= 1'b0;
             fifo_perip_wr_en_o <= 1'b0;
             fifo_perip_din_o   <= '0;
             dac_load_o         <= 1'b0;
@@ -148,11 +158,17 @@ module perip_controller #(
                     if (fifo_cmd_r.dac_config.marker != PERIP_CMD_MARKER) begin
                         state_current <= IDLE;  // not a command: ignore
                     end else if (fifo_cmd_r.dac_config.opcode == PERIP_OP_WRITEBACK) begin
+                        loopback_r    <= 1'b0;  // echo only, no DAC transaction
                         state_current <= WRITEBACK_WAIT;
                     end else begin
+                        // DAC transaction (plain OP_DAC, or DAC_LOOPBACK which also
+                        // echoes the command word once the transfer completes).
                         dac_load_o <= 1'b1;
+                        loopback_r <= (fifo_cmd_r.dac_config.opcode == PERIP_OP_DAC_LOOPBACK);
                         if (fifo_cmd_r.dac_config.rstn) begin
                             state_current <= DAC_WAIT;
+                        end else if (fifo_cmd_r.dac_config.opcode == PERIP_OP_DAC_LOOPBACK) begin
+                            state_current <= WRITEBACK_WAIT;  // reset skips SPI, still echo
                         end else begin
                             state_current <= IDLE;
                         end
@@ -169,7 +185,8 @@ module perip_controller #(
 
                 DAC_WAIT: begin
                     if (!dac_busy_o) begin
-                        state_current <= IDLE;
+                        // loopback writes echo the command word after the transfer
+                        state_current <= loopback_r ? WRITEBACK_WAIT : IDLE;
                     end
                 end
 

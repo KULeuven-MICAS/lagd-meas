@@ -21,21 +21,24 @@
 #
 #  opcode | operation        | SPI-slave command byte issued on the Quad-SPI bus
 #  -------+------------------+--------------------------------------------------
-#  0x00   | CONFIG_CLK_RST   | (local only, no SPI transaction)
-#  0x01   | CONFIG_SPI_SLAVE | SPI cmd 0x01 (write reg0, enable Quad-SPI)
-#  0x02   | DATA_WRITE       | SPI cmd 0x02 (write mem), burst_length words
-#  0x0B   | DATA_READ        | SPI cmd 0x0B (read mem),  burst_length words
-#  0xFF   | WRITEBACK_FIFO   | (local only, echoes the command word back)
+#  0x00   | CONFIG_CLK_RST     | (local only, no SPI transaction)
+#  0x01   | CONFIG_SPI_SLAVE   | SPI cmd 0x01 (write reg0, enable Quad-SPI)
+#  0x02   | DATA_WRITE         | SPI cmd 0x02 (write mem), burst_length words
+#  0x03   | DATA_WRITE_LOOPBACK| SPI cmd 0x02 (write mem) + echo each data word
+#         |                    |   into the readback FIFO (for SW verification)
+#  0x0B   | DATA_READ          | SPI cmd 0x0B (read mem),  burst_length words
+#  0xFF   | WRITEBACK_FIFO     | (local only, echoes the command word back)
 
 # Handshake marker: a 32-bit word is a command iff bits [31:28] == this value.
 CMD_MARKER = 0xF
 
 # Available OPCODEs (8b)
-CONFIG_CLK_RST   = 0x00  # Configure chip_clk and chip_rstn (local)
-CONFIG_SPI_SLAVE = 0x01  # Enable Quad-SPI on the slave (SPI cmd 0x01)
-DATA_WRITE       = 0x02  # Write burst_length words        (SPI cmd 0x02)
-DATA_READ        = 0x0B  # Read  burst_length words        (SPI cmd 0x0B)
-WRITEBACK_FIFO   = 0xFF  # Loop the command word back into the read FIFO (local)
+CONFIG_CLK_RST      = 0x00  # Configure chip_clk and chip_rstn (local)
+CONFIG_SPI_SLAVE    = 0x01  # Enable Quad-SPI on the slave (SPI cmd 0x01)
+DATA_WRITE          = 0x02  # Write burst_length words        (SPI cmd 0x02)
+DATA_WRITE_LOOPBACK = 0x03  # Like DATA_WRITE + echo each data word to read FIFO
+DATA_READ           = 0x0B  # Read  burst_length words        (SPI cmd 0x0B)
+WRITEBACK_FIFO      = 0xFF  # Loop the command word back into the read FIFO (local)
 
 # Field positions inside the 32-bit command word
 MARKER_SHIFT = 28
@@ -67,6 +70,22 @@ def cmd_config_spi_slave():
     return [make_command(CONFIG_SPI_SLAVE)]
 
 
+def _cmd_write_frame(opcode, addr, data_words):
+    """Build a (burst) write frame for DATA_WRITE / DATA_WRITE_LOOPBACK.
+
+    Frame: [command(len=N)] [start_addr] [data0] .. [data(N-1)]. The two write
+    opcodes share identical framing; only the opcode (and thus whether the
+    controller echoes the data back) differs.
+    """
+    if isinstance(data_words, int):
+        data_words = [data_words]
+    n = len(data_words)
+    if not (1 <= n <= MAX_BURST_LEN):
+        raise ValueError(f"write length {n} out of range 1..{MAX_BURST_LEN}")
+    return [make_command(opcode, n), addr & 0xFFFFFFFF] \
+         + [d & 0xFFFFFFFF for d in data_words]
+
+
 def cmd_write(addr, data_words):
     """Word list for a (burst) memory write.
 
@@ -75,13 +94,17 @@ def cmd_write(addr, data_words):
     addresses (start_addr, start_addr+4, ...). data_words may be a single int
     or a list of ints.
     """
-    if isinstance(data_words, int):
-        data_words = [data_words]
-    n = len(data_words)
-    if not (1 <= n <= MAX_BURST_LEN):
-        raise ValueError(f"write length {n} out of range 1..{MAX_BURST_LEN}")
-    return [make_command(DATA_WRITE, n), addr & 0xFFFFFFFF] \
-         + [d & 0xFFFFFFFF for d in data_words]
+    return _cmd_write_frame(DATA_WRITE, addr, data_words)
+
+
+def cmd_write_loopback(addr, data_words):
+    """Word list for a (burst) write that also echoes its data back.
+
+    Same framing as cmd_write but with the DATA_WRITE_LOOPBACK opcode: the
+    controller performs the real SPI write AND mirrors each data word into the
+    read FIFO, so software can confirm exactly what was streamed onto the bus.
+    """
+    return _cmd_write_frame(DATA_WRITE_LOOPBACK, addr, data_words)
 
 
 def cmd_read(addr, length=1):

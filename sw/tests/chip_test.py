@@ -15,6 +15,7 @@
 #   chip.config_clk_rst(en, rstn)   # drive chip_clk_en / chip_rstn
 #   chip.write_mem(addr, data)      # single or burst write (data: int or list)
 #   chip.read_mem(addr, length)     # single or burst read -> list of ints
+#   chip.verify_write_mem(addr, d)  # write + echo data back for verification
 #   chip.writeback(payload)         # loopback self-test primitive
 #
 # Running this file directly executes the writeback stress test (see main()).
@@ -24,6 +25,7 @@
 import sys
 import random
 import logging
+import time
 from pathlib import Path
 
 # Allow running this file directly (`python tests/chip_test.py`): put sw/ on the
@@ -72,6 +74,27 @@ def test_writeback(payload=0xADBEE):
         return False
 
 
+def test_verify_write_mem(addr=0x200, data=None):
+    """Loopback-write a burst and check every echoed word matches what was sent.
+
+    Uses DATA_WRITE_LOOPBACK: the controller performs the real SPI write AND
+    mirrors each data word into the read FIFO, so the returned list should equal
+    the words sent. This confirms exactly what was streamed onto the Quad-SPI bus.
+    """
+    if data is None:
+        data = [0xC0DE0000 + i for i in range(4)]
+    received = chip.verify_write_mem(addr, data)
+    if received == data:
+        logging.info('PASS: verify_write_mem echoed %d words at 0x%08X', len(data), addr)
+        logging.debug('      Sent: %s', [hex(d) for d in data])
+        logging.debug('      Received: %s', [hex(r) for r in received])
+        return True
+    else:
+        logging.error('FAIL: verify_write_mem at 0x%08X: sent %s, received %s',
+                      addr, [hex(d) for d in data], [hex(r) for r in received])
+        return False
+
+
 def example_with_driver():
     """Reference example: drive the chip via ChipDriver as a context manager."""
     with ChipDriver(WRITE_DEV, READ_DEV) as chip:
@@ -85,14 +108,16 @@ def example_with_driver():
 
 def main():
     open_ports()
+    # config clock and reset
+    chip.config_clk_rst(chip_clk_en=1, chip_rstn=1)
     # init quad-spi
     chip.init_spi()
     # smoke test: test writeback loop
     test_writeback()
     # write data
-    chip.write_mem(0x100, [0x12345678, 0x9ABCDEF0])
-    # confliction test
-    test_writeback(random.randint(0, 0xFFFFF))
+    # chip.write_mem(0x100, [0x12345678, 0x9ABCDEF0])
+    # loopback-write check: data is echoed back for verification
+    test_verify_write_mem(0x200, [random.randint(0, 0xFFFFFFFF) for _ in range(10)])
     # read back and check
     # readback = chip.read_mem(0x100, length=2)
 

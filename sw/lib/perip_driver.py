@@ -21,6 +21,7 @@ from lib.perip_command_api import (
     OP_WRITEBACK,
     make_command,
     cmd_dac_write,
+    cmd_dac_write_loopback,
     cmd_dac_reset,
 )
 
@@ -70,6 +71,26 @@ class PeripDriver(PortDriver):
         self._send_words(cmd_dac_write(addr, data, rstn, shdn))
         if 0 <= addr < DAC_NUM_CHANNELS:
             self._codes[addr] = data & 0xFF
+
+    def verify_dac_write(self, addr: int, data: int, rstn: int = 1,
+                         shdn: int = 1) -> Optional[int]:
+        """DAC write that echoes its command word back; return the echoed word.
+
+        Performs the real DAC transfer (like dac_write) AND loops the command word
+        into the read FIFO, so the returned value should equal the command sent:
+
+            cmd = make_command(OP_DAC_LOOPBACK, ...)   # what was sent
+            assert dac.verify_dac_write(addr, data) == cmd
+
+        The AD8802 has no readback line, so this confirms the *command path* (the
+        controller received and decoded exactly this {rstn,shdn,addr,data}), not
+        the analog output. Returns None if no word came back within the timeout.
+        """
+        command_word = cmd_dac_write_loopback(addr, data, rstn, shdn)[0]
+        echoed = self._loopback(command_word)
+        if 0 <= addr < DAC_NUM_CHANNELS:
+            self._codes[addr] = data & 0xFF
+        return echoed
 
     def dac_reset(self, shdn: int = 1) -> None:
         """Assert the hardware reset (drives dac_rstn low): all registers preset to

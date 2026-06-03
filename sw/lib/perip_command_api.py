@@ -15,7 +15,8 @@
 # Command word layout (only valid when marker == 0xF):
 #   [31:28] marker : 0xF   ("this word is a command"; any other value is ignored)
 #   [27:20] opcode : 0xFF -> writeback (echo the word to the read FIFO, no SPI);
-#                    any other value -> perform a DAC transaction
+#                    0x03 -> DAC transaction + echo the command word back;
+#                    any other value -> perform a DAC transaction (no echo)
 #   [19:14] reserved
 #   [13]    rstn   : DAC reset (active low). 0 holds dac_rstn low and skips SPI.
 #   [12]    shdn   : DAC shutdown (active low)
@@ -25,9 +26,10 @@
 from typing import List
 
 # Handshake marker and opcodes (mirror perip_command_api.sv / chip values).
-CMD_MARKER   = 0xF
-OP_DAC       = 0x00  # any opcode other than WRITEBACK performs a DAC transaction
-OP_WRITEBACK = 0xFF  # echo the command word back into the read FIFO (local)
+CMD_MARKER       = 0xF
+OP_DAC           = 0x00  # any opcode other than WRITEBACK performs a DAC transaction
+OP_DAC_LOOPBACK  = 0x03  # DAC transaction + echo the command word back into read FIFO
+OP_WRITEBACK     = 0xFF  # echo the command word back into the read FIFO (no SPI)
 
 # Field positions inside the 32-bit command word.
 MARKER_SHIFT = 28
@@ -48,15 +50,30 @@ def make_command(opcode, payload=0) -> int:
          | (payload & 0x000FFFFF)
 
 
+def _dac_payload(addr, data, rstn, shdn) -> int:
+    """Assemble the 20-bit DAC payload shared by the plain and loopback writes."""
+    return ((rstn & 1) << RSTN_BIT) | ((shdn & 1) << SHDN_BIT) \
+         | ((addr & 0xF) << ADDR_SHIFT) | (data & 0xFF)
+
+
 def cmd_dac_write(addr, data, rstn=1, shdn=1) -> List[int]:
     """Word list for one DAC register write (a 12-bit {addr, data} load).
 
     rstn / shdn are the active-low control bits (default 1 = normal operation).
     Driving rstn=0 instead holds the DAC in reset and performs no SPI transfer.
     """
-    payload = ((rstn & 1) << RSTN_BIT) | ((shdn & 1) << SHDN_BIT) \
-            | ((addr & 0xF) << ADDR_SHIFT) | (data & 0xFF)
-    return [make_command(OP_DAC, payload)]
+    return [make_command(OP_DAC, _dac_payload(addr, data, rstn, shdn))]
+
+
+def cmd_dac_write_loopback(addr, data, rstn=1, shdn=1) -> List[int]:
+    """Word list for a DAC write that also echoes its command word back.
+
+    Same framing as cmd_dac_write but with opcode OP_DAC_LOOPBACK: the controller
+    performs the real DAC transfer AND loops the exact command word into the read
+    FIFO. Since the AD8802 has no readback, this confirms the controller received
+    and decoded exactly this command -- the strongest available digital check.
+    """
+    return [make_command(OP_DAC_LOOPBACK, _dac_payload(addr, data, rstn, shdn))]
 
 
 def cmd_dac_reset(shdn=1) -> List[int]:

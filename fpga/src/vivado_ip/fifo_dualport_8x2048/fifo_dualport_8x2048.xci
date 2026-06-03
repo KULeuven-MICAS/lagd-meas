@@ -3,7 +3,7 @@
   "ip_inst": {
     "xci_name": "fifo_dualport_8x2048",
     "component_reference": "xilinx.com:ip:fifo_generator:13.2",
-    "ip_revision": "9",
+    "ip_revision": "14",
     "gen_directory": ".",
     "parameters": {
       "component_parameters": {
@@ -17,12 +17,12 @@
         "Input_Data_Width": [ { "value": "8", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "Input_Depth": [ { "value": "2048", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
         "Output_Data_Width": [ { "value": "8", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
-        "Output_Depth": [ { "value": "2048", "value_src": "user", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
+        "Output_Depth": [ { "value": "2048", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "Enable_ECC": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "Use_Embedded_Registers": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "Reset_Pin": [ { "value": "true", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "Enable_Reset_Synchronization": [ { "value": "true", "resolve_type": "user", "format": "bool", "usage": "all" } ],
-        "Reset_Type": [ { "value": "Asynchronous_Reset", "value_src": "user", "resolve_type": "user", "enabled": false, "usage": "all" } ],
+        "Reset_Type": [ { "value": "Asynchronous_Reset", "resolve_type": "user", "enabled": false, "usage": "all" } ],
         "Full_Flags_Reset_Value": [ { "value": "1", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
         "Use_Dout_Reset": [ { "value": "true", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "Dout_Reset_Value": [ { "value": "0", "resolve_type": "user", "usage": "all" } ],
@@ -42,17 +42,17 @@
         "ecc_pipeline_reg": [ { "value": "false", "resolve_type": "user", "format": "bool", "enabled": false, "usage": "all" } ],
         "Use_Extra_Logic": [ { "value": "false", "resolve_type": "user", "format": "bool", "enabled": false, "usage": "all" } ],
         "Data_Count": [ { "value": "false", "resolve_type": "user", "format": "bool", "enabled": false, "usage": "all" } ],
-        "Data_Count_Width": [ { "value": "11", "value_src": "user", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
+        "Data_Count_Width": [ { "value": "11", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "Write_Data_Count": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
-        "Write_Data_Count_Width": [ { "value": "11", "value_src": "user", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
+        "Write_Data_Count_Width": [ { "value": "11", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "Read_Data_Count": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
-        "Read_Data_Count_Width": [ { "value": "11", "value_src": "user", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
+        "Read_Data_Count_Width": [ { "value": "11", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "Disable_Timing_Violations": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "Read_Clock_Frequency": [ { "value": "1", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "Write_Clock_Frequency": [ { "value": "1", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "Programmable_Full_Type": [ { "value": "No_Programmable_Full_Threshold", "resolve_type": "user", "usage": "all" } ],
-        "Full_Threshold_Assert_Value": [ { "value": "2045", "value_src": "user", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
-        "Full_Threshold_Negate_Value": [ { "value": "2044", "value_src": "user", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
+        "Full_Threshold_Assert_Value": [ { "value": "2045", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
+        "Full_Threshold_Negate_Value": [ { "value": "2044", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "Programmable_Empty_Type": [ { "value": "No_Programmable_Empty_Threshold", "resolve_type": "user", "usage": "all" } ],
         "Empty_Threshold_Assert_Value": [ { "value": "2", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "Empty_Threshold_Negate_Value": [ { "value": "3", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
@@ -76,9 +76,9 @@
         "Enable_TREADY": [ { "value": "true", "resolve_type": "user", "format": "bool", "enabled": false, "usage": "all" } ],
         "Enable_TLAST": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "HAS_TSTRB": [ { "value": "false", "resolve_type": "user", "format": "bool", "enabled": false, "usage": "all" } ],
-        "TSTRB_WIDTH": [ { "value": "0", "value_src": "user", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
+        "TSTRB_WIDTH": [ { "value": "0", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "HAS_TKEEP": [ { "value": "false", "resolve_type": "user", "format": "bool", "enabled": false, "usage": "all" } ],
-        "TKEEP_WIDTH": [ { "value": "0", "value_src": "user", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
+        "TKEEP_WIDTH": [ { "value": "0", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "wach_type": [ { "value": "FIFO", "resolve_type": "user", "usage": "all" } ],
         "FIFO_Implementation_wach": [ { "value": "Common_Clock_Distributed_RAM", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
         "FIFO_Application_Type_wach": [ { "value": "Data_FIFO", "resolve_type": "user", "usage": "all" } ],
@@ -172,7 +172,7 @@
         "Master_interface_Clock_enable_memory_mapped": [ { "value": "false", "resolve_type": "user", "format": "bool", "enabled": false, "usage": "all" } ],
         "Slave_interface_Clock_enable_memory_mapped": [ { "value": "false", "resolve_type": "user", "format": "bool", "enabled": false, "usage": "all" } ],
         "Output_Register_Type": [ { "value": "Embedded_Reg", "resolve_type": "user", "enabled": false, "usage": "all" } ],
-        "Enable_Safety_Circuit": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
+        "Enable_Safety_Circuit": [ { "value": "true", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "Enable_ECC_Type": [ { "value": "Hard_ECC", "resolve_type": "user", "enabled": false, "usage": "all" } ],
         "C_SELECT_XPM": [ { "value": "0", "resolve_type": "user", "format": "long", "usage": "all" } ]
       },
@@ -240,7 +240,7 @@
         "C_WR_RESPONSE_LATENCY": [ { "value": "1", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_MSGON_VAL": [ { "value": "1", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_ENABLE_RST_SYNC": [ { "value": "1", "resolve_type": "generated", "format": "long", "usage": "all" } ],
-        "C_EN_SAFETY_CKT": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
+        "C_EN_SAFETY_CKT": [ { "value": "1", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_ERROR_INJECTION_TYPE": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_SYNCHRONIZER_STAGE": [ { "value": "2", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_INTERFACE_TYPE": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
@@ -381,28 +381,26 @@
         "C_REG_SLICE_MODE_AXIS": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ]
       },
       "project_parameters": {
-        "ARCHITECTURE": [ { "value": "zynq" } ],
-        "BASE_BOARD_PART": [ { "value": "" } ],
-        "BOARD_CONNECTIONS": [ { "value": "" } ],
-        "DEVICE": [ { "value": "xc7z020" } ],
-        "PACKAGE": [ { "value": "clg484" } ],
-        "PREFHDL": [ { "value": "VERILOG" } ],
-        "SILICON_REVISION": [ { "value": "" } ],
-        "SIMULATOR_LANGUAGE": [ { "value": "MIXED" } ],
-        "SPEEDGRADE": [ { "value": "-1" } ],
-        "STATIC_POWER": [ { "value": "" } ],
-        "TEMPERATURE_GRADE": [ { "value": "" } ],
-        "USE_RDI_CUSTOMIZATION": [ { "value": "TRUE" } ],
-        "USE_RDI_GENERATION": [ { "value": "TRUE" } ]
+        "ARCHITECTURE": [ { "value": "zynq", "resolve_type": "generated", "usage": "all" } ],
+        "BASE_BOARD_PART": [ { "value": "", "resolve_type": "generated", "usage": "all" } ],
+        "BOARD_CONNECTIONS": [ { "value": "", "resolve_type": "generated", "usage": "all" } ],
+        "DEVICE": [ { "value": "xc7z020", "resolve_type": "generated", "usage": "all" } ],
+        "PACKAGE": [ { "value": "clg484", "resolve_type": "generated", "usage": "all" } ],
+        "PREFHDL": [ { "value": "VERILOG", "resolve_type": "generated", "usage": "all" } ],
+        "SILICON_REVISION": [ { "value": "", "resolve_type": "generated", "usage": "all" } ],
+        "SIMULATOR_LANGUAGE": [ { "value": "MIXED", "resolve_type": "generated", "usage": "all" } ],
+        "SPEEDGRADE": [ { "value": "-1", "resolve_type": "generated", "usage": "all" } ],
+        "STATIC_POWER": [ { "value": "", "resolve_type": "generated", "usage": "all" } ],
+        "TEMPERATURE_GRADE": [ { "value": "", "resolve_type": "generated", "usage": "all" } ]
       },
       "runtime_parameters": {
         "IPCONTEXT": [ { "value": "IP_Flow" } ],
-        "IPREVISION": [ { "value": "9" } ],
+        "IPREVISION": [ { "value": "14" } ],
         "MANAGED": [ { "value": "TRUE" } ],
         "OUTPUTDIR": [ { "value": "." } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "." } ],
-        "SWVERSION": [ { "value": "2023.2.2" } ],
+        "SWVERSION": [ { "value": "2025.2" } ],
         "SYNTHESISFLOW": [ { "value": "OUT_OF_CONTEXT" } ]
       }
     },
@@ -416,7 +414,9 @@
         "rd_en": [ { "direction": "in", "driver_value": "0" } ],
         "dout": [ { "direction": "out", "size_left": "7", "size_right": "0", "driver_value": "0" } ],
         "full": [ { "direction": "out", "driver_value": "0x0" } ],
-        "empty": [ { "direction": "out", "driver_value": "0x1" } ]
+        "empty": [ { "direction": "out", "driver_value": "0x1" } ],
+        "wr_rst_busy": [ { "direction": "out", "driver_value": "0" } ],
+        "rd_rst_busy": [ { "direction": "out", "driver_value": "0" } ]
       },
       "interfaces": {
         "write_clk": {
@@ -477,5 +477,6 @@
         }
       }
     }
-  }
+  },
+  "checksum": "d821d7d4"
 }

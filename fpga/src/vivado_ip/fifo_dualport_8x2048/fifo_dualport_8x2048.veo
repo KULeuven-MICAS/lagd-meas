@@ -47,7 +47,7 @@
 // DO NOT MODIFY THIS FILE.
 
 // IP VLNV: xilinx.com:ip:fifo_generator:13.2
-// IP Revision: 9
+// IP Revision: 14
 
 // The following must be inserted into your Verilog file for this
 // core to be instantiated. Change the instance name and port connections
@@ -55,15 +55,17 @@
 
 //----------- Begin Cut here for INSTANTIATION Template ---// INST_TAG
 fifo_dualport_8x2048 your_instance_name (
-  .rst(rst),        // input wire rst
-  .wr_clk(wr_clk),  // input wire wr_clk
-  .rd_clk(rd_clk),  // input wire rd_clk
-  .din(din),        // input wire [7 : 0] din
-  .wr_en(wr_en),    // input wire wr_en
-  .rd_en(rd_en),    // input wire rd_en
-  .dout(dout),      // output wire [7 : 0] dout
-  .full(full),      // output wire full
-  .empty(empty)    // output wire empty
+  .rst(rst),                  // input wire rst
+  .wr_clk(wr_clk),            // input wire wr_clk
+  .rd_clk(rd_clk),            // input wire rd_clk
+  .din(din),                  // input wire [7 : 0] din
+  .wr_en(wr_en),              // input wire wr_en
+  .rd_en(rd_en),              // input wire rd_en
+  .dout(dout),                // output wire [7 : 0] dout
+  .full(full),                // output wire full
+  .empty(empty),              // output wire empty
+  .wr_rst_busy(wr_rst_busy),  // output wire wr_rst_busy
+  .rd_rst_busy(rd_rst_busy)  // output wire rd_rst_busy
 );
 // INST_TAG_END ------ End INSTANTIATION Template ---------
 

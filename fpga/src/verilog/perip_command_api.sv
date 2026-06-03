@@ -15,16 +15,18 @@
 // Command word layout (only valid when marker == 0xF):
 //   [31:28] marker : 0xF  ("this word is a command"; any other value is ignored)
 //   [27:20] opcode : 0xFF -> writeback (echo the word to the read FIFO, no SPI);
-//                    any other value -> perform a DAC transaction
+//                    0x03 -> DAC transaction + echo the command word back;
+//                    any other value -> perform a DAC transaction (no echo)
 //   [19:14] reserved
 //   [13]    rstn   : DAC reset (active low). 0 holds dac_rstn low and skips SPI.
 //   [12]    shdn   : DAC shutdown (active low)
 //   [11:8]  addr   : 4-bit DAC register address
 //   [7:0]   data   : 8-bit register data
 
-// Handshake marker and writeback opcode (mirror chip_command_api values).
-localparam bit [3:0] PERIP_CMD_MARKER   = 4'hF;
-localparam bit [7:0] PERIP_OP_WRITEBACK = 8'hFF;
+// Handshake marker and opcodes (mirror chip_command_api values).
+localparam bit [3:0] PERIP_CMD_MARKER      = 4'hF;
+localparam bit [7:0] PERIP_OP_DAC_LOOPBACK = 8'h03;  // DAC write + echo command word
+localparam bit [7:0] PERIP_OP_WRITEBACK    = 8'hFF;  // echo command word only (no SPI)
 
 // perip_command packet structure, always needs to be 32b wide!
 typedef struct packed {

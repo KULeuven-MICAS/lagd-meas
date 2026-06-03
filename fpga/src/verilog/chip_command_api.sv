@@ -20,11 +20,13 @@
 //
 //  opcode | operation        | SPI-slave command byte issued on the Quad-SPI bus
 //  -------+------------------+--------------------------------------------------
-//  0x00   | CONFIG_CLK_RST   | (local only, no SPI transaction)
-//  0x01   | CONFIG_SPI_SLAVE | SPI cmd 0x01 (write reg0, enable Quad-SPI)
-//  0x02   | DATA_WRITE       | SPI cmd 0x02 (write mem), burst_length words
-//  0x0B   | DATA_READ        | SPI cmd 0x0B (read mem),  burst_length words
-//  0xFF   | WRITEBACK_FIFO   | (local only, echoes the command word back)
+//  0x00   | CONFIG_CLK_RST     | (local only, no SPI transaction)
+//  0x01   | CONFIG_SPI_SLAVE   | SPI cmd 0x01 (write reg0, enable Quad-SPI)
+//  0x02   | DATA_WRITE         | SPI cmd 0x02 (write mem), burst_length words
+//  0x03   | DATA_WRITE_LOOPBACK| SPI cmd 0x02 (write mem) + echo each data word
+//         |                    |   into the readback FIFO (for SW verification)
+//  0x0B   | DATA_READ          | SPI cmd 0x0B (read mem),  burst_length words
+//  0xFF   | WRITEBACK_FIFO     | (local only, echoes the command word back)
 //
 // Notes:
 //   * DATA_WRITE / DATA_READ carry a 16-bit burst_length = number of 32-bit
@@ -37,11 +39,13 @@
 
 // OPCODE
 enum bit [7:0] {
-    CONFIG_CLK_RST   = 8'h00,  // Configure chip_clk and chip_rstn (local)
-    CONFIG_SPI_SLAVE = 8'h01,  // Enable Quad-SPI on the slave (SPI cmd 0x01)
-    DATA_WRITE       = 8'h02,  // Write burst_length words      (SPI cmd 0x02)
-    DATA_READ        = 8'h0B,  // Read  burst_length words      (SPI cmd 0x0B)
-    WRITEBACK_FIFO   = 8'hFF   // Echo command word to readback FIFO (local)
+    CONFIG_CLK_RST      = 8'h00,  // Configure chip_clk and chip_rstn (local)
+    CONFIG_SPI_SLAVE    = 8'h01,  // Enable Quad-SPI on the slave (SPI cmd 0x01)
+    DATA_WRITE          = 8'h02,  // Write burst_length words      (SPI cmd 0x02)
+    DATA_WRITE_LOOPBACK = 8'h03,  // Like DATA_WRITE (SPI cmd 0x02) + echo each
+                                  //   data word into the readback FIFO
+    DATA_READ           = 8'h0B,  // Read  burst_length words      (SPI cmd 0x0B)
+    WRITEBACK_FIFO      = 8'hFF   // Echo command word to readback FIFO (local)
 } e_chip_opcode;
 
 // Handshake marker: a 32-bit word is a command iff bits [31:28] == this value.

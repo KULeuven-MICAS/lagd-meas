@@ -181,6 +181,22 @@ module tb_chip_controller;
         wait_idle();
     endtask
 
+    // DATA_WRITE_LOOPBACK: identical framing to do_write, but the controller also
+    // echoes each data word into the output FIFO. Pop and check every echoed word
+    // matches what was sent (the actual write into slave memory is confirmed by a
+    // follow-up do_read in the test body).
+    task automatic do_write_loopback(input logic [31:0] addr, input logic [31:0] data []);
+        logic [31:0] got;
+        push_word(make_cmd(DATA_WRITE_LOOPBACK, data.size()));
+        push_word(addr);
+        foreach (data[i]) push_word(data[i]);
+        foreach (data[i]) begin
+            get_out(got);
+            check_eq($sformatf("wb echo[%0d]", i), got, data[i]);
+        end
+        wait_idle();
+    endtask
+
     task automatic do_read(input logic [31:0] addr, input int n, output logic [31:0] res []);
         res = new[n];
         push_word(make_cmd(DATA_READ, n[19:0]));
@@ -267,6 +283,27 @@ module tb_chip_controller;
         $display("=== Test 7: marker drop ===");
         push_word(32'h1234_5678);           // top nibble != 0xF -> dropped
         do_writeback(20'h0BEEF);            // must still loop back correctly
+
+        // ---- 8. write loopback: each data word echoed AND really written ----
+        $display("=== Test 8: write loopback ===");
+        wdata = new[4];
+        foreach (wdata[i]) wdata[i] = 32'hC0DE0000 + i;
+        do_write_loopback(32'h0000_0300, wdata);  // checks the echoed words
+        do_read(32'h0000_0300, 4, rdata);         // confirm data actually landed
+        foreach (rdata[i])
+            check_eq($sformatf("wb data[%0d]", i), rdata[i], wdata[i]);
+
+        // ---- 9. write loopback under output-FIFO backpressure ----
+        //   exercises the !full gating: the echo must pause (not drop) when full.
+        $display("=== Test 9: write loopback with backpressure ===");
+        wdata = new[12];
+        foreach (wdata[i]) wdata[i] = 32'hD0000000 + (i << 8);
+        stress_full = 1'b1;                 // randomly assert output-FIFO full
+        do_write_loopback(32'h0000_0400, wdata);
+        stress_full = 1'b0;
+        do_read(32'h0000_0400, 12, rdata);
+        foreach (rdata[i])
+            check_eq($sformatf("wb bp data[%0d]", i), rdata[i], wdata[i]);
 
         // ---- summary ----
         repeat (10) @(posedge clk);

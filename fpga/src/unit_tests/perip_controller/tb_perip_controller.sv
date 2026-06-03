@@ -162,6 +162,21 @@ module tb_perip_controller;
         check_eq("dac_rstn",  {31'h0, dac_rstn}, 32'h1);
     endtask
 
+    // DAC loopback (PERIP_OP_DAC_LOOPBACK): a real DAC write that ALSO echoes its
+    // command word back. Check both: the echoed word matches, and the DAC model
+    // actually received the data (so the write truly happened, not just the echo).
+    task automatic do_dac_write_loopback(input logic [3:0] addr, input logic [7:0] data,
+                                         input logic shdn = 1'b1);
+        logic [31:0] cmd_word, got;
+        cmd_word = make_dac_cmd(PERIP_OP_DAC_LOOPBACK, 1'b1, shdn, addr, data);
+        push_word(cmd_word);
+        get_out(got);                              // echo arrives after the DAC transfer
+        check_eq("dac lb echo", got, cmd_word);
+        wait_idle();
+        check_eq($sformatf("dac lb mem[%0d]", addr), {24'h0, i_dac.mem[addr]}, {24'h0, data});
+        check_eq("dac lb shdn", {31'h0, dac_shdn}, {31'h0, shdn});
+    endtask
+
     task automatic do_writeback(input logic [19:0] payload);
         logic [31:0] cmd_word, got;
         cmd_word = make_wb_cmd(payload);
@@ -292,6 +307,11 @@ module tb_perip_controller;
         // ---- 9. recover from reset and write again ----
         $display("=== Test 9: write after reset ===");
         do_dac_write(4'd9, 8'hC3);              // rstn=1 in this command restores RS_N
+
+        // ---- 10. DAC write loopback: real write AND command word echoed back ----
+        $display("=== Test 10: DAC write loopback ===");
+        do_dac_write_loopback(4'd3, 8'h5A);
+        do_dac_write_loopback(4'd10, 8'hC7, 1'b0);   // also exercise shdn = 0
 
         // ---- summary ----
         repeat (10) @(posedge clk);

@@ -403,6 +403,14 @@ module xillydemo
   wire [3:0] chip_sdo;
   wire [3:0] chip_sd_oe;
 
+  // LED activity/status signals (see user_led assignment near the FIFOs below)
+  wire chip_clk_en;        // chip clock enabled (from chip_controller)
+  wire chip_write_pulse;   // 1-cycle pulse when a chip write starts
+  wire perip_write_pulse;  // 1-cycle pulse when a perip (DAC) write is issued
+  wire chip_write_led;     // chip_write_pulse stretched to ~1 s
+  wire perip_write_led;    // perip_write_pulse stretched to ~1 s
+  reg  heartbeat_led;      // ~1 Hz blink from clk_100
+
   ///////////////////////////////
   ////    CLOCKS + RESET     ////
   ///////////////////////////////
@@ -478,6 +486,24 @@ module xillydemo
   end
 
   assign chip_rtc_o = rtc_clk;
+
+  ///////////////////////////////
+  ////    HEARTBEAT (LED)    ////
+  ///////////////////////////////
+  // ~1 Hz blink divided from clk_100, to show at a glance that the bitstream is
+  // loaded and the clock is running. Toggle every CLK_HZ/2 cycles.
+  localparam integer HEARTBEAT_HALF = 100_000_000 / 2; // = 50e6 -> 1 Hz toggle
+  reg [25:0] heartbeat_cnt = 26'd0;
+
+  initial heartbeat_led = 1'b0;
+  always @(posedge clk_100) begin
+    if (heartbeat_cnt == HEARTBEAT_HALF - 1) begin
+      heartbeat_cnt <= 26'd0;
+      heartbeat_led <= ~heartbeat_led;
+    end else begin
+      heartbeat_cnt <= heartbeat_cnt + 26'd1;
+    end
+  end
 
   ///////////////////////////////////////
   ////    XILLINUX <-> FPGA FIFOs    ////
@@ -562,11 +588,30 @@ module xillydemo
 
   assign  user_r_read_32_2_eof = 0;
 
-  // LED indication of FIFO status
-  assign user_led[0] = fifo_chip_empty; // debug: LED on when chip_xillinux_to_fpga FIFO is empty
-  assign user_led[1] = user_r_read_32_empty; // debug: LED on when chip_fpga_to_xillinux FIFO is empty
-  assign user_led[2] = fifo_perip_empty; // debug: LED on when perip_xillinux_to_fpga FIFO is empty
-  assign user_led[3] = user_r_read_32_2_empty; // debug: LED on when perip_fpga_to_xillinux FIFO is empty
+  // LED indication (user_led[3:0] = board LD[7:4])
+  //   LD4: ~1 Hz heartbeat from clk_100  -> bitstream alive / clock running
+  //   LD5: chip clock enabled            -> chip_clk_en
+  //   LD6: chip write activity (~1 s)    -> write_mem / verify_write_mem (not read)
+  //   LD7: perip write activity (~1 s)   -> DAC write (not writeback/read)
+  // The two activity LEDs stretch a single-cycle event to ~1 s so it is visible.
+  pulse_stretch #(.STRETCH_CYCLES(100_000_000)) chip_write_blink (
+    .clk_i   (clk_chip_ctrl   ),
+    .rst_i   (rst_chip_ctrl   ),
+    .pulse_i (chip_write_pulse ),
+    .level_o (chip_write_led  )
+  );
+
+  pulse_stretch #(.STRETCH_CYCLES(100_000_000)) perip_write_blink (
+    .clk_i   (clk_perip_ctrl   ),
+    .rst_i   (rst_perip_ctrl   ),
+    .pulse_i (perip_write_pulse ),
+    .level_o (perip_write_led  )
+  );
+
+  assign user_led[0] = heartbeat_led;
+  assign user_led[1] = chip_clk_en;
+  assign user_led[2] = chip_write_led;
+  assign user_led[3] = perip_write_led;
 
   // 8-BIT FIFO
   //  can be used for uart
@@ -617,8 +662,11 @@ module xillydemo
     .chip_sd_o         (chip_sdo       ),
     .chip_sd_oe_o      (chip_sd_oe     ),
     // control signals to chip
-    .clk_chip_o        (clk_chip_o     ),
-    .chip_arst_no      (chip_arst_no   )
+    .clk_chip_o        (clk_chip_o      ),
+    .chip_arst_no      (chip_arst_no    ),
+    // status / activity for LEDs
+    .chip_clk_en_o     (chip_clk_en     ),
+    .chip_write_pulse_o(chip_write_pulse)
   );
 
   // Controller for peripheral DAC (single-port SPI)
@@ -626,23 +674,25 @@ module xillydemo
   wire perip_dac_rstn;
 
   perip_controller #(
-    .CLK_HZ             (CLK_HZ          ),
-    .SCK_HZ             (SCK_HZ          ),
-    .CSB_HOLD_CYCLES    (CSB_HOLD_CYCLES )
+    .CLK_HZ             (CLK_HZ            ),
+    .SCK_HZ             (SCK_HZ            ),
+    .CSB_HOLD_CYCLES    (CSB_HOLD_CYCLES   )
   ) perip_controller_inst (
-    .clk_i              (clk_perip_ctrl  ),
-    .rst_i              (rst_perip_ctrl  ),
-    .fifo_perip_rd_en_o (fifo_perip_rd_en),
-    .fifo_perip_empty_i (fifo_perip_empty),
-    .fifo_perip_dout_i  (fifo_perip_dout ),
-    .fifo_perip_wr_en_o (fifo_perip_wr_en),
-    .fifo_perip_full_i  (fifo_perip_full ),
-    .fifo_perip_din_o   (fifo_perip_din  ),
-    .dac_clk_o          (dac_sclk_o      ),
-    .dac_csb_o          (dac_csb_o       ),
-    .dac_sdi_o          (dac_sdin_o      ),
-    .dac_shdn_o         (dac_shdn_o      ),
-    .dac_rstn_o         (dac_rstn_o      )
+    .clk_i              (clk_perip_ctrl    ),
+    .rst_i              (rst_perip_ctrl    ),
+    .fifo_perip_rd_en_o (fifo_perip_rd_en  ),
+    .fifo_perip_empty_i (fifo_perip_empty  ),
+    .fifo_perip_dout_i  (fifo_perip_dout   ),
+    .fifo_perip_wr_en_o (fifo_perip_wr_en  ),
+    .fifo_perip_full_i  (fifo_perip_full   ),
+    .fifo_perip_din_o   (fifo_perip_din    ),
+    .dac_clk_o          (dac_sclk_o        ),
+    .dac_csb_o          (dac_csb_o         ),
+    .dac_sdi_o          (dac_sdin_o        ),
+    .dac_shdn_o         (dac_shdn_o        ),
+    .dac_rstn_o         (dac_rstn_o        ),
+    // activity for LED
+    .perip_write_pulse_o(perip_write_pulse )
   );
 
   assign chip_bootmode_o = 2'b00; // default boot mode (00): passive boot

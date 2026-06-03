@@ -15,6 +15,7 @@
 #   perip.get_code(ch) / get_voltage(...) # last value written (host-side cache)
 #   perip.midscale() / reset()            # all channels to 0x80 / hardware RS_N
 #   perip.dac_write(addr, data)           # low-level register write (12-bit load)
+#   perip.verify_dac_write(addr, data)    # DAC write + echo command for verification
 #   perip.writeback(payload)              # loopback self-test primitive
 #
 # Running this file directly executes the writeback stress test (see main()).
@@ -30,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.perip_driver import PeripDriver  # noqa: E402
-from lib.perip_command_api import OP_WRITEBACK, make_command  # noqa: E402
+from lib.perip_command_api import OP_WRITEBACK, make_command, cmd_dac_write_loopback  # noqa: E402
 
 # Configure logging: include timestamp and level
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -75,6 +76,28 @@ def test_writeback(payload=0xADBEE):
         return False
 
 
+def test_verify_dac_write(addr=3, data=0x5A, rstn=1, shdn=1):
+    """Loopback DAC write: confirm the controller echoes the exact command word.
+
+    Uses OP_DAC_LOOPBACK: the controller performs the real DAC transfer AND loops
+    the command word back. The AD8802 has no readback, so this verifies the
+    command path (the controller decoded exactly this {rstn,shdn,addr,data}), not
+    the analog output.
+    """
+    expected = cmd_dac_write_loopback(addr, data, rstn, shdn)[0]
+    received = perip.verify_dac_write(addr, data, rstn, shdn)
+    if received is None:
+        logging.error('FAIL: Data sent: 0x%08X, Data received: None', expected)
+        return False
+
+    if received == expected:
+        logging.info('PASS: verify_dac_write addr=%d data=0x%02X echoed 0x%08X', addr, data, received)
+        return True
+    else:
+        logging.error('FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', expected, received)
+        return False
+
+
 def example_with_driver():
     """Reference example: drive the AD8802 via PeripDriver as a context manager."""
     with PeripDriver(WRITE_DEV, READ_DEV) as perip:
@@ -94,9 +117,11 @@ def main():
     perip.reset()
     # test writeback of DAC controller to ensure it is alive
     test_writeback()
+    # loopback-write check: a real DAC write whose command is echoed back
+    test_verify_dac_write(addr=3, data=0x5A)
     # set all channels to a volt
-    volt = 0.6
-    perip.set_all_voltage(volt, VREF)
+    # volt = 0.6
+    # perip.set_all_voltage(volt, VREF)
     # pdb.set_trace()  # drop into interactive mode for manual testing
 
 if __name__ == '__main__':
