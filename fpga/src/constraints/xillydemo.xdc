@@ -102,6 +102,9 @@ set_property PACKAGE_PIN Y11 [get_ports clk_chip_ctrl_o]
 set_property PACKAGE_PIN AA11 [get_ports clk_perip_ctrl_o]
 set_property IOSTANDARD LVCMOS33 [get_ports clk_chip_ctrl_o]
 set_property IOSTANDARD LVCMOS33 [get_ports clk_perip_ctrl_o]
+# 100 MHz forwarded observation clocks -> moderate drive (8)
+set_property DRIVE 8 [get_ports clk_chip_ctrl_o]
+set_property DRIVE 8 [get_ports clk_perip_ctrl_o]
 
 set_property -dict "PACKAGE_PIN AB9  IOSTANDARD LVCMOS33" [get_ports "PS_GPIO[30]"]
 set_property -dict "PACKAGE_PIN AA8  IOSTANDARD LVCMOS33" [get_ports "PS_GPIO[31]"]
@@ -234,23 +237,23 @@ set_property PACKAGE_PIN R19 [get_ports chip_rtc_o]
 set_property IOSTANDARD LVCMOS18 [get_ports -of_objects [get_iobanks 34]]
 set_property IOSTANDARD LVCMOS18 [get_ports -of_objects [get_iobanks 35]]
 
-# DAC
-set_property DRIVE 24 [get_ports dac_sclk_o]
-set_property DRIVE 24 [get_ports dac_sdin_o]
-set_property DRIVE 24 [get_ports dac_csb_o]
-set_property DRIVE 24 [get_ports dac_shdn_o]
-set_property DRIVE 24 [get_ports dac_rstn_o]
+# DAC (slow control + 25 MHz SPI clock: weak drive to limit overshoot)
+set_property DRIVE 4 [get_ports dac_sclk_o]
+set_property DRIVE 4 [get_ports dac_sdin_o]
+set_property DRIVE 4 [get_ports dac_csb_o]
+set_property DRIVE 4 [get_ports dac_shdn_o]
+set_property DRIVE 4 [get_ports dac_rstn_o]
 
-# Chip Quad-SPI
-set_property DRIVE 24 [get_ports chip_sck_o]
-set_property DRIVE 24 [get_ports chip_csb_o]
-set_property DRIVE 24 [get_ports {chip_sd_io[*]}]
-set_property DRIVE 24 [get_ports clk_chip_o]
-set_property DRIVE 24 [get_ports chip_arst_no]
+# Chip Quad-SPI (weak drive; clk_chip_o is the 100 MHz forwarded clock -> 8)
+set_property DRIVE 4 [get_ports chip_sck_o]
+set_property DRIVE 4 [get_ports chip_csb_o]
+set_property DRIVE 4 [get_ports {chip_sd_io[*]}]
+set_property DRIVE 8 [get_ports clk_chip_o]
+set_property DRIVE 4 [get_ports chip_arst_no]
 
-# Others
-set_property DRIVE 24 [get_ports chip_rtc_o]
-set_property DRIVE 24 [get_ports {chip_bootmode_o[*]}]
+# Others (slow signals: weak drive)
+set_property DRIVE 4 [get_ports chip_rtc_o]
+set_property DRIVE 4 [get_ports {chip_bootmode_o[*]}]
 
 ################################################################################
 ## SPECIFY IO DELAY CONSTRAINTS
