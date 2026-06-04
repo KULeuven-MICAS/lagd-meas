@@ -16,17 +16,20 @@ The Xillinux template is from: xillybus.com/downloads/xillinux-eval-zedboard-2.0
 
 ---
 
-## SPI interfaces
+## Control interfaces
 
-The FPGA drives **two independent SPI controllers**, each on its own Xillybus
-FIFO pair and clock domain. Both work the same way at the host level — push
-32-bit command words into a write FIFO, optionally get a loopback word on the
-read FIFO — but they target different devices and use different SPI modes.
+The FPGA drives **three independent controllers**, each on its own Xillybus FIFO
+pair and clock domain. Two are SPI masters (the chip Quad-SPI and the DAC SPI),
+driven by 32-bit command words; the third is a serial-shift configurator for the
+Pomelo PLL on the 8-bit byte stream. All work the same way at the host level —
+push command words/bytes into a write FIFO, optionally get a loopback word/byte on
+the read FIFO — but they target different devices and protocols.
 
-| Interface | Controller | Device | FIFOs | SPI mode |
-|-----------|------------|--------|-------|----------|
+| Interface | Controller | Device | FIFOs | Mode |
+|-----------|------------|--------|-------|------|
 | Quad-SPI to chip | [chip_controller.sv](src/verilog/chip_controller.sv) + [quad_spi_master.sv](src/verilog/quad_spi_master.sv) | chip's on-chip `axi_spi_slave` (register/memory) | `/dev/xillybus_{write,read}_32` | mode 0, quad, bursts |
 | DAC SPI | [perip_controller.sv](src/verilog/perip_controller.sv) + [dac_spi_driver.sv](src/verilog/dac_spi_driver.sv) | on-board DAC (DAC8802) | `/dev/xillybus_{write,read}_32_2` | mode 3, 1-bit, single word |
+| PLL serial config | [pll_controller.sv](src/verilog/pll_controller.sv) ([pll_command_api.sv](src/verilog/pll_command_api.sv)) | Pomelo PLL test structure (`lagd_clk_gen`) | `/dev/xillybus_{write,read}_8` | 47-bit shift + commit, 1 MHz strobe |
 
 ---
 
@@ -148,15 +151,66 @@ Behavior:
 
 ---
 
+## 3. PLL serial configuration
+
+A third controller configures the on-board **Pomelo PLL** test structure
+(`lagd_clk_gen`). It reuses the 8-bit Xillybus byte stream
+(`/dev/xillybus_{write,read}_8`) and its own clock, driven by
+[pll_controller.sv](src/verilog/pll_controller.sv).
+
+The PLL holds a **47-bit configuration** in two registers: a shallow shift
+register clocked by `data_strb`, and a hidden register (the one the PLL actually
+sees) loaded from the shallow one by `cfg_vld_strb`. Raising both strobes together
+resets the registers. The FPGA drives only four wires — `clk_sel`, `data_strb`,
+`data`, `cfg_vld` — at ~1 MHz; the PLL's `data_o` / `lock` outputs are observed on
+the scope, not wired back.
+
+Because the stream is byte-wide, a command is a multi-byte **frame**: a header
+byte `{marker=0xF, opcode}` then an opcode-dependent payload. Encoding:
+[pll_command_api.sv](src/verilog/pll_command_api.sv).
+
+| header | opcode        | payload | action |
+|--------|---------------|---------|--------|
+| `0xF0` | LOAD          | 6 bytes | shift the 47-bit word in MSB-first, then commit |
+| `0xF1` | LOAD_LOOPBACK | 6 bytes | LOAD + echo the 6 payload bytes back |
+| `0xF2` | CLK_SEL       | 1 byte  | set the SoC clock source (0 = PLL, 1 = reference) |
+| `0xF3` | RESET         | –       | pulse both strobes → reset the PLL registers |
+| `0xFF` | WRITEBACK     | –       | echo the `0xFF` header back (controller liveness) |
+
+The 47-bit word is the value of `pll_cfg_pkg::pack_pll_cfg()`, sent little-endian
+(byte0 = bits `[7:0]` … byte5 = bits `[46:40]`) and shifted into the shallow
+register MSB-first.
+
+### How to use it (from the host)
+
+Helpers live in [sw/tests/pll_test.py](../sw/tests/pll_test.py) /
+[sw/lib/pll_driver.py](../sw/lib/pll_driver.py):
+
+```python
+pll.writeback()                                  # liveness: echoes 0xFF
+word = pll.load_cfg(pdown_PD=0, pdown_VCO=0)     # build + LOAD a 47-bit config
+pll.verify_load(word)                            # LOAD + echo the 47 bits to check
+pll.bring_up(settle_s=0.01)                      # configure -> settle -> select PLL
+```
+
+> **Bring-up note:** `clk_sel` selects the SoC (RISC-V) clock and the PLL powers up
+> disabled (`pdown_PD`/`pdown_VCO` = 1), so the bitstream defaults `clk_sel=1`
+> (reference). Boot on the reference, configure and lock the PLL — lock is
+> scope-observed, **not** readable in software — then switch `clk_sel=0` with the
+> core held in reset (the clock mux is not glitchless).
+
+---
+
 ## Simulation
 
-A self-checking unit testbench (with a behavioral model of the ETH slave) for the
-chip Quad-SPI lives under
-[src/unit_tests/chip_controller/](src/unit_tests/chip_controller/):
+Self-checking unit testbenches live under
+[src/unit_tests/](src/unit_tests/) — `chip_controller` (with a behavioral ETH
+slave model), `perip_controller` (AD8802 DAC model), and `pll_controller` (PLL
+shift-register model):
 
 ```
-make sim            # run the suite (console PASS/FAIL)
-make sim DUMP=1     # ... and write a VCD into vivado-runs/
+make sim TB=chip_controller     # run a suite (console PASS/FAIL); TB= pll_controller / perip_controller
+make sim TB=pll_controller DUMP=1   # ... and write a VCD into vivado-runs/
 ```
 
 ---

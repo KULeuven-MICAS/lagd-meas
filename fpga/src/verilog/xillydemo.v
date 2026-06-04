@@ -56,7 +56,12 @@ module xillydemo
   (* mark_debug = "true" *) output dac_shdn_o,
   (* mark_debug = "true" *) output dac_rstn_o,
   // Others
-  (* mark_debug = "true" *) output [1:0] chip_bootmode_o
+  (* mark_debug = "true" *) output [1:0] chip_bootmode_o,
+  // PLL serial configuration interface (FPGA -> Pomelo PLL, see pll_controller.sv)
+  (* mark_debug = "true" *) output pll_clk_sel_o,
+  (* mark_debug = "true" *) output pll_data_strb_o,
+  (* mark_debug = "true" *) output pll_data_o,
+  (* mark_debug = "true" *) output pll_cfg_vld_strb_o
 );
 
 
@@ -395,10 +400,13 @@ module xillydemo
 
   wire clk_chip_ctrl;
   wire clk_perip_ctrl;
+  wire clk_pll_ctrl;
   wire rst_chip_ctrl; // active high
   wire rst_perip_ctrl; // active high
+  wire rst_pll_ctrl; // active high
   reg[2:0] rst_chip_ctrl_pipe;
   reg[2:0] rst_perip_ctrl_pipe;
+  reg[2:0] rst_pll_ctrl_pipe;
   wire [3:0] chip_sdi;
   wire [3:0] chip_sdo;
   wire [3:0] chip_sd_oe;
@@ -424,6 +432,7 @@ module xillydemo
   //  clk_perip_ctrl： kept for peripheral controller (DAC, etc.)
   assign clk_chip_ctrl = clk_100; // use bus clock directly
   assign clk_perip_ctrl = clk_100; // use bus clock directly
+  assign clk_pll_ctrl = clk_100; // use bus clock directly
 
   genvar chip_sd_idx;
   generate
@@ -460,6 +469,11 @@ module xillydemo
     rst_perip_ctrl_pipe <= {rst_perip_ctrl_pipe[1:0],(!user_w_write_32_2_open && !user_r_read_32_2_open)};
   end
   assign rst_perip_ctrl = rst_perip_ctrl_pipe[2];
+
+  always @(posedge clk_pll_ctrl) begin
+    rst_pll_ctrl_pipe <= {rst_pll_ctrl_pipe[1:0],(!user_w_write_8_open && !user_r_read_8_open)};
+  end
+  assign rst_pll_ctrl = rst_pll_ctrl_pipe[2];
 
   ///////////////////////////////
   ////    RTC CLOCK GEN       ////
@@ -613,26 +627,46 @@ module xillydemo
   assign user_led[2] = chip_write_led;
   assign user_led[3] = perip_write_led;
 
-  // 8-BIT FIFO
-  //  can be used for uart
-  //  for now: loopback
+  // 8-BIT PLL-CONTROLLER FIFOS
+  //  signal naming: FIFO signals from/to pll_controller are "fifo_pll_XXX".
+  //  These reuse the Xillybus /dev/xillybus_{write,read}_8 streams to drive the
+  //  Pomelo PLL serial configuration interface (see pll_controller.sv).
 
-  // (* mark_debug = "true" *) wire [7:0] rx_data;
-  // (* mark_debug = "true" *) wire rx_valid;
+  // WRITE FIFO (xillinux -> fpga): host pushes byte-framed PLL commands
+  wire fifo_pll_rd_en;
+  wire fifo_pll_empty;
+  wire [7:0] fifo_pll_dout;
 
-  // fifo_dualport_8x2048 fifo_8_fpga_to_xillinux (
-  //   .rst    (!user_w_write_8_open && !user_r_read_8_open), // input wire rst
-  //   .wr_clk (bus_clk                                    ), // input wire wr_clk
-  //   .rd_clk (bus_clk                                    ), // input wire rd_clk
-  //   .din    (user_w_write_8_data                        ), // input wire [7 : 0] din
-  //   .wr_en  (user_w_write_8_wren                        ), // input wire wr_en
-  //   .rd_en  (user_r_read_8_rden                         ), // input wire rd_en
-  //   .dout   (user_r_read_8_data                         ), // output wire [7 : 0] dout
-  //   .full   (user_w_write_8_full                        ), // output wire full
-  //   .empty  (user_r_read_8_empty                        ) // output wire empty
-  // );
+  fifo_dualport_8x2048 fifo_pll_xillinux_to_fpga (
+    .rst    (rst_pll_ctrl       ), // input wire rst
+    .wr_clk (bus_clk            ), // input wire wr_clk
+    .rd_clk (clk_pll_ctrl       ), // input wire rd_clk
+    .din    (user_w_write_8_data), // input wire [7 : 0] din
+    .wr_en  (user_w_write_8_wren), // input wire wr_en
+    .rd_en  (fifo_pll_rd_en     ), // input wire rd_en
+    .dout   (fifo_pll_dout      ), // output wire [7 : 0] dout
+    .full   (user_w_write_8_full), // output wire full
+    .empty  (fifo_pll_empty     ) // output wire empty
+  );
 
-  // assign  user_r_read_8_eof = 0;
+  // READ FIFO (fpga -> xillinux): controller echoes writeback/loopback bytes
+  wire fifo_pll_wr_en;
+  wire fifo_pll_full;
+  (* mark_debug = "true" *) wire [7:0] fifo_pll_din;
+
+  fifo_dualport_8x2048 fifo_pll_fpga_to_xillinux (
+    .rst    (rst_pll_ctrl       ), // input wire rst
+    .wr_clk (clk_pll_ctrl       ), // input wire wr_clk
+    .rd_clk (bus_clk            ), // input wire rd_clk
+    .din    (fifo_pll_din       ), // input wire [7 : 0] din
+    .wr_en  (fifo_pll_wr_en     ), // input wire wr_en
+    .rd_en  (user_r_read_8_rden ), // input wire rd_en
+    .dout   (user_r_read_8_data ), // output wire [7 : 0] dout
+    .full   (fifo_pll_full      ), // output wire full
+    .empty  (user_r_read_8_empty) // output wire empty
+  );
+
+  assign  user_r_read_8_eof = 0;
 
   /////////////////////////////////////////////////
   ////    CHIP and PERIP CONTROLLER MODULES    ////
@@ -693,6 +727,24 @@ module xillydemo
     .dac_rstn_o         (dac_rstn_o        ),
     // activity for LED
     .perip_write_pulse_o(perip_write_pulse )
+  );
+
+  // Controller for the Pomelo PLL serial configuration (8-bit FIFO stream)
+  pll_controller #(
+    .STRB_HALF          (50                )  // 1 MHz strobe at clk_pll_ctrl = 100 MHz
+  ) pll_controller_inst (
+    .clk_i              (clk_pll_ctrl      ),
+    .rst_i              (rst_pll_ctrl      ),
+    .fifo_pll_rd_en_o   (fifo_pll_rd_en    ),
+    .fifo_pll_empty_i   (fifo_pll_empty    ),
+    .fifo_pll_dout_i    (fifo_pll_dout     ),
+    .fifo_pll_wr_en_o   (fifo_pll_wr_en    ),
+    .fifo_pll_full_i    (fifo_pll_full     ),
+    .fifo_pll_din_o     (fifo_pll_din      ),
+    .pll_clk_sel_o      (pll_clk_sel_o     ),
+    .pll_data_strb_o    (pll_data_strb_o   ),
+    .pll_data_o         (pll_data_o        ),
+    .pll_cfg_vld_strb_o (pll_cfg_vld_strb_o)
   );
 
   assign chip_bootmode_o = 2'b00; // default boot mode (00): passive boot

@@ -9,14 +9,15 @@ read data back.
 ## How it fits together
 
 ```
-host (Python, Zynq Linux)  ──Xillybus FIFOs──▶  FPGA controllers  ──SPI──▶  LAGD chip + DAC
+host (Python, Zynq Linux)  ──Xillybus FIFOs──▶  FPGA controllers  ──SPI / serial──▶  LAGD chip + DAC + PLL
         sw/                                          fpga/
 ```
 
-Running on a Zedboard, the host pushes 32-bit command words into Xillybus FIFOs;
+Running on a Zedboard, the host pushes command words/bytes into Xillybus FIFOs;
 FPGA controllers decode them and drive the chip over Quad-SPI (register/memory
-access) and the on-board DAC over SPI. Two independent FIFO pairs keep chip and
-peripheral control separate.
+access), the on-board DAC over SPI, and the on-chip PLL over a serial-shift config
+interface. Three independent FIFO streams keep chip, peripheral, and PLL control
+separate.
 
 ## Layout
 

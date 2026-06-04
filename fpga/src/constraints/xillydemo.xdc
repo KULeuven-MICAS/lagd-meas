@@ -190,14 +190,12 @@ set_property -dict "PACKAGE_PIN AB2 IOSTANDARD LVCMOS33" [get_ports "audio_mclk"
 ##      FMC pin    / LA27_P  (E21)  # pad_clk_i
 ##      FMC pin    / LA25_P  (D22)  # pad_rst_ni
 ##      FMC pin C14 / LA10_P    (R19) # pad_rtc_i (forwarded clock out; regular pin OK)
-## PLL (reserved for future integration; no set_property yet)
-##      FMC pin D11 / LA05_P    (J18) # pad_clk_sel_i
-##      FMC pin D12 / LA05_N    (K18) # pad_pll_strb_i
-##      FMC pin C10 / LA06_P    (L21) # pad_pll_data_i
-##      FMC pin C11 / LA06_N    (L22) # pad_pll_data_o
-##      FMC pin G12 / LA08_P    (J21) # pad_pll_cfg_vld_strb_i
-##      FMC pin G6  / LA00_CC_P (M19) # pad_pll_fb_clk_io (clock-capable pin)
-## BOOT MODE (reserved for future integration; no set_property yet)
+## PLL serial configuration (driven by pll_controller; see pll_controller.sv)
+##      FMC pin D11 / LA05_P    (J18) # pad_clk_sel_i          <- pll_clk_sel_o
+##      FMC pin D12 / LA05_N    (K18) # pad_pll_strb_i         <- pll_data_strb_o
+##      FMC pin C10 / LA06_P    (L21) # pad_pll_data_i         <- pll_data_o
+##      FMC pin G12 / LA08_P    (J21) # pad_pll_cfg_vld_strb_i <- pll_cfg_vld_strb_o
+## BOOT MODE
 ##      FMC pin D14 / LA09_P    (R20) # pad_boot_mode_0_i
 ##      FMC pin D15 / LA09_N    (R21) # pad_boot_mode_1_i
 ## DAC
@@ -221,6 +219,12 @@ set_property PACKAGE_PIN D22 [get_ports chip_arst_no]
 set_property PACKAGE_PIN R20 [get_ports {chip_bootmode_o[0]}]
 set_property PACKAGE_PIN R21 [get_ports {chip_bootmode_o[1]}]
 set_property PACKAGE_PIN R19 [get_ports chip_rtc_o]
+
+## PLL serial configuration (IOSTANDARD LVCMOS18 inherited from bank 34/35 rule)
+set_property PACKAGE_PIN J18 [get_ports pll_clk_sel_o]
+set_property PACKAGE_PIN K18 [get_ports pll_data_strb_o]
+set_property PACKAGE_PIN L21 [get_ports pll_data_o]
+set_property PACKAGE_PIN J21 [get_ports pll_cfg_vld_strb_o]
 
 # SPI outputs / bidirectional data: slow 1 MHz signals; exclude from timing.
 # set_false_path -to   [get_ports chip_sck_o]
@@ -254,6 +258,19 @@ set_property DRIVE 4 [get_ports chip_arst_no]
 # Others (slow signals: weak drive)
 set_property DRIVE 4 [get_ports chip_rtc_o]
 set_property DRIVE 4 [get_ports {chip_bootmode_o[*]}]
+
+# PLL serial config (slow ~1 MHz strobed signals: weak drive to limit overshoot).
+# The FPGA cannot see the off-chip PLL's strobe-to-data relationship; the
+# controller's 50-cycle (500 ns) dwell guarantees external setup/hold by
+# construction, so these outputs are excluded from timing analysis.
+set_property DRIVE 4 [get_ports pll_clk_sel_o]
+set_property DRIVE 4 [get_ports pll_data_strb_o]
+set_property DRIVE 4 [get_ports pll_data_o]
+set_property DRIVE 4 [get_ports pll_cfg_vld_strb_o]
+set_false_path -to [get_ports pll_clk_sel_o]
+set_false_path -to [get_ports pll_data_strb_o]
+set_false_path -to [get_ports pll_data_o]
+set_false_path -to [get_ports pll_cfg_vld_strb_o]
 
 ################################################################################
 ## SPECIFY IO DELAY CONSTRAINTS
