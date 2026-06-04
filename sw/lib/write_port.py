@@ -58,7 +58,7 @@ class WritePort:
         logger.info("Closed write port to %s", self.devfile)
 
     def __sendData(self, data: bytes) -> bool:
-        logger.debug("Sending %d bytes", len(data))
+        logger.debug("Sending %d bytes, data: %s", len(data), data.hex())
         os.write(self.portId, data)
         return True
 

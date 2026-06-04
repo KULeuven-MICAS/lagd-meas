@@ -44,7 +44,7 @@ WRITEBACK_FIFO      = 0xFF  # Loop the command word back into the read FIFO (loc
 MARKER_SHIFT = 28
 OPCODE_SHIFT = 20
 
-# burst_length is a 16-bit field; the SPI slave supports up to 65535 words.
+# burst_length is a 16-bit field; the SPI slave supports up to 65535 words (32 bits/word).
 MAX_BURST_LEN = 0xFFFF
 
 

@@ -31,8 +31,10 @@
 // Notes:
 //   * DATA_WRITE / DATA_READ carry a 16-bit burst_length = number of 32-bit
 //     words to transfer in one CS-low frame. burst_length == 1 is the single-
-//     word case; > 1 is a burst. The SPI slave supports up to 65535 words in a
-//     single frame, hence the 16-bit field.
+//     word case; > 1 is a burst. The SPI slave supports up to 65535 words
+//     (32 bits/word) in a single frame, hence the 16-bit field
+//     (The slave also uses a 16-bit length field, which can be found in
+//     hemaia_axi_spi_slave: spi_slave_regs.sv, line 33).
 //   * The opcode value deliberately mirrors the SPI-slave command byte for the
 //     memory operations (0x02 / 0x0B) and the config write (0x01), so the
 //     controller opcode and the on-wire SPI command stay consistent.
