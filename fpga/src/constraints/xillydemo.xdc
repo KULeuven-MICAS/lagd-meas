@@ -227,6 +227,11 @@ set_property PACKAGE_PIN K18 [get_ports pll_data_strb_o]
 set_property PACKAGE_PIN L21 [get_ports pll_data_o]
 set_property PACKAGE_PIN J21 [get_ports pll_cfg_vld_strb_o]
 set_property PACKAGE_PIN L22 [get_ports pll_data_i]
+# Pull pll_data_i low so that with no chip on the FMC (floating input) READBACK
+# reads a deterministic all-zeros instead of noise -- an unambiguous "not
+# connected" signature. The PLL's data_o is a push-pull output that overrides
+# this weak pull when the chip is present.
+set_property PULLTYPE PULLDOWN [get_ports pll_data_i]
 
 # SPI outputs / bidirectional data: slow 1 MHz signals; exclude from timing.
 # set_false_path -to   [get_ports chip_sck_o]
