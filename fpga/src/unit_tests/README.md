@@ -9,7 +9,7 @@ and exiting non-zero on failure (so they work in CI and `make`).
 |-----------|-----|----------------|
 | [`chip_controller/`](chip_controller/) | [`chip_controller.sv`](../verilog/chip_controller.sv) | command decode, config clk/rst, Quad-SPI enable, single/burst write & read, write/read loopback, output-FIFO backpressure, marker drop |
 | [`perip_controller/`](perip_controller/) | [`perip_controller.sv`](../verilog/perip_controller.sv) | DAC (AD8802) single-port SPI command path; HV9308 S2P write/latch, recirculating Data-Out readback, and OE blanking |
-| [`pll_controller/`](pll_controller/) | [`pll_controller.sv`](../verilog/pll_controller.sv) | PLL serial config: RESET defaults, 47-bit MSB-first LOAD + commit, loopback echo, `data_o` readback (recirculating scan, preserves the register), writeback, clk_sel, marker drop, strobe interlock |
+| [`pll_controller/`](pll_controller/) | [`pll_controller.sv`](../verilog/pll_controller.sv) | PLL serial config: RESET defaults, 47-bit MSB-first LOAD + commit, loopback echo, `data_o` readback (recirculating scan, preserves the register), lock STATUS readback, writeback, clk_sel, marker drop, strobe interlock |
 
 These are **simulation only** — they do not need the board, a bitstream, or JTAG.
 For in-system debugging of the running FPGA, use an ILA instead.

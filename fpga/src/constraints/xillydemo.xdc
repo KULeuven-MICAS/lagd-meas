@@ -190,7 +190,7 @@ set_property -dict "PACKAGE_PIN AB2 IOSTANDARD LVCMOS33" [get_ports "audio_mclk"
 ##      FMC pin    / LA27_P  (E21)  # pad_clk_i
 ##      FMC pin    / LA25_P  (D22)  # pad_rst_ni
 ##      FMC pin C14 / LA10_P    (R19) # pad_rtc_i (forwarded clock out; regular pin OK)
-## PLL serial configuration (driven by pll_controller; see pll_controller.sv)
+## PLL serial configuration (driven by pll_controller; see pll_controller.sv) (pcb <- fpga)
 ##      FMC pin D11 / LA05_P    (J18) # pad_clk_sel_i          <- pll_clk_sel_o
 ##      FMC pin D12 / LA05_N    (K18) # pad_pll_strb_i         <- pll_data_strb_o
 ##      FMC pin C10 / LA06_P    (L21) # pad_pll_data_i         <- pll_data_o
@@ -206,6 +206,8 @@ set_property -dict "PACKAGE_PIN AB2 IOSTANDARD LVCMOS33" [get_ports "audio_mclk"
 ##      FMC LA12_P (P20) # s2p_le_o
 ##      FMC LA12_N (P21) # s2p_oe_o
 ##      FMC LA13_P (L17) # s2p_dout_i (HV9308 cascade Data Out -> FPGA, for readback)
+## PLL lock pin
+##      FMC LA10_N (T19) # pad_pll_lock_i
 ## DAC
 set_property PACKAGE_PIN B22 [get_ports dac_sclk_o]
 set_property PACKAGE_PIN A21 [get_ports dac_sdin_o]
@@ -234,6 +236,10 @@ set_property PACKAGE_PIN K18 [get_ports pll_data_strb_o]
 set_property PACKAGE_PIN L21 [get_ports pll_data_o]
 set_property PACKAGE_PIN J21 [get_ports pll_cfg_vld_strb_o]
 set_property PACKAGE_PIN L22 [get_ports pll_data_i]
+set_property PACKAGE_PIN T19 [get_ports pll_lock_i]
+# Pull pll_lock_i low: with no chip on the FMC, STATUS reads "not locked" (0)
+# rather than noise. The chip's pll_lock_o push-pull overrides it when present.
+set_property PULLTYPE PULLDOWN [get_ports pll_lock_i]
 
 ## s2p
 set_property PACKAGE_PIN N17 [get_ports s2p_din_o]
@@ -300,6 +306,8 @@ set_false_path -to [get_ports pll_cfg_vld_strb_o]
 # pll_data_i is the PLL data_o returning over the FMC: a slow, PCB-delayed async
 # input sampled into a 2-FF synchronizer. Exclude it from input timing analysis.
 set_false_path -from [get_ports pll_data_i]
+# pll_lock_i is the PLL lock level from the chip: slow async input, 2-FF synced.
+set_false_path -from [get_ports pll_lock_i]
 
 # HV9308 S2P: slow ~1 MHz bit-banged interface; setup/hold met by the controller's
 # dwell. Weak drive on outputs; exclude from timing (s2p_dout_i has a 2-FF sync).

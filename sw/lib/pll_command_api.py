@@ -22,6 +22,7 @@
 #   0x2    | 0xF2   | CLK_SEL       | 1 byte  | set static clk_sel (byte[0])
 #   0x3    | 0xF3   | RESET         | 0 bytes | pulse both strobes -> reset PLL regs
 #   0x4    | 0xF4   | READBACK      | 0 bytes | scan shallow reg out of data_o -> 6 bytes
+#   0x5    | 0xF5   | STATUS        | 0 bytes | return 1 status byte (bit0 = pll_lock)
 #   0xF    | 0xFF   | WRITEBACK     | 0 bytes | echo the 0xFF header back (liveness)
 #
 # READBACK returns the 47-bit shallow-register content (what the PLL silicon
@@ -47,10 +48,14 @@ OP_LOAD_LOOPBACK  = 0x1  # LOAD + echo the 6 payload bytes
 OP_CLK_SEL        = 0x2  # set clk_sel from 1 payload byte
 OP_RESET          = 0x3  # pulse both strobes (reset registers)
 OP_READBACK       = 0x4  # scan shallow register out of data_o -> 6 bytes
+OP_STATUS         = 0x5  # return 1 status byte (bit0 = pll_lock)
 OP_WRITEBACK      = 0xF  # echo header (no PLL action)
 
 CFG_BITS  = 47
 CFG_BYTES = 6
+
+# STATUS byte bit positions (mirror pll_command_api.sv).
+STATUS_LOCK_BIT = 0      # 1 = PLL locked
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +156,11 @@ def cmd_reset() -> List[int]:
 def cmd_readback() -> List[int]:
     """Frame for READBACK: header only; the controller returns 6 little-endian bytes."""
     return [header(OP_READBACK)]
+
+
+def cmd_status() -> List[int]:
+    """Frame for STATUS: header only; the controller returns 1 byte (bit0 = lock)."""
+    return [header(OP_STATUS)]
 
 
 def cmd_writeback() -> List[int]:

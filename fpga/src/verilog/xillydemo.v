@@ -63,6 +63,7 @@ module xillydemo
   (* mark_debug = "true" *) output pll_data_o,
   (* mark_debug = "true" *) output pll_cfg_vld_strb_o,
   (* mark_debug = "true" *) input  pll_data_i,       // PLL data_o (shallow-reg MSB) for READBACK
+  (* mark_debug = "true" *) input  pll_lock_i,       // PLL lock (1 = locked) for STATUS
   // HV9308 32-channel serial-to-parallel converter (current-mirror bias resistors)
   (* mark_debug = "true" *) output s2p_din_o,
   (* mark_debug = "true" *) output s2p_clk_o,
@@ -757,7 +758,8 @@ module xillydemo
     .pll_data_strb_o    (pll_data_strb_o   ),
     .pll_data_o         (pll_data_o        ),
     .pll_cfg_vld_strb_o (pll_cfg_vld_strb_o),
-    .pll_data_i         (pll_data_i        )
+    .pll_data_i         (pll_data_i        ),
+    .pll_lock_i         (pll_lock_i        )
   );
 
   assign chip_bootmode_o = 2'b00; // default boot mode (00): passive boot

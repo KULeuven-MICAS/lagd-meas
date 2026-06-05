@@ -15,10 +15,11 @@
 # The PLL powers up disabled (pdown_PD=pdown_VCO=1) and the bitstream defaults
 # clk_sel=1, so the RISC-V boots on the reference clock. To run on the PLL:
 #   1. configure the PLL with pdown_PD=0 / pdown_VCO=0 (+ VCO/loop settings),
-#   2. wait for it to lock -- pll_lock_o is observed on the scope, NOT wired back
-#      to the FPGA, so software cannot poll it; use a fixed settle delay,
+#   2. wait for it to lock -- pll_lock_o is wired back (pll_lock_i), so poll it via
+#      read_lock()/wait_lock() (the STATUS command),
 #   3. switch clk_sel=0 (select_pll). The clock mux is not glitchless, so do this
 #      with the core held in reset / quiesced.
+# bring_up() does 1-3 (waiting for lock, only switching once locked).
 
 import time
 from typing import Dict, List, Optional
@@ -26,11 +27,13 @@ from typing import Dict, List, Optional
 from lib.port_driver import PortDriver
 from lib.pll_command_api import (
     CFG_BYTES,
+    STATUS_LOCK_BIT,
     cmd_load,
     cmd_load_loopback,
     cmd_clk_sel,
     cmd_reset,
     cmd_readback,
+    cmd_status,
     cmd_writeback,
     pack_pll_cfg,
     unpack_pll_cfg,
@@ -161,6 +164,34 @@ class PllDriver(PortDriver):
         """LOAD a field-built config, then READBACK and confirm it matches."""
         return self.verify(pack_pll_cfg(**fields))
 
+    def read_status(self) -> Optional[int]:
+        """STATUS: return the 1-byte status (bit0 = PLL lock), or None on timeout."""
+        self._flush_read()
+        self._send_bytes(cmd_status())
+        return self.read_byte()
+
+    def read_lock(self) -> Optional[int]:
+        """Return the PLL lock bit (1 = locked, 0 = not), or None on timeout."""
+        status = self.read_status()
+        return None if status is None else ((status >> STATUS_LOCK_BIT) & 1)
+
+    def is_locked(self) -> bool:
+        """True iff the PLL reports lock (a None/timeout reads as not locked)."""
+        return self.read_lock() == 1
+
+    def wait_lock(self, timeout: float = 1.0, poll: float = 0.01) -> bool:
+        """Poll STATUS until the PLL reports lock or `timeout` (seconds) elapses.
+
+        Returns True if lock was observed, False on timeout. Lock is genuinely
+        readable now (pll_lock_i wired back), so this replaces blind settle delays.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.read_lock() == 1:
+                return True
+            time.sleep(poll)
+        return False
+
     def clk_sel(self, sel: int) -> None:
         """Set the SoC clock source (0 = PLL, 1 = reference). See class docstring."""
         self._send_bytes(cmd_clk_sel(sel))
@@ -181,22 +212,27 @@ class PllDriver(PortDriver):
         """Route the SoC clock to the reference/bypass clock (clk_sel=1)."""
         self.clk_sel(CLK_SEL_REFERENCE)
 
-    def bring_up(self, settle_s: float = 0.01, switch: bool = True, **fields) -> int:
-        """Configure the PLL and (optionally) switch the SoC onto it.
+    def bring_up(self, lock_timeout: float = 1.0, switch: bool = True,
+                 require_lock: bool = True, **fields) -> bool:
+        """Configure the PLL, wait for lock, and (optionally) switch the SoC onto it.
 
         Loads a config with the PLL enabled (pdown_PD=0, pdown_VCO=0 unless
-        overridden), waits `settle_s` for it to lock (lock is scope-observed, not
-        readable here), then -- if `switch` -- selects the PLL as the SoC clock.
-        Returns the config word written. Hold the core in reset across the switch
-        (the clock mux is not glitchless).
+        overridden), then polls STATUS until the PLL locks (up to `lock_timeout`
+        seconds) -- lock is now readable via pll_lock_i, so this is a real wait, not
+        a blind delay. If `switch`, selects the PLL as the SoC clock once locked
+        (or anyway, if require_lock=False). Returns True iff lock was observed.
+
+        Hold the core in reset across the switch (the clock mux is not glitchless),
+        and leave require_lock=True so the SoC is never switched onto an unlocked
+        clock.
         """
         fields.setdefault("pdown_PD", 0)
         fields.setdefault("pdown_VCO", 0)
-        word = self.load_cfg(**fields)
-        time.sleep(settle_s)
-        if switch:
+        self.load_cfg(**fields)
+        locked = self.wait_lock(timeout=lock_timeout)
+        if switch and (locked or not require_lock):
             self.select_pll()
-        return word
+        return locked
 
     def get_cfg(self) -> Optional[int]:
         """Last config word written (host-side cache; None if never written)."""

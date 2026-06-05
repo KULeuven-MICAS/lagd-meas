@@ -36,6 +36,7 @@
 //  0x3    | 0xF3   | RESET         | 0 bytes | pulse both strobes -> reset PLL regs
 //  0x4    | 0xF4   | READBACK      | 0 bytes | scan the shallow register out of data_o
 //         |        |               |  (->6B) | (recirculating), return its 47 bits
+//  0x5    | 0xF5   | STATUS        | 0 bytes | return 1 status byte (bit0 = pll_lock)
 //  0xF    | 0xFF   | WRITEBACK     | 0 bytes | echo the 0xFF header back (liveness)
 //
 // READBACK reads what the PLL silicon actually captured: it shifts the shallow
@@ -46,6 +47,10 @@
 // Note: data_o taps the shallow register (cfg_data_raw_n), not the hidden one, so
 // READBACK verifies the shift chain + shallow content (and, transitively, the
 // commit source) -- it cannot directly observe the hidden register's own latches.
+//
+// STATUS returns one byte: bit0 = pll_lock (1 = the PLL has locked; pad_pll_lock_i
+// from the chip, synchronized in the FPGA). Bits [7:1] are reserved (0) for future
+// status. With no chip on the FMC the pin is pulled low, so STATUS reads 0x00.
 //
 // Payload bit/byte order (LOAD / LOAD_LOOPBACK): the 47-bit word is exactly the
 // value produced by pll_cfg_pkg::pack_pll_cfg(), sent little-endian:
@@ -63,7 +68,11 @@ localparam bit [3:0] PLL_OP_LOAD_LOOPBACK = 4'h1;  // LOAD + echo the 6 payload 
 localparam bit [3:0] PLL_OP_CLK_SEL       = 4'h2;  // set clk_sel from 1 payload byte
 localparam bit [3:0] PLL_OP_RESET         = 4'h3;  // pulse both strobes (reset regs)
 localparam bit [3:0] PLL_OP_READBACK      = 4'h4;  // scan shallow reg out -> 6 bytes
+localparam bit [3:0] PLL_OP_STATUS        = 4'h5;  // return 1 status byte (bit0 = lock)
 localparam bit [3:0] PLL_OP_WRITEBACK     = 4'hF;  // echo header (no PLL action)
+
+// STATUS byte bit positions.
+localparam int unsigned PLL_STATUS_LOCK_BIT = 0;   // 1 = PLL locked
 
 // Configuration geometry. PllCfgBits must equal $size(pll_cfg_pkg::pll_cfg_t).
 localparam int unsigned PLL_CFG_BITS      = 47;

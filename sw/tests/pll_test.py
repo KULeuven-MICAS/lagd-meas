@@ -15,9 +15,10 @@
 #   pll.verify_load(word)              # LOAD + echo the 6 bytes back (FPGA echo)
 #   pll.readback()                     # scan the 47 bits back out of the PLL data_o
 #   pll.verify(word)                   # LOAD then READBACK == word (silicon check)
+#   pll.is_locked() / pll.wait_lock()  # read the PLL lock status (pll_lock_i)
 #   pll.reset()                        # reset PLL registers to defaults
 #   pll.clk_sel(0|1)                   # 0 = PLL drives SoC clock, 1 = reference
-#   pll.bring_up(settle_s=..., ...)    # configure (PLL enabled) -> settle -> switch
+#   pll.bring_up(lock_timeout=..., ...) # configure -> wait for lock -> switch
 #
 # Running this file directly executes the controller self-tests (see main()):
 # writeback liveness + a LOAD_LOOPBACK config-path check. It does NOT switch the
@@ -114,18 +115,35 @@ def test_readback(word=None):
     return False
 
 
+def test_status():
+    """Read and report the PLL lock status (pll_lock_i via the STATUS command).
+
+    Informational, not pass/fail: lock depends on whether the PLL is configured and
+    has settled. With no chip connected the pin is pulled low (reads not-locked).
+    """
+    lock = pll.read_lock()
+    if lock is None:
+        logging.error('FAIL: STATUS returned None (no byte came back)')
+        return False
+    logging.info('STATUS: PLL %s (lock bit = %d)', 'LOCKED' if lock else 'not locked', lock)
+    return True
+
+
 def example_bring_up():
-    """Reference example: configure the PLL and switch the SoC onto it.
+    """Reference example: configure the PLL, wait for lock, switch the SoC onto it.
 
     Boot is on the reference clock (bitstream default clk_sel=1). This enables the
-    PLL, waits a fixed settle time, then switches clk_sel=0. Confirm lock on the
-    scope first, and hold the core in reset across the switch (the clock mux is
+    PLL, polls STATUS until lock (pll_lock_i is wired back now), and only then
+    switches clk_sel=0. Hold the core in reset across the switch (the clock mux is
     not glitchless).
     """
     with PllDriver(WRITE_DEV, READ_DEV) as p:
-        word = p.bring_up(settle_s=0.01, switch=True,
-                          pdown_PD=0, pdown_VCO=0, vco_tune_coarse=0xA)
-        logging.info('PLL configured with 0x%012X and selected as SoC clock', word)
+        locked = p.bring_up(lock_timeout=1.0, switch=True,
+                            pdown_PD=0, pdown_VCO=0, vco_tune_coarse=0xA)
+        if locked:
+            logging.info('PLL locked and selected as the SoC clock')
+        else:
+            logging.error('PLL did not lock within the timeout; SoC left on reference')
 
 
 def main():
@@ -138,8 +156,11 @@ def main():
     test_verify_load()
     # 3. silicon check: LOAD then scan the 47 bits back out of the PLL's data_o.
     test_readback()
+    # 4. lock status: read the PLL lock bit (pll_lock_i).
+    test_status()
     # NOTE: this script intentionally does NOT switch the SoC clock onto the PLL.
-    # Use pll.bring_up() / pll.select_pll() once lock is confirmed on the scope.
+    # Use pll.bring_up() (configures, waits for STATUS lock, then switches) or a
+    # manual pll.select_pll() when you want to move the SoC onto the PLL.
 
 
 if __name__ == '__main__':

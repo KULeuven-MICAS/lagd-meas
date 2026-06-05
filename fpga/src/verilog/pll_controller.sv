@@ -31,7 +31,8 @@
 //   strobes together to reset the PLL registers. READBACK scans the shallow
 //   register out of data_o (pll_data_i), recirculating each bit so the register is
 //   preserved, and returns its 47 bits as 6 bytes (reads what the silicon actually
-//   captured). WRITEBACK echoes the 0xFF header back as a controller-liveness check.
+//   captured). STATUS returns one byte with bit0 = the synchronized PLL lock
+//   (pll_lock_i). WRITEBACK echoes the 0xFF header back as a controller-liveness check.
 //
 //   Strobe timing: data_strb_i / cfg_vld_strb_i are used as gated *clocks* inside
 //   the PLL, so each is generated as a clean two-phase pulse - data_i is set up
@@ -62,7 +63,8 @@ module pll_controller #(
     (* mark_debug = "true" *) output logic pll_data_strb_o,    // -> data_strb_i (shift clock)
     (* mark_debug = "true" *) output logic pll_data_o,         // -> data_i (serial data, MSB first)
     (* mark_debug = "true" *) output logic pll_cfg_vld_strb_o, // -> cfg_vld_strb_i (commit clock)
-    (* mark_debug = "true" *) input  logic pll_data_i          // <- data_o (shallow-reg MSB, for READBACK)
+    (* mark_debug = "true" *) input  logic pll_data_i,         // <- data_o (shallow-reg MSB, for READBACK)
+    (* mark_debug = "true" *) input  logic pll_lock_i          // <- pll_lock_o (1 = locked, for STATUS)
 );
 
     typedef enum logic [3:0] {
@@ -76,6 +78,7 @@ module pll_controller #(
         READ_LOW,       // data_strb low: sample data_o, recirculate, capture
         READ_HIGH,      // data_strb high: PLL shifts the recirculated bit back in
         ECHO,           // push the 6 payload / readback bytes back
+        STATUS_PUSH,    // push the 1-byte status (bit0 = lock)
         WRITEBACK_PUSH  // push the 0xFF header back (liveness)
     } pll_state_t;
 
@@ -103,6 +106,15 @@ module pll_controller #(
     always_ff @(posedge clk_i or posedge rst_i) begin
         if (rst_i) data_i_sync <= 2'b0;
         else       data_i_sync <= {data_i_sync[0], pll_data_i};
+    end
+
+    // Two-FF synchronizer for pll_lock_i (the PLL's lock level from the chip; slow,
+    // asynchronous to clk_i). Sampled when a STATUS command is served.
+    (* async_reg = "true" *) logic [1:0] lock_sync;
+    wire pll_lock_synced = lock_sync[1];
+    always_ff @(posedge clk_i or posedge rst_i) begin
+        if (rst_i) lock_sync <= 2'b0;
+        else       lock_sync <= {lock_sync[0], pll_lock_i};
     end
 
     // Read-side stream adapter (absorbs the FIFO's 1-cycle read latency).
@@ -197,6 +209,9 @@ module pll_controller #(
                                     strb_cnt      <= '0;
                                     read_result_r <= '0;
                                     state_current <= READ_LOW;
+                                end
+                                PLL_OP_STATUS: begin
+                                    state_current <= STATUS_PUSH;
                                 end
                                 PLL_OP_WRITEBACK: begin
                                     state_current <= WRITEBACK_PUSH;
@@ -363,6 +378,15 @@ module pll_controller #(
                         end else begin
                             echo_idx <= echo_idx + 3'd1;
                         end
+                    end
+                end
+
+                // STATUS: push one byte, bit0 = synchronized PLL lock.
+                STATUS_PUSH: begin
+                    if (!fifo_pll_full_i) begin
+                        fifo_pll_din_o   <= 8'(pll_lock_synced) << PLL_STATUS_LOCK_BIT;
+                        fifo_pll_wr_en_o <= 1'b1;
+                        state_current    <= IDLE;
                     end
                 end
 

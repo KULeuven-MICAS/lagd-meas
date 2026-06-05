@@ -196,6 +196,7 @@ byte `{marker=0xF, opcode}` then an opcode-dependent payload. Encoding:
 | `0xF2` | CLK_SEL       | 1 byte  | set the SoC clock source (0 = PLL, 1 = reference) |
 | `0xF3` | RESET         | –       | pulse both strobes → reset the PLL registers |
 | `0xF4` | READBACK      | – (→6 B)| scan the shallow register out of `data_o` (recirculating) → 6 bytes |
+| `0xF5` | STATUS        | – (→1 B)| return 1 status byte (bit0 = PLL lock, from `pll_lock_i`) |
 | `0xFF` | WRITEBACK     | –       | echo the `0xFF` header back (controller liveness) |
 
 The 47-bit word is the value of `pll_cfg_pkg::pack_pll_cfg()`, sent little-endian
@@ -221,14 +222,16 @@ pll.writeback()                                  # liveness: echoes 0xFF
 word = pll.load_cfg(pdown_PD=0, pdown_VCO=0)     # build + LOAD a 47-bit config
 pll.verify_load(word)                            # LOAD + FPGA echo of the 47 bits
 pll.verify(word)                                 # LOAD + scan back from data_o (silicon)
-pll.bring_up(settle_s=0.01)                      # configure -> settle -> select PLL
+pll.is_locked()                                  # read the PLL lock bit (STATUS)
+pll.bring_up(lock_timeout=1.0)                   # configure -> wait for lock -> select PLL
 ```
 
 > **Bring-up note:** `clk_sel` selects the SoC (RISC-V) clock and the PLL powers up
 > disabled (`pdown_PD`/`pdown_VCO` = 1), so the bitstream defaults `clk_sel=1`
-> (reference). Boot on the reference, configure and lock the PLL — lock is
-> scope-observed, **not** readable in software — then switch `clk_sel=0` with the
-> core held in reset (the clock mux is not glitchless).
+> (reference). Boot on the reference, configure the PLL, then **poll `STATUS` for
+> lock** (`pll_lock_i` is wired back on FMC `LA10_N`) and only switch `clk_sel=0`
+> once locked, with the core held in reset (the clock mux is not glitchless).
+> `bring_up()` does exactly this.
 
 ---
 

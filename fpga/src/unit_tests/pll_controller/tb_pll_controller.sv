@@ -52,6 +52,7 @@ module tb_pll_controller;
 
     // ---------------- DUT <-> PLL wires ----------------
     logic pll_clk_sel, pll_data_strb, pll_data, pll_cfg_vld, pll_data_o;
+    logic pll_lock = 1'b0;   // TB-driven lock level (the chip's pll_lock_o)
 
     // ---------------- DUT ----------------
     pll_controller #(
@@ -69,7 +70,8 @@ module tb_pll_controller;
         .pll_data_strb_o    (pll_data_strb),
         .pll_data_o         (pll_data),
         .pll_cfg_vld_strb_o (pll_cfg_vld),
-        .pll_data_i         (pll_data_o)      // closes the READBACK recirculation loop
+        .pll_data_i         (pll_data_o),     // closes the READBACK recirculation loop
+        .pll_lock_i         (pll_lock)
     );
 
     // ---------------- PLL register model ----------------
@@ -219,6 +221,15 @@ module tb_pll_controller;
         wait_idle();
     endtask
 
+    // STATUS: read the 1-byte status and check bit0 == expected lock.
+    task automatic do_status(input logic exp_lock);
+        logic [7:0] got;
+        push_byte({PLL_CMD_MARKER, PLL_OP_STATUS});
+        get_out(got);
+        check_eq("status byte", got, {7'b0, exp_lock});
+        wait_idle();
+    endtask
+
     // READBACK: scan the shallow register out of data_o (recirculating) and check
     // the 6 returned bytes reconstruct `expect`. Also confirm the recirculation
     // preserved the shallow register and left the hidden register untouched.
@@ -318,8 +329,14 @@ module tb_pll_controller;
         // Two readbacks in a row read the same value (recirculation is non-destructive).
         do_readback(47'h2AAA_AAAA_AAAA);
 
-        // ---- 8. RESET after a LOAD: registers return to defaults ----
-        $display("=== Test 8: RESET after LOAD ===");
+        // ---- 8. STATUS: read the PLL lock bit (tracks pll_lock_i through the sync) ----
+        $display("=== Test 8: STATUS (pll_lock) ===");
+        pll_lock = 1'b0;  repeat (5) @(posedge clk);  do_status(1'b0);   // not locked
+        pll_lock = 1'b1;  repeat (5) @(posedge clk);  do_status(1'b1);   // locked
+        pll_lock = 1'b0;  repeat (5) @(posedge clk);  do_status(1'b0);   // unlocked again
+
+        // ---- 9. RESET after a LOAD: registers return to defaults ----
+        $display("=== Test 9: RESET after LOAD ===");
         do_load({W{1'b1}}, 1'b0);
         do_reset();
 
