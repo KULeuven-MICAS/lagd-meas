@@ -57,11 +57,12 @@ module xillydemo
   (* mark_debug = "true" *) output dac_rstn_o,
   // Others
   (* mark_debug = "true" *) output [1:0] chip_bootmode_o,
-  // PLL serial configuration interface (FPGA -> Pomelo PLL, see pll_controller.sv)
+  // PLL serial configuration interface (FPGA <-> Pomelo PLL, see pll_controller.sv)
   (* mark_debug = "true" *) output pll_clk_sel_o,
   (* mark_debug = "true" *) output pll_data_strb_o,
   (* mark_debug = "true" *) output pll_data_o,
-  (* mark_debug = "true" *) output pll_cfg_vld_strb_o
+  (* mark_debug = "true" *) output pll_cfg_vld_strb_o,
+  (* mark_debug = "true" *) input  pll_data_i        // PLL data_o (shallow-reg MSB) for READBACK
 );
 
 
@@ -744,7 +745,8 @@ module xillydemo
     .pll_clk_sel_o      (pll_clk_sel_o     ),
     .pll_data_strb_o    (pll_data_strb_o   ),
     .pll_data_o         (pll_data_o        ),
-    .pll_cfg_vld_strb_o (pll_cfg_vld_strb_o)
+    .pll_cfg_vld_strb_o (pll_cfg_vld_strb_o),
+    .pll_data_i         (pll_data_i        )
   );
 
   assign chip_bootmode_o = 2'b00; // default boot mode (00): passive boot

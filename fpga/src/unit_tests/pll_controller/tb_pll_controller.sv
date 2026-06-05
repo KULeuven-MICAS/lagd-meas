@@ -51,7 +51,7 @@ module tb_pll_controller;
     logic [7:0] fifo_din;
 
     // ---------------- DUT <-> PLL wires ----------------
-    logic pll_clk_sel, pll_data_strb, pll_data, pll_cfg_vld;
+    logic pll_clk_sel, pll_data_strb, pll_data, pll_cfg_vld, pll_data_o;
 
     // ---------------- DUT ----------------
     pll_controller #(
@@ -68,16 +68,19 @@ module tb_pll_controller;
         .pll_clk_sel_o      (pll_clk_sel),
         .pll_data_strb_o    (pll_data_strb),
         .pll_data_o         (pll_data),
-        .pll_cfg_vld_strb_o (pll_cfg_vld)
+        .pll_cfg_vld_strb_o (pll_cfg_vld),
+        .pll_data_i         (pll_data_o)      // closes the READBACK recirculation loop
     );
 
     // ---------------- PLL register model ----------------
+    // The model's data_o (shallow-register MSB) feeds back into the DUT's
+    // pll_data_i, so READBACK reads/recirculates through the real shift model.
     logic [W-1:0] cfg_shallow, cfg_hidden;
     pll_shift_model #(.W(W)) i_pll (
         .data_strb_i    (pll_data_strb),
         .data_i         (pll_data),
         .cfg_vld_strb_i (pll_cfg_vld),
-        .data_o         (),
+        .data_o         (pll_data_o),
         .cfg_shallow_o  (cfg_shallow),
         .cfg_hidden_o   (cfg_hidden)
     );
@@ -216,6 +219,23 @@ module tb_pll_controller;
         wait_idle();
     endtask
 
+    // READBACK: scan the shallow register out of data_o (recirculating) and check
+    // the 6 returned bytes reconstruct `expect`. Also confirm the recirculation
+    // preserved the shallow register and left the hidden register untouched.
+    task automatic do_readback(input logic [W-1:0] exp_word);
+        logic [7:0]   got;
+        logic [W-1:0] hid_before;
+        hid_before = cfg_hidden;
+        push_byte({PLL_CMD_MARKER, PLL_OP_READBACK});
+        for (int k = 0; k < PLL_CFG_BYTES; k++) begin
+            get_out(got);
+            check_eq($sformatf("readback byte[%0d]", k), got, cfg_byte(exp_word, k));
+        end
+        wait_idle();
+        check_eq("readback preserves shallow", cfg_shallow, exp_word);
+        check_eq("readback leaves hidden",     cfg_hidden,  hid_before);
+    endtask
+
     // ---------------- strobe interlock monitor ----------------
     // Outside an intended RESET, the two strobes must never be high together
     // (that combination is the PLL's register reset).
@@ -285,8 +305,21 @@ module tb_pll_controller;
         check_eq("marker drop: cfg unchanged", cfg_hidden, hid_before);
         check_eq("marker drop: no echo", {63'b0, (out_q.size() != 0)}, 64'd0);
 
-        // ---- 7. RESET after a LOAD: registers return to defaults ----
-        $display("=== Test 7: RESET after LOAD ===");
+        // ---- 7. READBACK: scan the shallow register out of data_o ----
+        // LOAD a pattern, then READBACK and confirm the returned 47 bits match,
+        // the shallow register is preserved (recirculated), and hidden untouched.
+        $display("=== Test 7: READBACK (data_o scan) ===");
+        do_load(47'h1234_5678_9ABC, 1'b0);  do_readback(47'h1234_5678_9ABC);
+        do_load({W{1'b1}},          1'b0);  do_readback({W{1'b1}});            // all ones
+        do_load('0,                 1'b0);  do_readback('0);                  // all zeros
+        do_load({{(W-1){1'b0}}, 1'b1}, 1'b0); do_readback({{(W-1){1'b0}}, 1'b1}); // bit 0
+        do_load({1'b1, {(W-1){1'b0}}}, 1'b0); do_readback({1'b1, {(W-1){1'b0}}}); // bit 46
+        do_load(47'h2AAA_AAAA_AAAA, 1'b0);  do_readback(47'h2AAA_AAAA_AAAA);
+        // Two readbacks in a row read the same value (recirculation is non-destructive).
+        do_readback(47'h2AAA_AAAA_AAAA);
+
+        // ---- 8. RESET after a LOAD: registers return to defaults ----
+        $display("=== Test 8: RESET after LOAD ===");
         do_load({W{1'b1}}, 1'b0);
         do_reset();
 

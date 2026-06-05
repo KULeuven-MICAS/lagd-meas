@@ -226,6 +226,7 @@ set_property PACKAGE_PIN J18 [get_ports pll_clk_sel_o]
 set_property PACKAGE_PIN K18 [get_ports pll_data_strb_o]
 set_property PACKAGE_PIN L21 [get_ports pll_data_o]
 set_property PACKAGE_PIN J21 [get_ports pll_cfg_vld_strb_o]
+set_property PACKAGE_PIN L22 [get_ports pll_data_i]
 
 # SPI outputs / bidirectional data: slow 1 MHz signals; exclude from timing.
 # set_false_path -to   [get_ports chip_sck_o]
@@ -272,6 +273,9 @@ set_false_path -to [get_ports pll_clk_sel_o]
 set_false_path -to [get_ports pll_data_strb_o]
 set_false_path -to [get_ports pll_data_o]
 set_false_path -to [get_ports pll_cfg_vld_strb_o]
+# pll_data_i is the PLL data_o returning over the FMC: a slow, PCB-delayed async
+# input sampled into a 2-FF synchronizer. Exclude it from input timing analysis.
+set_false_path -from [get_ports pll_data_i]
 
 ################################################################################
 ## SPECIFY IO DELAY CONSTRAINTS

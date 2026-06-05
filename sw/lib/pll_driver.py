@@ -30,6 +30,7 @@ from lib.pll_command_api import (
     cmd_load_loopback,
     cmd_clk_sel,
     cmd_reset,
+    cmd_readback,
     cmd_writeback,
     pack_pll_cfg,
     unpack_pll_cfg,
@@ -129,6 +130,36 @@ class PllDriver(PortDriver):
         """RESET: pulse both strobes to reset the PLL registers to their defaults."""
         self._send_bytes(cmd_reset())
         self._cfg = rst_pll_cfg()
+
+    def readback(self) -> Optional[int]:
+        """READBACK: scan the shallow register out of the PLL's data_o and return it.
+
+        The controller shifts the 47-bit shallow register out through data_o,
+        recirculating each bit (so the register is preserved), and returns its
+        content as 6 little-endian bytes. Returns the reassembled 47-bit word, or
+        None if the 6 bytes did not all arrive.
+
+        Unlike verify_load() -- which echoes what the *FPGA* assembled -- this reads
+        what the *PLL silicon* actually captured. It observes the shallow register
+        (cfg_data_raw_n), not the hidden one, so it verifies the shift chain and the
+        loaded value (the source of the last commit), not the hidden latches.
+        """
+        self._flush_read()
+        self._send_bytes(cmd_readback())
+        payload = self.read_bytes(CFG_BYTES)
+        return None if payload is None else join_le(payload)
+
+    def verify(self, word: int) -> bool:
+        """LOAD `word`, then READBACK and confirm the silicon captured it.
+
+            assert pll.verify(pll_cfg)   # strongest available digital check
+        """
+        self.load(word)
+        return self.readback() == (word & ((1 << 47) - 1))
+
+    def verify_cfg(self, **fields) -> bool:
+        """LOAD a field-built config, then READBACK and confirm it matches."""
+        return self.verify(pack_pll_cfg(**fields))
 
     def clk_sel(self, sel: int) -> None:
         """Set the SoC clock source (0 = PLL, 1 = reference). See class docstring."""

@@ -12,7 +12,9 @@
 #   open_ports()                       # open the ports -> module-global `pll`
 #   pll.writeback()                    # liveness self-test (echoes 0xFF)
 #   pll.load_cfg(pdown_PD=0, ...)      # build + LOAD a 47-bit config from fields
-#   pll.verify_load(word)              # LOAD + echo the 6 bytes back for checking
+#   pll.verify_load(word)              # LOAD + echo the 6 bytes back (FPGA echo)
+#   pll.readback()                     # scan the 47 bits back out of the PLL data_o
+#   pll.verify(word)                   # LOAD then READBACK == word (silicon check)
 #   pll.reset()                        # reset PLL registers to defaults
 #   pll.clk_sel(0|1)                   # 0 = PLL drives SoC clock, 1 = reference
 #   pll.bring_up(settle_s=..., ...)    # configure (PLL enabled) -> settle -> switch
@@ -91,6 +93,27 @@ def test_verify_load(word=None):
     return False
 
 
+def test_readback(word=None):
+    """LOAD a config, then READBACK its 47 bits from the PLL's data_o and compare.
+
+    This is the strongest digital check: it reads what the PLL silicon actually
+    captured in its shallow register (via the data_o scan-out), not just what the
+    FPGA assembled. Requires the bitstream with pll_data_i wired (FMC LA06_N).
+    """
+    if word is None:
+        word = pack_pll_cfg(pdown_PD=0, pdown_VCO=0, vco_tune_coarse=0xA, clk_div_en=1)
+    pll.load(word)
+    received = pll.readback()
+    if received is None:
+        logging.error('FAIL: readback sent 0x%012X, received None (incomplete scan)', word)
+        return False
+    if received == word:
+        logging.info('PASS: readback scanned 0x%012X out of data_o (silicon OK)', received)
+        return True
+    logging.error('FAIL [mismatch]: readback sent 0x%012X, received 0x%012X', word, received)
+    return False
+
+
 def example_bring_up():
     """Reference example: configure the PLL and switch the SoC onto it.
 
@@ -111,8 +134,10 @@ def main():
     pll.reset()
     # 1. liveness: the controller echoes the writeback header.
     test_writeback()
-    # 2. config-path check: a real LOAD whose 47 bits are echoed back.
+    # 2. config-path check: a real LOAD whose 47 bits are echoed back (FPGA echo).
     test_verify_load()
+    # 3. silicon check: LOAD then scan the 47 bits back out of the PLL's data_o.
+    test_readback()
     # NOTE: this script intentionally does NOT switch the SoC clock onto the PLL.
     # Use pll.bring_up() / pll.select_pll() once lock is confirmed on the scope.
 

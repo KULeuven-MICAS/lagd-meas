@@ -21,7 +21,13 @@
 #   0x1    | 0xF1   | LOAD_LOOPBACK | 6 bytes | LOAD + echo the 6 payload bytes back
 #   0x2    | 0xF2   | CLK_SEL       | 1 byte  | set static clk_sel (byte[0])
 #   0x3    | 0xF3   | RESET         | 0 bytes | pulse both strobes -> reset PLL regs
+#   0x4    | 0xF4   | READBACK      | 0 bytes | scan shallow reg out of data_o -> 6 bytes
 #   0xF    | 0xFF   | WRITEBACK     | 0 bytes | echo the 0xFF header back (liveness)
+#
+# READBACK returns the 47-bit shallow-register content (what the PLL silicon
+# captured) as 6 little-endian bytes -- reassemble with join_le and compare. It is
+# stronger than LOAD_LOOPBACK (which only echoes what the FPGA assembled), but it
+# observes the shallow register, not the hidden one (no scan tap on the latter).
 #
 # The 47-bit config word is the value the FPGA shifts into the PLL's shallow
 # register MSB-first; here it is split little-endian into 6 bytes (byte0 = bits
@@ -40,6 +46,7 @@ OP_LOAD           = 0x0  # shift 47 bits + commit
 OP_LOAD_LOOPBACK  = 0x1  # LOAD + echo the 6 payload bytes
 OP_CLK_SEL        = 0x2  # set clk_sel from 1 payload byte
 OP_RESET          = 0x3  # pulse both strobes (reset registers)
+OP_READBACK       = 0x4  # scan shallow register out of data_o -> 6 bytes
 OP_WRITEBACK      = 0xF  # echo header (no PLL action)
 
 CFG_BITS  = 47
@@ -139,6 +146,11 @@ def cmd_clk_sel(sel: int) -> List[int]:
 def cmd_reset() -> List[int]:
     """Frame for RESET: header only (pulses both strobes -> reset PLL registers)."""
     return [header(OP_RESET)]
+
+
+def cmd_readback() -> List[int]:
+    """Frame for READBACK: header only; the controller returns 6 little-endian bytes."""
+    return [header(OP_READBACK)]
 
 
 def cmd_writeback() -> List[int]:

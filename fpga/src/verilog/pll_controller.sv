@@ -28,8 +28,10 @@
 //   payload and shift it into the PLL's shallow register MSB-first, one bit per
 //   data_strb_i rising edge, then pulse cfg_vld_strb_i once to commit it into the
 //   hidden register. CLK_SEL latches a static clk_sel level. RESET pulses both
-//   strobes together to reset the PLL registers. WRITEBACK echoes the 0xFF header
-//   back to the read FIFO as a controller-liveness check.
+//   strobes together to reset the PLL registers. READBACK scans the shallow
+//   register out of data_o (pll_data_i), recirculating each bit so the register is
+//   preserved, and returns its 47 bits as 6 bytes (reads what the silicon actually
+//   captured). WRITEBACK echoes the 0xFF header back as a controller-liveness check.
 //
 //   Strobe timing: data_strb_i / cfg_vld_strb_i are used as gated *clocks* inside
 //   the PLL, so each is generated as a clean two-phase pulse - data_i is set up
@@ -55,11 +57,12 @@ module pll_controller #(
     (* mark_debug = "true" *) input  logic       fifo_pll_full_i,
     (* mark_debug = "true" *) output logic [7:0] fifo_pll_din_o,
 
-    // PLL serial configuration interface (all FPGA -> PLL)
+    // PLL serial configuration interface (FPGA -> PLL, except pll_data_i)
     (* mark_debug = "true" *) output logic pll_clk_sel_o,      // -> clk_sel_i
     (* mark_debug = "true" *) output logic pll_data_strb_o,    // -> data_strb_i (shift clock)
     (* mark_debug = "true" *) output logic pll_data_o,         // -> data_i (serial data, MSB first)
-    (* mark_debug = "true" *) output logic pll_cfg_vld_strb_o  // -> cfg_vld_strb_i (commit clock)
+    (* mark_debug = "true" *) output logic pll_cfg_vld_strb_o, // -> cfg_vld_strb_i (commit clock)
+    (* mark_debug = "true" *) input  logic pll_data_i          // <- data_o (shallow-reg MSB, for READBACK)
 );
 
     typedef enum logic [3:0] {
@@ -70,7 +73,9 @@ module pll_controller #(
         COMMIT_GAP,     // guard gap (both strobes low) before commit
         COMMIT_HIGH,    // cfg_vld_strb high: load hidden register
         RST_HIGH,       // both strobes high: reset PLL registers
-        ECHO,           // loopback: push the 6 payload bytes back
+        READ_LOW,       // data_strb low: sample data_o, recirculate, capture
+        READ_HIGH,      // data_strb high: PLL shifts the recirculated bit back in
+        ECHO,           // push the 6 payload / readback bytes back
         WRITEBACK_PUSH  // push the 0xFF header back (liveness)
     } pll_state_t;
 
@@ -88,6 +93,17 @@ module pll_controller #(
     logic [5:0]  bit_idx;        // current bit being shifted (46 .. 0, MSB first)
     logic [15:0] strb_cnt;       // cycle counter within a strobe half-period
     logic [2:0]  echo_idx;       // payload byte index during ECHO
+    (* mark_debug = "true" *) logic [PLL_CFG_BITS-1:0] read_result_r; // bits captured from data_o
+
+    // Two-FF synchronizer for pll_data_i (the PLL's data_o; slow, PCB-delayed,
+    // asynchronous to clk_i). Sampled during the READ_LOW dwell, well after the
+    // previous shift has settled and propagated back.
+    (* async_reg = "true" *) logic [1:0] data_i_sync;
+    wire pll_data_i_synced = data_i_sync[1];
+    always_ff @(posedge clk_i or posedge rst_i) begin
+        if (rst_i) data_i_sync <= 2'b0;
+        else       data_i_sync <= {data_i_sync[0], pll_data_i};
+    end
 
     // Read-side stream adapter (absorbs the FIFO's 1-cycle read latency).
     logic       fifo_rd_valid;
@@ -142,6 +158,7 @@ module pll_controller #(
             bit_idx            <= '0;
             strb_cnt           <= '0;
             echo_idx           <= '0;
+            read_result_r      <= '0;
             fifo_pll_wr_en_o   <= 1'b0;
             fifo_pll_din_o     <= '0;
             pll_data_strb_o    <= 1'b0;
@@ -174,6 +191,12 @@ module pll_controller #(
                                 PLL_OP_RESET: begin
                                     strb_cnt      <= '0;
                                     state_current <= RST_HIGH;
+                                end
+                                PLL_OP_READBACK: begin
+                                    bit_idx       <= 6'(PLL_CFG_BITS - 1); // 46 down to 0
+                                    strb_cnt      <= '0;
+                                    read_result_r <= '0;
+                                    state_current <= READ_LOW;
                                 end
                                 PLL_OP_WRITEBACK: begin
                                     state_current <= WRITEBACK_PUSH;
@@ -284,7 +307,53 @@ module pll_controller #(
                 end
 
                 // ---------------------------------------------------------------
-                // LOOPBACK: echo the 6 payload bytes back (same order received).
+                // READBACK: scan the shallow register out of data_o, MSB-first,
+                // recirculating each captured bit back in so the register is
+                // preserved (a full 47-bit rotation returns it to its prior value).
+                // data_strb low: sample the (settled, synchronized) data_o = the
+                // current MSB, capture it into read_result_r, and drive it back out
+                // on pll_data_o so the next shift recirculates it.
+                READ_LOW: begin
+                    pll_data_strb_o <= 1'b0;
+                    if (strb_cnt == '0) begin
+                        // one capture per bit, at entry (input has settled since the
+                        // previous shift, plus the 2-FF synchronizer latency).
+                        read_result_r <= {read_result_r[PLL_CFG_BITS-2:0], pll_data_i_synced};
+                        pll_data_o     <= pll_data_i_synced;  // recirculate
+                    end
+                    if (strb_cnt == STRB_HALF - 1) begin
+                        strb_cnt        <= '0;
+                        pll_data_strb_o <= 1'b1;   // rising edge into READ_HIGH
+                        state_current   <= READ_HIGH;
+                    end else begin
+                        strb_cnt <= strb_cnt + 16'd1;
+                    end
+                end
+
+                // data_strb high: the PLL shifts the recirculated bit into bit 0.
+                // After the last bit (bit_idx==0) the register has rotated full
+                // circle; hand the captured 47 bits to ECHO as 6 LE bytes.
+                READ_HIGH: begin
+                    pll_data_strb_o <= 1'b1;
+                    if (strb_cnt == STRB_HALF - 1) begin
+                        strb_cnt        <= '0;
+                        pll_data_strb_o <= 1'b0;
+                        if (bit_idx == 6'd0) begin
+                            cfg_raw_r     <= {{(PLL_CFG_BYTES*8 - PLL_CFG_BITS){1'b0}}, read_result_r};
+                            echo_idx      <= 3'd0;
+                            state_current <= ECHO;
+                        end else begin
+                            bit_idx       <= bit_idx - 6'd1;
+                            state_current <= READ_LOW;
+                        end
+                    end else begin
+                        strb_cnt <= strb_cnt + 16'd1;
+                    end
+                end
+
+                // ---------------------------------------------------------------
+                // Echo the 6 bytes in cfg_raw_r back (LOAD_LOOPBACK payload, or the
+                // READBACK result), same little-endian order as the LOAD payload.
                 ECHO: begin
                     if (!fifo_pll_full_i) begin
                         fifo_pll_din_o   <= cfg_raw_r[echo_idx*8 +: 8];

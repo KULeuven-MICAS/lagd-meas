@@ -172,14 +172,24 @@ byte `{marker=0xF, opcode}` then an opcode-dependent payload. Encoding:
 | header | opcode        | payload | action |
 |--------|---------------|---------|--------|
 | `0xF0` | LOAD          | 6 bytes | shift the 47-bit word in MSB-first, then commit |
-| `0xF1` | LOAD_LOOPBACK | 6 bytes | LOAD + echo the 6 payload bytes back |
+| `0xF1` | LOAD_LOOPBACK | 6 bytes | LOAD + echo the 6 payload bytes back (FPGA echo) |
 | `0xF2` | CLK_SEL       | 1 byte  | set the SoC clock source (0 = PLL, 1 = reference) |
 | `0xF3` | RESET         | –       | pulse both strobes → reset the PLL registers |
+| `0xF4` | READBACK      | – (→6 B)| scan the shallow register out of `data_o` (recirculating) → 6 bytes |
 | `0xFF` | WRITEBACK     | –       | echo the `0xFF` header back (controller liveness) |
 
 The 47-bit word is the value of `pll_cfg_pkg::pack_pll_cfg()`, sent little-endian
 (byte0 = bits `[7:0]` … byte5 = bits `[46:40]`) and shifted into the shallow
 register MSB-first.
+
+**READBACK** verifies what the PLL silicon actually captured: it shifts the shallow
+register out through `data_o` (`pad_pll_data_o` → FPGA `pll_data_i`, FMC `LA06_N`)
+while recirculating each bit back in, so the register is preserved (a full 47-bit
+rotation restores it — an accidental `cfg_vld` then re-commits the same value).
+It returns the 47 bits as 6 little-endian bytes. This is strictly stronger than
+LOAD_LOOPBACK (which only echoes what the FPGA assembled), but it taps the shallow
+register, not the hidden one — so it checks the shift chain + loaded value (the
+source of the commit), not the hidden register's own latches.
 
 ### How to use it (from the host)
 
@@ -189,7 +199,8 @@ Helpers live in [sw/tests/pll_test.py](../sw/tests/pll_test.py) /
 ```python
 pll.writeback()                                  # liveness: echoes 0xFF
 word = pll.load_cfg(pdown_PD=0, pdown_VCO=0)     # build + LOAD a 47-bit config
-pll.verify_load(word)                            # LOAD + echo the 47 bits to check
+pll.verify_load(word)                            # LOAD + FPGA echo of the 47 bits
+pll.verify(word)                                 # LOAD + scan back from data_o (silicon)
 pll.bring_up(settle_s=0.01)                      # configure -> settle -> select PLL
 ```
 
