@@ -27,8 +27,8 @@ the read FIFO — but they target different devices and protocols.
 
 | Interface | Controller | Device | FIFOs | Mode |
 |-----------|------------|--------|-------|------|
-| Quad-SPI to chip | [chip_controller.sv](src/verilog/chip_controller.sv) + [quad_spi_master.sv](src/verilog/quad_spi_master.sv) | chip's on-chip `axi_spi_slave` (register/memory) | `/dev/xillybus_{write,read}_32` | mode 0, quad, bursts |
-| DAC SPI | [perip_controller.sv](src/verilog/perip_controller.sv) + [dac_spi_driver.sv](src/verilog/dac_spi_driver.sv) | on-board DAC (DAC8802) | `/dev/xillybus_{write,read}_32_2` | mode 3, 1-bit, single word |
+| Quad-SPI to chip | [chip_controller.sv](src/verilog/chip_controller.sv) + [quad_spi_master.sv](src/verilog/quad_spi_master.sv) | chip's on-chip `axi_spi_slave` (register/memory) | `/dev/xillybus_{write,read}_32` | mode 0, quad, bursts, 25 MHz |
+| DAC + S2P | [perip_controller.sv](src/verilog/perip_controller.sv) + [dac_spi_driver.sv](src/verilog/dac_spi_driver.sv) + [s2p_driver.sv](src/verilog/s2p_driver.sv) | on-board DAC (AD8802) **and** HV9308 32-ch S2P (current-mirror bias) | `/dev/xillybus_{write,read}_32_2` | DAC: mode-3 SPI; S2P: 32-bit shift+latch; both 1 MHz |
 | PLL serial config | [pll_controller.sv](src/verilog/pll_controller.sv) ([pll_command_api.sv](src/verilog/pll_command_api.sv)) | Pomelo PLL test structure (`lagd_clk_gen`) | `/dev/xillybus_{write,read}_8` | 47-bit shift + commit, 1 MHz strobe |
 
 ---
@@ -114,12 +114,15 @@ only active after `CONFIG_SPI_SLAVE` writes its `reg0`.
 
 ---
 
-## 2. DAC SPI (peripheral)
+## 2. Periphery: DAC + HV9308 S2P (shared controller)
 
-A second, independent controller configures the on-board DAC. It uses its own
-FIFO pair (`/dev/xillybus_{write,read}_32_2`) and clock, driven by
-[perip_controller.sv](src/verilog/perip_controller.sv) +
-[dac_spi_driver.sv](src/verilog/dac_spi_driver.sv).
+A second controller, [perip_controller.sv](src/verilog/perip_controller.sv) on its
+own FIFO pair (`/dev/xillybus_{write,read}_32_2`), drives **two devices**
+multiplexed by the command opcode: the on-board DAC ([dac_spi_driver.sv](src/verilog/dac_spi_driver.sv))
+and the HV9308 32-channel serial-to-parallel converter ([s2p_driver.sv](src/verilog/s2p_driver.sv))
+that sets the bias resistors of the chip's analog current mirrors. Both run at
+**1 MHz**. This is the standard way to host a new low-bandwidth device when no
+spare Xillybus FIFO is free — add an opcode, not a stream.
 
 Unlike the chip Quad-SPI, **each DAC access is a single self-contained 32-bit
 word** — there are no follow-up address/data words and no bursts. The fields are
@@ -144,6 +147,23 @@ Behavior:
   extra cycles afterwards to meet DAC timing.
 - One transfer per word (no bursts); `dac_shdn` / `dac_rstn` are also driven
   directly from the command word.
+
+### HV9308 S2P (opcodes on the same stream)
+
+The HV9308 is a 32-bit shift register feeding 32 latched outputs (see
+[perip_command_api.sv](src/verilog/perip_command_api.sv)):
+
+| header | opcode | frame (host → write FIFO) | action |
+|---|---|---|---|
+| `0xF10…` | `S2P_WRITE` | `[cmd]` `[32-bit value]` | shift the value in MSB-first, pulse LE to latch |
+| `0xF11…` | `S2P_READBACK` | `[cmd]` → 1 word | recirculating scan out of the cascade Data Out (non-destructive); returns the 32 bits |
+| `0xF12…` | `S2P_OE` | `[cmd]` (bit0 = OE) | output enable; `0` blanks all outputs |
+
+`S2P_READBACK` reads what the HV9308 silicon actually captured (via its Data Out,
+wired back to the FPGA on FMC `LA13_P`), the same recirculating-scan idea as the
+PLL readback. OE powers up `0` (blanked); software enables it after a write and
+blanks it around any reconfiguration (`s2p_reconfigure()` does this dance). The
+bit→channel/mirror mapping is the PCB designer's; the FPGA only fixes MSB-first.
 
 > Note: the host-side DAC helpers under `sw/lib/` are legacy and predate the
 > current `perip_command_api.sv` packing — when reusing the DAC path, build words

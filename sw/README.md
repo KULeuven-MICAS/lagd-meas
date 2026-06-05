@@ -100,11 +100,13 @@ The chip control protocol is defined by `fpga/src/verilog/chip_command_api.sv`: 
 word is a command only when its top nibble (the handshake marker) equals 0xF; the next byte
 is the opcode. The software mirror of this ISA lives in `lib/chip_command_api.py`.
 
-The periphery port (prp/pwp) drives the on-chip DAC via `fpga/src/verilog/perip_command_api.sv`,
-which uses the same framing as the chip controller: a 32-bit word is a command only when its top
-nibble (marker) equals 0xF, with the opcode in the next byte (0xFF selects writeback, any other
-value performs a DAC transaction). The whole DAC payload (rstn/shdn/addr/data) fits in that single
-word. The software mirror of this ISA lives in `lib/perip_command_api.py`.
+The periphery port (prp/pwp) hosts TWO devices on its one stream via `fpga/src/verilog/perip_command_api.sv`,
+multiplexed by the opcode: the on-board DAC and the HV9308 32-channel serial-to-parallel converter
+(S2P) that biases the chip's analog current mirrors. Same framing as the chip controller (32-bit word,
+marker 0xF, opcode in the next byte). DAC commands are single words (rstn/shdn/addr/data). The S2P adds
+`S2P_WRITE` (a 2-word [cmd][32-bit value] frame, shift+latch), `S2P_READBACK` (recirculating scan of the
+HV9308 shift register out of its cascade Data Out -> 1 word), and `S2P_OE` (output enable). The software
+mirror of this ISA lives in `lib/perip_command_api.py`.
 
 The PLL port (8-bit read_8/write_8) drives the Pomelo PLL serial configuration via
 `fpga/src/verilog/pll_command_api.sv`. Because the stream is byte-wide, a command is a multi-byte
@@ -117,7 +119,7 @@ The lib folder contains the reusable building blocks:
 - port_driver.py: PortDriver -- shared base owning a read+write port (open/close as a context manager, word send, read polling, writeback loopback); subclassed by the two drivers below
 - chip_driver.py: ChipDriver -- exposes the chip command set (init_spi, config_clk_rst, write_mem, read_mem, writeback)
 - chip_command_api.py: chip controller ISA (command-word builders + opcodes); the software mirror of `chip_command_api.sv` and must stay in sync with it
-- perip_driver.py: PeripDriver -- exposes the periphery/DAC command set: raw register ops (dac_write, dac_reset, writeback) plus AD8802 channel/voltage helpers (set_code/get_code, set_voltage/get_voltage with V_REF as an argument, set_all_code/set_all_voltage, midscale, reset, shutdown) backed by a host-side write cache
+- perip_driver.py: PeripDriver -- exposes the periphery command set for both devices on the stream: the DAC (dac_write, dac_reset, writeback, AD8802 channel/voltage helpers backed by a host-side cache) and the HV9308 S2P (s2p_write, s2p_readback, s2p_verify, s2p_output_enable, and s2p_reconfigure which blanks->writes->re-enables)
 - perip_command_api.py: periphery controller ISA (command-word builders + opcodes); the software mirror of `perip_command_api.sv` and must stay in sync with it
 - pll_driver.py: PllDriver -- exposes the PLL serial-config command set over the 8-bit stream (load/load_cfg, verify_load, reset, clk_sel, writeback, plus a `bring_up` helper that configures+switches the SoC onto the PLL); keeps a host-side cache of the last config word
 - pll_command_api.py: PLL controller ISA (byte-frame builders + opcodes + the `pack_pll_cfg`/`rst_pll_cfg` field layout); the software mirror of `pll_command_api.sv` / `pomelo_pll_wrap_cfg.yml` and must stay in sync with them

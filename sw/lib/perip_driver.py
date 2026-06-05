@@ -19,10 +19,13 @@ from typing import Optional
 from lib.port_driver import PortDriver
 from lib.perip_command_api import (
     OP_WRITEBACK,
+    OP_S2P_READBACK,
     make_command,
     cmd_dac_write,
     cmd_dac_write_loopback,
     cmd_dac_reset,
+    cmd_s2p_write,
+    cmd_s2p_oe,
 )
 
 # AD8802: 12 channels, 8-bit, full code range over [0, V_REF).
@@ -61,6 +64,9 @@ class PeripDriver(PortDriver):
         super().__init__(write_dev, read_dev, width)
         # Last code written per channel (None = unknown / never written).
         self._codes = [None] * DAC_NUM_CHANNELS  # type: List[Optional[int]]
+        # HV9308 S2P host-side cache: last value written, last OE state.
+        self._s2p_value = None  # type: Optional[int]
+        self._s2p_oe = False
 
     # ---- raw command set (see perip_command_api.sv) ----
     def dac_write(self, addr: int, data: int, rstn: int = 1, shdn: int = 1) -> None:
@@ -108,6 +114,48 @@ class PeripDriver(PortDriver):
         low 20 bits ([19:0]).
         """
         return self._loopback(make_command(OP_WRITEBACK, payload))
+
+    # ---- HV9308 32-channel serial-to-parallel converter (S2P) ----
+    def s2p_write(self, value: int) -> None:
+        """Shift a 32-bit value into the HV9308 and latch it (S2P_WRITE).
+
+        Bits are shifted MSB-first; the bit->channel/mirror mapping is the PCB's.
+        With OE enabled the outputs follow the new latch immediately.
+        """
+        self._send_words(cmd_s2p_write(value))
+        self._s2p_value = value & 0xFFFFFFFF
+
+    def s2p_readback(self) -> Optional[int]:
+        """Scan the HV9308 shift register out of its cascade Data Out (S2P_READBACK).
+
+        Returns the 32-bit register content (the recirculating scan is non-
+        destructive), or None on timeout. This reads what the HV9308 silicon
+        actually holds -- the strongest digital check of the loaded value.
+        """
+        return self._loopback(make_command(OP_S2P_READBACK))
+
+    def s2p_verify(self, value: int) -> bool:
+        """S2P_WRITE `value`, then READBACK and confirm the HV9308 captured it."""
+        self.s2p_write(value)
+        return self.s2p_readback() == (value & 0xFFFFFFFF)
+
+    def s2p_output_enable(self, on: bool = True) -> None:
+        """Set the HV9308 Output Enable (S2P_OE): True = outputs on, False = blank.
+
+        Powers up blanked (OE=0); enable after loading a configuration.
+        """
+        self._send_words(cmd_s2p_oe(on))
+        self._s2p_oe = bool(on)
+
+    def s2p_reconfigure(self, value: int) -> None:
+        """Safely re-load the HV9308: blank the outputs, write, then re-enable.
+
+        Blanking (OE=0) around the latch update avoids a glitch on the outputs as
+        they switch from the old configuration to the new one.
+        """
+        self.s2p_output_enable(False)
+        self.s2p_write(value)
+        self.s2p_output_enable(True)
 
     # ---- channel / voltage helpers (AD8802) ----
     def set_code(self, channel: int, code: int, shdn: int = 1) -> None:

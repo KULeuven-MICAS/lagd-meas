@@ -98,6 +98,23 @@ def test_verify_dac_write(addr=3, data=0x5A, rstn=1, shdn=1):
         return False
 
 
+def test_s2p(value=0xDEADBEEF):
+    """S2P write + read-back verify against the HV9308's own shift register.
+
+    Enables the outputs, shifts `value` into the HV9308, then scans it back out of
+    the cascade Data Out and compares -- reads what the silicon actually captured.
+    Requires the bitstream with the s2p_* pins wired (FMC LA11-13).
+    """
+    perip.s2p_output_enable(True)
+    if perip.s2p_verify(value):
+        logging.info('PASS: s2p_verify 0x%08X (HV9308 captured it)', value)
+        return True
+    rb = perip.s2p_readback()
+    logging.error('FAIL: s2p wrote 0x%08X, read back %s',
+                  value, ('0x%08X' % rb) if rb is not None else 'None')
+    return False
+
+
 def example_with_driver():
     """Reference example: drive the AD8802 via PeripDriver as a context manager."""
     with PeripDriver(WRITE_DEV, READ_DEV) as perip:
@@ -119,6 +136,8 @@ def main():
     test_writeback()
     # loopback-write check: a real DAC write whose command is echoed back
     test_verify_dac_write(addr=3, data=0x5A)
+    # S2P (HV9308): write + read-back verify of the 32-bit bias-resistor register
+    test_s2p()
     # set all channels to a volt
     # volt = 0.6
     # perip.set_all_voltage(volt, VREF)

@@ -46,11 +46,17 @@ module tb_perip_controller;
     // ---------------- DUT <-> DAC wires ----------------
     logic dac_clk, dac_csb, dac_sdi, dac_shdn, dac_rstn;
 
+    // ---------------- DUT <-> HV9308 (S2P) wires ----------------
+    localparam int S2P_SCK_HZ = 10_000_000;   // fast-ish for sim (SCK_HALF=5)
+    logic s2p_din, s2p_clk, s2p_le, s2p_oe, s2p_dout;
+    logic [31:0] s2p_latch;
+
     // ---------------- DUT ----------------
     perip_controller #(
         .CLK_HZ          (CLK_HZ),
         .SCK_HZ          (SCK_HZ),
-        .CSB_HOLD_CYCLES (CSB_HOLD)
+        .CSB_HOLD_CYCLES (CSB_HOLD),
+        .S2P_SCK_HZ      (S2P_SCK_HZ)
     ) dut (
         .clk_i              (clk),
         .rst_i              (rst),
@@ -64,7 +70,12 @@ module tb_perip_controller;
         .dac_csb_o          (dac_csb),
         .dac_sdi_o          (dac_sdi),
         .dac_shdn_o         (dac_shdn),
-        .dac_rstn_o         (dac_rstn)
+        .dac_rstn_o         (dac_rstn),
+        .s2p_din_o          (s2p_din),
+        .s2p_clk_o          (s2p_clk),
+        .s2p_le_o           (s2p_le),
+        .s2p_oe_o           (s2p_oe),
+        .s2p_dout_i         (s2p_dout)
     );
 
     // ---------------- DAC model ----------------
@@ -74,6 +85,18 @@ module tb_perip_controller;
         .sdi  (dac_sdi),
         .rstn (dac_rstn),
         .shdn (dac_shdn)
+    );
+
+    // ---------------- HV9308 (S2P) model ----------------
+    // The model's cascade Data Out feeds back to the DUT's s2p_dout_i, closing the
+    // readback recirculation loop.
+    hv9308_model i_s2p (
+        .din     (s2p_din),
+        .clk     (s2p_clk),
+        .le      (s2p_le),
+        .oe      (s2p_oe),
+        .dout    (s2p_dout),
+        .latch_o (s2p_latch)
     );
 
     // ---------------- input FIFO model (non-fallthrough, pointer based) ----------------
@@ -127,14 +150,18 @@ module tb_perip_controller;
         return {PERIP_CMD_MARKER, PERIP_OP_WRITEBACK, payload};
     endfunction
 
+    function automatic logic [31:0] make_cmd(input logic [7:0] opcode, input logic [19:0] payload = '0);
+        return {PERIP_CMD_MARKER, opcode, payload};
+    endfunction
+
     // ---------------- sync helpers ----------------
     // Pending = a word in the input FIFO, in flight in the adapter, the
-    // controller not in IDLE, or the DAC engine still busy.
+    // controller not in IDLE, or the DAC / S2P engine still busy.
     task automatic wait_idle();
         @(posedge clk);
         while ((in_wr != in_rd) || dut.adapter_inst.rd_inflight === 1'b1 ||
-               dut.fifo_rd_valid === 1'b1 || dut.state_current !== 2'd0 ||
-               dut.dac_busy_o === 1'b1)
+               dut.fifo_rd_valid === 1'b1 || dut.state_current !== 3'd0 ||
+               dut.dac_busy_o === 1'b1 || dut.s2p_busy_o === 1'b1)
             @(posedge clk);
         repeat (4) @(posedge clk);
     endtask
@@ -184,6 +211,31 @@ module tb_perip_controller;
         get_out(got);
         check_eq("writeback", got, cmd_word);
         wait_idle();
+    endtask
+
+    // ---------------- S2P (HV9308) transaction helpers ----------------
+    // S2P_WRITE: 2-word frame [cmd][value]; shift + latch. With OE high, the model
+    // latch should reflect `value`.
+    task automatic do_s2p_write(input logic [31:0] value);
+        push_word(make_cmd(PERIP_OP_S2P_WRITE));
+        push_word(value);
+        wait_idle();
+    endtask
+
+    // S2P_READBACK: scan the shift register out of Data Out; one 32-bit word echoed.
+    task automatic do_s2p_readback(input logic [31:0] exp_word);
+        logic [31:0] got;
+        push_word(make_cmd(PERIP_OP_S2P_READBACK));
+        get_out(got);
+        check_eq("s2p readback", got, exp_word);
+        wait_idle();
+    endtask
+
+    // S2P_OE: set the Output Enable level (bit0).
+    task automatic do_s2p_oe(input logic on);
+        push_word(make_cmd(PERIP_OP_S2P_OE, {19'b0, on}));
+        wait_idle();
+        check_eq("s2p oe", {63'b0, s2p_oe}, {63'b0, on});
     endtask
 
     // ---------------- AD8802 timing monitor ----------------
@@ -312,6 +364,31 @@ module tb_perip_controller;
         $display("=== Test 10: DAC write loopback ===");
         do_dac_write_loopback(4'd3, 8'h5A);
         do_dac_write_loopback(4'd10, 8'hC7, 1'b0);   // also exercise shdn = 0
+
+        // ---- 11. S2P (HV9308): enable, write, latch, readback ----
+        $display("=== Test 11: S2P write / OE / readback ===");
+        do_s2p_oe(1'b1);                              // enable outputs
+        do_s2p_write(32'hDEAD_BEEF);
+        check_eq("s2p latch", s2p_latch, 32'hDEAD_BEEF);   // outputs follow the latch
+        do_s2p_readback(32'hDEAD_BEEF);               // scan SR back out of Data Out
+        // ordering-sensitive patterns through the write+readback path
+        do_s2p_write(32'h0000_0001); do_s2p_readback(32'h0000_0001);   // bit 0
+        do_s2p_write(32'h8000_0000); do_s2p_readback(32'h8000_0000);   // bit 31
+        do_s2p_write(32'hA5A5_5A5A); do_s2p_readback(32'hA5A5_5A5A);
+        check_eq("s2p latch pattern", s2p_latch, 32'hA5A5_5A5A);
+        // readback is non-destructive: a second readback returns the same value
+        do_s2p_readback(32'hA5A5_5A5A);
+
+        // ---- 12. S2P OE blanking: outputs go LOW, latch retained ----
+        $display("=== Test 12: S2P OE blanking ===");
+        do_s2p_oe(1'b0);                              // blank
+        check_eq("s2p blanked outputs", s2p_latch, 32'h0000_0000);
+        do_s2p_oe(1'b1);                              // re-enable -> latch value returns
+        check_eq("s2p re-enabled outputs", s2p_latch, 32'hA5A5_5A5A);
+
+        // ---- 13. DAC still works after the S2P traffic (shared stream) ----
+        $display("=== Test 13: DAC after S2P ===");
+        do_dac_write(4'd6, 8'h3C);
 
         // ---- summary ----
         repeat (10) @(posedge clk);

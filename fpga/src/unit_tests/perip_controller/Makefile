@@ -22,8 +22,10 @@ SIM_SRCS = \
 	$(VERILOG_DIR)/perip_command_api.sv \
 	$(VERILOG_DIR)/fifo_to_axi_stream_adapter.sv \
 	$(VERILOG_DIR)/dac_spi_driver.sv \
+	$(VERILOG_DIR)/s2p_driver.sv \
 	$(VERILOG_DIR)/perip_controller.sv \
 	$(CURDIR)/ad8802_model.sv \
+	$(CURDIR)/hv9308_model.sv \
 	$(CURDIR)/tb_perip_controller.sv
 
 include ../common.mk

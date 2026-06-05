@@ -12,7 +12,7 @@ General **Xillybus documentation**: http://www.xillybus.com/doc.
 | Stream | Width | Driven by |
 |--------|-------|-----------|
 | `/dev/xillybus_{write,read}_32`   | 32-bit | chip controller — chip Quad-SPI |
-| `/dev/xillybus_{write,read}_32_2` | 32-bit | periphery controller — on-board DAC SPI |
+| `/dev/xillybus_{write,read}_32_2` | 32-bit | periphery controller — on-board DAC SPI + HV9308 S2P |
 | `/dev/xillybus_{write,read}_8`    |  8-bit | PLL controller — Pomelo PLL serial config |
 
 The two 32-bit pairs let an independent host engine poll Ivdd/Ibias measurements
@@ -25,8 +25,8 @@ controllers, their command protocols, the build (`make`), and simulation
 
 - `verilog/` — RTL: top module [verilog/xillydemo.v](verilog/xillydemo.v) plus the
   three controllers (`chip_controller`, `perip_controller`, `pll_controller`) with
-  their `*_command_api.sv` ISAs, the SPI engines (`quad_spi_master`,
-  `dac_spi_driver`), the FIFO→AXI-stream adapter, and helper macros.
+  their `*_command_api.sv` ISAs, the device engines (`quad_spi_master`,
+  `dac_spi_driver`, `s2p_driver`), the FIFO→AXI-stream adapter, and helper macros.
 - `constraints/` — [constraints/xillydemo.xdc](constraints/xillydemo.xdc): pin
   mapping and IO timing.
 - `vivado_ip/` — packaged Vivado IP: the dual-port FIFOs (`fifo_dualport_32x512`,

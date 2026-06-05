@@ -62,7 +62,13 @@ module xillydemo
   (* mark_debug = "true" *) output pll_data_strb_o,
   (* mark_debug = "true" *) output pll_data_o,
   (* mark_debug = "true" *) output pll_cfg_vld_strb_o,
-  (* mark_debug = "true" *) input  pll_data_i        // PLL data_o (shallow-reg MSB) for READBACK
+  (* mark_debug = "true" *) input  pll_data_i,       // PLL data_o (shallow-reg MSB) for READBACK
+  // HV9308 32-channel serial-to-parallel converter (current-mirror bias resistors)
+  (* mark_debug = "true" *) output s2p_din_o,
+  (* mark_debug = "true" *) output s2p_clk_o,
+  (* mark_debug = "true" *) output s2p_le_o,
+  (* mark_debug = "true" *) output s2p_oe_o,
+  (* mark_debug = "true" *) input  s2p_dout_i        // HV9308 cascade Data Out, for READBACK
 );
 
 
@@ -672,14 +678,15 @@ module xillydemo
   /////////////////////////////////////////////////
   ////    CHIP and PERIP CONTROLLER MODULES    ////
   /////////////////////////////////////////////////
-  parameter integer CLK_HZ = 100_000_000; // 100 MHz bus clock
-  parameter integer SCK_HZ = 25_000_000;  // 25 MHz SPI clock (max supported by DAC is 33 MHz)
+  parameter integer CLK_HZ = 100_000_000;       // 100 MHz bus clock
+  parameter integer CHIP_SCK_HZ = 25_000_000;   // 25 MHz chip Quad-SPI clock
+  parameter integer PERIP_SCK_HZ = 1_000_000;   // 1 MHz DAC SPI + HV9308 S2P shift clock
   parameter integer CSB_HOLD_CYCLES = 40 / (1000_000_000 / CLK_HZ); // 40 ns hold time for CSB signal (see DAC datasheet) converted to number of bus clock cycles
 
   // Controller for on-chip Quad-SPI
   chip_controller #(
     .CLK_HZ            (CLK_HZ         ),
-    .SCK_HZ            (SCK_HZ         )
+    .SCK_HZ            (CHIP_SCK_HZ    )
   ) chip_controller_inst (
     .clk_i             (clk_chip_ctrl  ),
     .rst_i             (rst_chip_ctrl  ),
@@ -704,14 +711,12 @@ module xillydemo
     .chip_write_pulse_o(chip_write_pulse)
   );
 
-  // Controller for peripheral DAC (single-port SPI)
-  wire perip_dac_shdn;
-  wire perip_dac_rstn;
-
+  // Controller for the peripheral DAC (single-port SPI) and HV9308 S2P converter
   perip_controller #(
     .CLK_HZ             (CLK_HZ            ),
-    .SCK_HZ             (SCK_HZ            ),
-    .CSB_HOLD_CYCLES    (CSB_HOLD_CYCLES   )
+    .SCK_HZ             (PERIP_SCK_HZ      ),  // DAC SPI at 1 MHz
+    .CSB_HOLD_CYCLES    (CSB_HOLD_CYCLES   ),
+    .S2P_SCK_HZ         (PERIP_SCK_HZ      )   // HV9308 shift clock at 1 MHz
   ) perip_controller_inst (
     .clk_i              (clk_perip_ctrl    ),
     .rst_i              (rst_perip_ctrl    ),
@@ -726,6 +731,12 @@ module xillydemo
     .dac_sdi_o          (dac_sdin_o        ),
     .dac_shdn_o         (dac_shdn_o        ),
     .dac_rstn_o         (dac_rstn_o        ),
+    // HV9308 serial-to-parallel converter
+    .s2p_din_o          (s2p_din_o         ),
+    .s2p_clk_o          (s2p_clk_o         ),
+    .s2p_le_o           (s2p_le_o          ),
+    .s2p_oe_o           (s2p_oe_o          ),
+    .s2p_dout_i         (s2p_dout_i        ),
     // activity for LED
     .perip_write_pulse_o(perip_write_pulse )
   );

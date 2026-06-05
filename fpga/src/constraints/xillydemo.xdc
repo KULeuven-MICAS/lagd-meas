@@ -199,6 +199,13 @@ set_property -dict "PACKAGE_PIN AB2 IOSTANDARD LVCMOS33" [get_ports "audio_mclk"
 ## BOOT MODE
 ##      FMC pin D14 / LA09_P    (R20) # pad_boot_mode_0_i
 ##      FMC pin D15 / LA09_N    (R21) # pad_boot_mode_1_i
+## HV9308 32-channel serial-to-parallel converter (current-mirror bias resistors)
+## Driven by perip_controller; LVCMOS18 inherited from the bank-34 blanket rule.
+##      FMC LA11_P (N17) # s2p_din_o
+##      FMC LA11_N (N18) # s2p_clk_o
+##      FMC LA12_P (P20) # s2p_le_o
+##      FMC LA12_N (P21) # s2p_oe_o
+##      FMC LA13_P (L17) # s2p_dout_i (HV9308 cascade Data Out -> FPGA, for readback)
 ## DAC
 set_property PACKAGE_PIN B22 [get_ports dac_sclk_o]
 set_property PACKAGE_PIN A21 [get_ports dac_sdin_o]
@@ -227,11 +234,23 @@ set_property PACKAGE_PIN K18 [get_ports pll_data_strb_o]
 set_property PACKAGE_PIN L21 [get_ports pll_data_o]
 set_property PACKAGE_PIN J21 [get_ports pll_cfg_vld_strb_o]
 set_property PACKAGE_PIN L22 [get_ports pll_data_i]
+
+## s2p
+set_property PACKAGE_PIN N17 [get_ports s2p_din_o]
+set_property PACKAGE_PIN N18 [get_ports s2p_clk_o]
+set_property PACKAGE_PIN P20 [get_ports s2p_le_o]
+set_property PACKAGE_PIN P21 [get_ports s2p_oe_o]
+set_property PACKAGE_PIN L17 [get_ports s2p_dout_i]
+
 # Pull pll_data_i low so that with no chip on the FMC (floating input) READBACK
 # reads a deterministic all-zeros instead of noise -- an unambiguous "not
 # connected" signature. The PLL's data_o is a push-pull output that overrides
 # this weak pull when the chip is present.
 set_property PULLTYPE PULLDOWN [get_ports pll_data_i]
+
+# Pull s2p_dout_i low: with no board on the FMC (floating) S2P readback reads a
+# deterministic all-zeros. The HV9308 Data Out push-pull overrides it when present.
+set_property PULLTYPE PULLDOWN [get_ports s2p_dout_i]
 
 # SPI outputs / bidirectional data: slow 1 MHz signals; exclude from timing.
 # set_false_path -to   [get_ports chip_sck_o]
@@ -282,12 +301,24 @@ set_false_path -to [get_ports pll_cfg_vld_strb_o]
 # input sampled into a 2-FF synchronizer. Exclude it from input timing analysis.
 set_false_path -from [get_ports pll_data_i]
 
+# HV9308 S2P: slow ~1 MHz bit-banged interface; setup/hold met by the controller's
+# dwell. Weak drive on outputs; exclude from timing (s2p_dout_i has a 2-FF sync).
+set_property DRIVE 4 [get_ports s2p_din_o]
+set_property DRIVE 4 [get_ports s2p_clk_o]
+set_property DRIVE 4 [get_ports s2p_le_o]
+set_property DRIVE 4 [get_ports s2p_oe_o]
+set_false_path -to   [get_ports s2p_din_o]
+set_false_path -to   [get_ports s2p_clk_o]
+set_false_path -to   [get_ports s2p_le_o]
+set_false_path -to   [get_ports s2p_oe_o]
+set_false_path -from [get_ports s2p_dout_i]
+
 ################################################################################
 ## SPECIFY IO DELAY CONSTRAINTS
 ################################################################################
 # setup and hold timing for the DAC in time unit [ns]
 # margins for pcb delay differences
-create_generated_clock -name clk_dac_sclk -source [get_ports clk_100] -divide_by 4 [get_ports dac_sclk_o]
+create_generated_clock -name clk_dac_sclk -source [get_ports clk_100] -divide_by 100 [get_ports dac_sclk_o]
 create_generated_clock -name clk_chip_sclk -source [get_ports clk_100] -divide_by 4 [get_ports chip_sck_o]
 # Observation clocks exported to FMC: map them to the internal bus clock so
 # the timing tools understand these pins are synchronous to `clk_100`.
