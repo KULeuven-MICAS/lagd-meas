@@ -194,6 +194,7 @@ set_property -dict "PACKAGE_PIN AB2 IOSTANDARD LVCMOS33" [get_ports "audio_mclk"
 ##      FMC pin D11 / LA05_P    (J18) # pad_clk_sel_i          <- pll_clk_sel_o
 ##      FMC pin D12 / LA05_N    (K18) # pad_pll_strb_i         <- pll_data_strb_o
 ##      FMC pin C10 / LA06_P    (L21) # pad_pll_data_i         <- pll_data_o
+##      FMC pin C11 / LA06_N    (L22) # pad_pll_data_o <= pll_data_i
 ##      FMC pin G12 / LA08_P    (J21) # pad_pll_cfg_vld_strb_i <- pll_cfg_vld_strb_o
 ## BOOT MODE
 ##      FMC pin D14 / LA09_P    (R20) # pad_boot_mode_0_i
