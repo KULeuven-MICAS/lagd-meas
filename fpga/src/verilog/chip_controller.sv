@@ -230,7 +230,7 @@ module chip_controller#(
             spi_len_o       <= '0;
             spi_data_o      <= '0;
             chip_clk_en_r   <= 1'b0;
-            chip_rstn_r     <= 1'b1;
+            chip_rstn_r     <= 1'b0;
         end else begin
             spi_start_o <= 1'b0;
 
