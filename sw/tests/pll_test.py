@@ -36,7 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.pll_driver import PllDriver  # noqa: E402
-from lib.pll_command_api import pack_pll_cfg, OP_WRITEBACK, header  # noqa: E402
+from lib.pll_command_api import default_cfg_word, OP_WRITEBACK, header  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
@@ -82,7 +82,7 @@ def test_verify_load(word=None):
     of any PLL behaviour (no analog readback is involved).
     """
     if word is None:
-        word = pack_pll_cfg(pdown_PD=0, pdown_VCO=0, vco_tune_coarse=0xA, clk_div_en=1)
+        word = default_cfg_word()   # the default operating config (chip reference test_cfg)
     received = pll.verify_load(word)
     if received is None:
         logging.error('FAIL: verify_load sent 0x%012X, received None (incomplete echo)', word)
@@ -102,7 +102,7 @@ def test_readback(word=None):
     FPGA assembled. Requires the bitstream with pll_data_i wired (FMC LA06_N).
     """
     if word is None:
-        word = pack_pll_cfg(pdown_PD=0, pdown_VCO=0, vco_tune_coarse=0xA, clk_div_en=1)
+        word = default_cfg_word()   # the default operating config (chip reference test_cfg)
     pll.load(word)
     received = pll.readback()
     if received is None:
@@ -138,8 +138,9 @@ def example_bring_up():
     not glitchless).
     """
     with PllDriver(WRITE_DEV, READ_DEV) as p:
-        locked = p.bring_up(lock_timeout=1.0, switch=True,
-                            pdown_PD=0, pdown_VCO=0, vco_tune_coarse=0xA)
+        # bring_up() loads the default operating config (DEFAULT_CFG); pass field
+        # overrides here if you need to tweak it (e.g. vco_tune_coarse=0xA).
+        locked = p.bring_up(lock_timeout=1.0, switch=True)
         if locked:
             logging.info('PLL locked and selected as the SoC clock')
         else:

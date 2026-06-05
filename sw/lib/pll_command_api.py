@@ -112,6 +112,40 @@ def rst_pll_cfg() -> int:
     return pack_pll_cfg()
 
 
+# Default *operating* configuration: a known-good, PLL-enabled config. Taken
+# field-for-field from the chip reference testbench tb_lagd_clk_gen.sv
+# (pll_cfg_pkg test_cfg); it packs to 0x02971616A9011. The driver loads this by
+# default (load_default / bring_up). It is DISTINCT from the per-field reset
+# defaults in FIELDS, which mirror the silicon power-on state (PLL powered down,
+# pdown_*=1) and must stay in sync with pomelo_pll_wrap_cfg.yml.
+DEFAULT_CFG = {
+    "fb_clk_oen":      0b1,
+    "pll_clk_o_en":    0b0,
+    "clk_div_val":     4,
+    "clk_div_en":      0b1,
+    "pdown_PD":        0b0,      # PLL enabled
+    "pdown_VCO":       0b0,      # PLL enabled
+    "set_current":     0b101,
+    "set_c1":          0b010,
+    "set_c2":          0b011,
+    "set_r1":          0b001,
+    "vco_tune_coarse": 0b1100,
+    "vco_current_min": 0b0010,
+    "vco_current_max": 0b1110,
+    "set_v_ctrl":      0b10,
+    "set_clk_out":     0b0,
+    "set_div_freq":    0b010,
+    "set_fb_mux":      0b01,
+}
+
+
+def default_cfg_word(**overrides) -> int:
+    """Packed 47-bit default operating config (DEFAULT_CFG), with optional overrides."""
+    cfg = dict(DEFAULT_CFG)
+    cfg.update(overrides)
+    return pack_pll_cfg(**cfg)
+
+
 # ---------------------------------------------------------------------------
 # Frame builders. Each returns a list[int] of bytes ready for the 8-bit stream.
 # ---------------------------------------------------------------------------

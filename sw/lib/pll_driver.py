@@ -28,6 +28,7 @@ from lib.port_driver import PortDriver
 from lib.pll_command_api import (
     CFG_BYTES,
     STATUS_LOCK_BIT,
+    DEFAULT_CFG,
     cmd_load,
     cmd_load_loopback,
     cmd_clk_sel,
@@ -105,11 +106,21 @@ class PllDriver(PortDriver):
         self._cfg = word & ((1 << 47) - 1)
 
     def load_cfg(self, **fields) -> int:
-        """LOAD a config built from named fields (defaults otherwise). Returns the
-        packed 47-bit word. See pll_command_api.FIELDS for the field names."""
+        """LOAD a config built from named fields, with the per-field *reset* defaults
+        (FIELDS) for anything unspecified. Returns the packed 47-bit word."""
         word = pack_pll_cfg(**fields)
         self.load(word)
         return word
+
+    def load_default(self, **overrides) -> int:
+        """LOAD the default *operating* config (DEFAULT_CFG, PLL enabled), with
+        optional per-field overrides. Returns the packed 47-bit word.
+
+        Unlike load_cfg(), unspecified fields take their DEFAULT_CFG value (a
+        known-good running config), not the powered-down reset default."""
+        cfg = dict(DEFAULT_CFG)
+        cfg.update(overrides)
+        return self.load_cfg(**cfg)
 
     def verify_load(self, word: int) -> Optional[int]:
         """LOAD_LOOPBACK: commit the config AND read the 6 echoed payload bytes.
@@ -213,22 +224,20 @@ class PllDriver(PortDriver):
         self.clk_sel(CLK_SEL_REFERENCE)
 
     def bring_up(self, lock_timeout: float = 1.0, switch: bool = True,
-                 require_lock: bool = True, **fields) -> bool:
+                 require_lock: bool = True, **overrides) -> bool:
         """Configure the PLL, wait for lock, and (optionally) switch the SoC onto it.
 
-        Loads a config with the PLL enabled (pdown_PD=0, pdown_VCO=0 unless
-        overridden), then polls STATUS until the PLL locks (up to `lock_timeout`
-        seconds) -- lock is now readable via pll_lock_i, so this is a real wait, not
-        a blind delay. If `switch`, selects the PLL as the SoC clock once locked
-        (or anyway, if require_lock=False). Returns True iff lock was observed.
+        Loads the default operating config (DEFAULT_CFG, PLL enabled) with any
+        per-field `overrides`, then polls STATUS until the PLL locks (up to
+        `lock_timeout` seconds) -- lock is readable via pll_lock_i, so this is a real
+        wait, not a blind delay. If `switch`, selects the PLL as the SoC clock once
+        locked (or anyway, if require_lock=False). Returns True iff lock was observed.
 
         Hold the core in reset across the switch (the clock mux is not glitchless),
         and leave require_lock=True so the SoC is never switched onto an unlocked
         clock.
         """
-        fields.setdefault("pdown_PD", 0)
-        fields.setdefault("pdown_VCO", 0)
-        self.load_cfg(**fields)
+        self.load_default(**overrides)
         locked = self.wait_lock(timeout=lock_timeout)
         if switch and (locked or not require_lock):
             self.select_pll()
