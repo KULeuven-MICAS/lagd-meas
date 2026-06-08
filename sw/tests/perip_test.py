@@ -111,7 +111,7 @@ def test_s2p(value=0xDEADBEEF):
         return True
     rb = perip.s2p_readback()
     logging.error('FAIL: s2p wrote 0x%08X, read back %s',
-                  value, ('0x%08X' % rb) if rb is not None else 'None')
+                  value, f'0x{rb:08X}' if rb is not None else 'None')
     return False
 
 
