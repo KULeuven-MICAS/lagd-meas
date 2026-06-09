@@ -140,7 +140,6 @@ def main():
     test_writeback()
     # loopback-write check: a real DAC write whose command is echoed back
     for i in range(10000):
-        # time.sleep(0.5)
         test_verify_dac_write(addr=3, data=0x5A)
         print(i)
     ##################################
@@ -151,6 +150,7 @@ def main():
     # set all channels to a volt
     # volt = 0.6
     # perip.set_all_voltage(volt, VREF)
+    time.sleep(1)
     # pdb.set_trace()  # drop into interactive mode for manual testing
 
 if __name__ == '__main__':
