@@ -24,6 +24,7 @@
 
 import sys
 import logging
+import time
 from pathlib import Path
 
 # Allow running this file directly (`python tests/perip_test.py`): put sw/ on the
@@ -130,14 +131,23 @@ def example_with_driver():
 
 def main():
     open_ports()
+    ##################################
+    ## DAC configuration
+    ##################################
     # reset first
     perip.reset()
     # test writeback of DAC controller to ensure it is alive
     test_writeback()
     # loopback-write check: a real DAC write whose command is echoed back
-    test_verify_dac_write(addr=3, data=0x5A)
+    for i in range(10000):
+        # time.sleep(0.5)
+        test_verify_dac_write(addr=3, data=0x5A)
+        print(i)
+    ##################################
+    ## Serial2Parallel configuration
+    ##################################
     # S2P (HV9308): write + read-back verify of the 32-bit bias-resistor register
-    test_s2p()
+    # test_s2p()
     # set all channels to a volt
     # volt = 0.6
     # perip.set_all_voltage(volt, VREF)

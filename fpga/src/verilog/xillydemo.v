@@ -45,7 +45,7 @@ module xillydemo
   // Chip Quad-SPI
   (* mark_debug = "true" *) output chip_sck_o,
   (* mark_debug = "true" *) output chip_csb_o,
-  (* mark_debug = "true" *) inout  [3:0] chip_sd_io,   // Quad-SPI bidirectional data
+  inout  [3:0] chip_sd_io,   // Quad-SPI bidirectional data
   (* mark_debug = "true" *) output clk_chip_o,
   (* mark_debug = "true" *) output chip_arst_no, // active low reset to chip
   (* mark_debug = "true" *) output chip_rtc_o,   // ~32.768 kHz real-time-clock reference to chip
@@ -423,8 +423,10 @@ module xillydemo
   wire chip_clk_en;        // chip clock enabled (from chip_controller)
   wire chip_write_pulse;   // 1-cycle pulse when a chip write starts
   wire perip_write_pulse;  // 1-cycle pulse when a perip (DAC) write is issued
+  wire pll_busy;           // pll_controller mid-transaction (level, from pll_controller)
   wire chip_write_led;     // chip_write_pulse stretched to ~1 s
   wire perip_write_led;    // perip_write_pulse stretched to ~1 s
+  wire pll_busy_led;       // pll_busy stretched to ~1 s
   reg  heartbeat_led;      // ~1 Hz blink from clk_100
 
   ///////////////////////////////
@@ -612,10 +614,10 @@ module xillydemo
 
   // LED indication (user_led[3:0] = board LD[7:4])
   //   LD4: ~1 Hz heartbeat from clk_100  -> bitstream alive / clock running
-  //   LD5: chip clock enabled            -> chip_clk_en
+  //   LD5: pll controller activity (~1 s) -> PLL config (load/readback/etc.)
   //   LD6: chip write activity (~1 s)    -> write_mem / verify_write_mem (not read)
   //   LD7: perip write activity (~1 s)   -> DAC write (not writeback/read)
-  // The two activity LEDs stretch a single-cycle event to ~1 s so it is visible.
+  // The activity LEDs stretch a brief event/level to ~1 s so it stays visible.
   pulse_stretch #(.STRETCH_CYCLES(100_000_000)) chip_write_blink (
     .clk_i   (clk_chip_ctrl   ),
     .rst_i   (rst_chip_ctrl   ),
@@ -630,8 +632,15 @@ module xillydemo
     .level_o (perip_write_led  )
   );
 
+  pulse_stretch #(.STRETCH_CYCLES(100_000_000)) pll_busy_blink (
+    .clk_i   (clk_pll_ctrl   ),
+    .rst_i   (rst_pll_ctrl   ),
+    .pulse_i (pll_busy       ),
+    .level_o (pll_busy_led   )
+  );
+
   assign user_led[0] = heartbeat_led;
-  assign user_led[1] = chip_clk_en;
+  assign user_led[1] = pll_busy_led;
   assign user_led[2] = chip_write_led;
   assign user_led[3] = perip_write_led;
 
@@ -680,8 +689,9 @@ module xillydemo
   ////    CHIP and PERIP CONTROLLER MODULES    ////
   /////////////////////////////////////////////////
   parameter integer CLK_HZ = 100_000_000;       // 100 MHz bus clock
-  parameter integer CHIP_SCK_HZ = 25_000_000;   // 25 MHz chip Quad-SPI clock
-  parameter integer PERIP_SCK_HZ = 1_000_000;   // 1 MHz DAC SPI + HV9308 S2P shift clock
+  parameter integer CHIP_SCK_HZ = 1_000;   // 1 kHz chip Quad-SPI clock
+  parameter integer PERIP_SCK_HZ = 1_000;   // 1 kHz DAC SPI + HV9308 S2P shift clock
+  parameter integer PLL_STRB_HZ  = 1_000;   // 1 kHz PLL serial-config strobe
   parameter integer CSB_HOLD_CYCLES = 40 / (1000_000_000 / CLK_HZ); // 40 ns hold time for CSB signal (see DAC datasheet) converted to number of bus clock cycles
 
   // Controller for on-chip Quad-SPI
@@ -715,9 +725,9 @@ module xillydemo
   // Controller for the peripheral DAC (single-port SPI) and HV9308 S2P converter
   perip_controller #(
     .CLK_HZ             (CLK_HZ            ),
-    .SCK_HZ             (PERIP_SCK_HZ      ),  // DAC SPI at 1 MHz
+    .SCK_HZ             (PERIP_SCK_HZ      ),
     .CSB_HOLD_CYCLES    (CSB_HOLD_CYCLES   ),
-    .S2P_SCK_HZ         (PERIP_SCK_HZ      )   // HV9308 shift clock at 1 MHz
+    .S2P_SCK_HZ         (PERIP_SCK_HZ      )
   ) perip_controller_inst (
     .clk_i              (clk_perip_ctrl    ),
     .rst_i              (rst_perip_ctrl    ),
@@ -744,7 +754,7 @@ module xillydemo
 
   // Controller for the Pomelo PLL serial configuration (8-bit FIFO stream)
   pll_controller #(
-    .STRB_HALF          (50                )  // 1 MHz strobe at clk_pll_ctrl = 100 MHz
+    .STRB_HALF          (CLK_HZ / PLL_STRB_HZ / 2)
   ) pll_controller_inst (
     .clk_i              (clk_pll_ctrl      ),
     .rst_i              (rst_pll_ctrl      ),
@@ -759,7 +769,9 @@ module xillydemo
     .pll_data_o         (pll_data_o        ),
     .pll_cfg_vld_strb_o (pll_cfg_vld_strb_o),
     .pll_data_i         (pll_data_i        ),
-    .pll_lock_i         (pll_lock_i        )
+    .pll_lock_i         (pll_lock_i        ),
+    // activity for LED
+    .pll_busy_o         (pll_busy          )
   );
 
   assign chip_bootmode_o = 2'b00; // default boot mode (00): passive boot

@@ -162,11 +162,13 @@ module chip_controller#(
     assign clk_chip_o = chip_clk_en_r ? clk_i : 1'b1;
     assign chip_arst_no = chip_rstn_r;
 
-    // Activity/status for LEDs. SPI_WRITE_START is a single-cycle state reached
-    // only by DATA_WRITE / DATA_WRITE_LOOPBACK (reads use SPI_READ_START), so it
-    // is a clean one-cycle "a chip write started" pulse.
+    // Activity/status for LEDs. Track spi_busy_o so the indicator stays asserted
+    // for the whole SPI transaction (e.g. a long burst write that streams for
+    // seconds), not just a single cycle at its start. Note spi_busy_o is high for
+    // ALL SPI activity -- writes, reads and the init/config transfer -- so this is
+    // now a general "SPI bus active" level, not strictly a write-only pulse.
     assign chip_clk_en_o      = chip_clk_en_r;
-    assign chip_write_pulse_o = (state_current == SPI_WRITE_START);
+    assign chip_write_pulse_o = spi_busy_o;
 
     // ------------------------------------------------------------------
     // Streaming data path / handshake (combinational)

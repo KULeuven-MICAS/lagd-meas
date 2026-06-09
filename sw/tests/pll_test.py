@@ -29,6 +29,7 @@
 
 import sys
 import logging
+import time
 from pathlib import Path
 
 # Allow running this file directly (`python tests/pll_test.py`): put sw/ on the
@@ -162,6 +163,7 @@ def main():
     # NOTE: this script intentionally does NOT switch the SoC clock onto the PLL.
     # Use pll.bring_up() (configures, waits for STATUS lock, then switches) or a
     # manual pll.select_pll() when you want to move the SoC onto the PLL.
+    time.sleep(1)
 
 
 if __name__ == '__main__':

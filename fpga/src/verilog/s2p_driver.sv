@@ -54,6 +54,10 @@ module s2p_driver #(
 
     localparam int SHIFT_BITS = 32;
     localparam int SCK_HALF   = (CLK_HZ / SCK_HZ / 2 < 1) ? 1 : CLK_HZ / SCK_HZ / 2;
+    // Width must hold SCK_HALF-1; size it from the parameter so it never
+    // overflows (a hard width would hang the shift if SCK_HZ is taken low
+    // enough, e.g. SCK_HALF = 50e6 at SCK_HZ = 1 Hz needs 26 bits).
+    localparam int SCK_CW     = (SCK_HALF <= 2) ? 1 : $clog2(SCK_HALF);
 
     // Two-FF synchronizer for the cascade data-out input (slow, PCB-delayed,
     // asynchronous to clk_i). Sampled at the start of each shift-low phase, long
@@ -78,7 +82,7 @@ module s2p_driver #(
     (* mark_debug = "true" *) logic [31:0] shift_reg_r;  // write data, shifting out
     (* mark_debug = "true" *) logic [31:0] rdata_r;      // readback accumulator
     logic [5:0]  bit_idx;     // 31 .. 0
-    logic [15:0] half_cnt;    // cycle counter within a clock half-period
+    logic [SCK_CW-1:0] half_cnt;    // cycle counter within a clock half-period
 
     assign rdata_o = rdata_r;
 
@@ -130,7 +134,7 @@ module s2p_driver #(
                         s2p_clk_o     <= 1'b1;   // rising edge: HV9308 samples DIN
                         state_current <= SHIFT_HIGH;
                     end else begin
-                        half_cnt <= half_cnt + 16'd1;
+                        half_cnt <= half_cnt + 1'b1;
                     end
                 end
 
@@ -155,7 +159,7 @@ module s2p_driver #(
                             state_current <= SHIFT_LOW;
                         end
                     end else begin
-                        half_cnt <= half_cnt + 16'd1;
+                        half_cnt <= half_cnt + 1'b1;
                     end
                 end
 
@@ -168,7 +172,7 @@ module s2p_driver #(
                         s2p_le_o      <= 1'b1;   // rising edge into LE_HIGH
                         state_current <= LE_HIGH;
                     end else begin
-                        half_cnt <= half_cnt + 16'd1;
+                        half_cnt <= half_cnt + 1'b1;
                     end
                 end
 
@@ -182,7 +186,7 @@ module s2p_driver #(
                         busy_o        <= 1'b0;
                         state_current <= IDLE;
                     end else begin
-                        half_cnt <= half_cnt + 16'd1;
+                        half_cnt <= half_cnt + 1'b1;
                     end
                 end
 

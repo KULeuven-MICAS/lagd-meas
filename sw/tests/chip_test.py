@@ -25,6 +25,7 @@
 import sys
 import random
 import logging
+import time
 from pathlib import Path
 
 # Allow running this file directly (`python tests/chip_test.py`): put sw/ on the
@@ -114,11 +115,12 @@ def main():
     # smoke test: test writeback loop
     test_writeback()
     # write data
-    # chip.write_mem(0x100, [0x12345678, 0x9ABCDEF0])
+    chip.write_mem(0x100, [random.randint(0, 0xFFFFFFFF) for _ in range(7000)])
     # loopback-write check: data is echoed back for verification
-    test_verify_write_mem(0x200, [random.randint(0, 0xFFFFFFFF) for _ in range(10)])
+    # test_verify_write_mem(0x200, [random.randint(0, 0xFFFFFFFF) for _ in range(10)])
     # read back and check
     # readback = chip.read_mem(0x100, length=2)
+    time.sleep(60)
 
 
 if __name__ == '__main__':

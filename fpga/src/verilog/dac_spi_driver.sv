@@ -52,6 +52,13 @@ module dac_spi_driver #(
 
     localparam int SHIFT_BITS = 12;
     localparam int SCK_HALF_CYCLES = CLK_HZ / SCK_HZ / 2;
+    // Width must hold SCK_HALF_CYCLES-1 (e.g. 49999 at SCK_HZ=1 kHz). A fixed
+    // 4-bit counter silently overflows at low SCK_HZ and the engine never
+    // completes a half-period -> busy_o stuck high. Size it from the parameter.
+    localparam int HALF_CW = (SCK_HALF_CYCLES <= 2) ? 1 : $clog2(SCK_HALF_CYCLES);
+    // hold_cnt_r counts CSB_HOLD_CYCLES-1 down to 0; size it from the parameter
+    // for the same reason (a hard-coded width hangs POST_HOLD if it overflows).
+    localparam int HOLD_CW = (CSB_HOLD_CYCLES <= 2) ? 1 : $clog2(CSB_HOLD_CYCLES);
 
     typedef enum logic [1:0] {
         IDLE,
@@ -62,8 +69,8 @@ module dac_spi_driver #(
 
     (* mark_debug = "true" *) dac_state_t state_current;
     (* mark_debug = "true" *) logic [SHIFT_BITS-1:0] shift_reg_r;
-    (* mark_debug = "true" *) logic [3:0] half_cnt_r;
-    (* mark_debug = "true" *) logic [2:0] hold_cnt_r;
+    (* mark_debug = "true" *) logic [HALF_CW-1:0] half_cnt_r;
+    (* mark_debug = "true" *) logic [HOLD_CW-1:0] hold_cnt_r;
     (* mark_debug = "true" *) logic [3:0] bit_idx_r;
 
     wire [SHIFT_BITS-1:0] tx_word = {addr_i, data_i};

@@ -64,7 +64,11 @@ module pll_controller #(
     (* mark_debug = "true" *) output logic pll_data_o,         // -> data_i (serial data, MSB first)
     (* mark_debug = "true" *) output logic pll_cfg_vld_strb_o, // -> cfg_vld_strb_i (commit clock)
     (* mark_debug = "true" *) input  logic pll_data_i,         // <- data_o (shallow-reg MSB, for READBACK)
-    (* mark_debug = "true" *) input  logic pll_lock_i          // <- pll_lock_o (1 = locked, for STATUS)
+    (* mark_debug = "true" *) input  logic pll_lock_i,         // <- pll_lock_o (1 = locked, for STATUS)
+
+    // Activity for LED: high whenever the controller is mid-transaction (any
+    // state other than IDLE), i.e. decoding/collecting/shifting/committing/echoing.
+    output logic pll_busy_o
 );
 
     typedef enum logic [3:0] {
@@ -93,8 +97,12 @@ module pll_controller #(
     (* mark_debug = "true" *) logic        clk_sel_r;       // static clk_sel level
 
     // Shift / strobe engine.
+    // strb_cnt width is sized from STRB_HALF so it never overflows: a hard width
+    // would hang the strobe FSM if STRB_HALF is taken large (e.g. STRB_HALF = 50e6
+    // for a 1 Hz strobe at clk_i = 100 MHz needs 26 bits).
+    localparam int STRB_CW = (STRB_HALF <= 2) ? 1 : $clog2(STRB_HALF);
     logic [5:0]  bit_idx;        // current bit being shifted (46 .. 0, MSB first)
-    logic [15:0] strb_cnt;       // cycle counter within a strobe half-period
+    logic [STRB_CW-1:0] strb_cnt;  // cycle counter within a strobe half-period
     logic [2:0]  echo_idx;       // payload byte index during ECHO
     (* mark_debug = "true" *) logic [PLL_CFG_BITS-1:0] read_result_r; // bits captured from data_o
 
@@ -150,6 +158,9 @@ module pll_controller #(
     end
 
     assign pll_clk_sel_o = clk_sel_r;
+
+    // LED activity: busy for the whole transaction (everything except IDLE).
+    assign pll_busy_o = (state_current != IDLE);
 
     wire byte_taken = fifo_rd_valid && fifo_rd_ready;
 
@@ -256,7 +267,7 @@ module pll_controller #(
                         pll_data_strb_o <= 1'b1;  // rising edge into SHIFT_HIGH
                         state_current   <= SHIFT_HIGH;
                     end else begin
-                        strb_cnt <= strb_cnt + 16'd1;
+                        strb_cnt <= strb_cnt + 1'b1;
                     end
                 end
 
@@ -274,7 +285,7 @@ module pll_controller #(
                             state_current <= SHIFT_LOW;
                         end
                     end else begin
-                        strb_cnt <= strb_cnt + 16'd1;
+                        strb_cnt <= strb_cnt + 1'b1;
                     end
                 end
 
@@ -289,7 +300,7 @@ module pll_controller #(
                         pll_cfg_vld_strb_o <= 1'b1;  // rising edge into COMMIT_HIGH
                         state_current      <= COMMIT_HIGH;
                     end else begin
-                        strb_cnt <= strb_cnt + 16'd1;
+                        strb_cnt <= strb_cnt + 1'b1;
                     end
                 end
 
@@ -302,7 +313,7 @@ module pll_controller #(
                         echo_idx           <= 3'd0;
                         state_current      <= loopback_r ? ECHO : IDLE;
                     end else begin
-                        strb_cnt <= strb_cnt + 16'd1;
+                        strb_cnt <= strb_cnt + 1'b1;
                     end
                 end
 
@@ -317,7 +328,7 @@ module pll_controller #(
                         pll_cfg_vld_strb_o <= 1'b0;
                         state_current      <= IDLE;
                     end else begin
-                        strb_cnt <= strb_cnt + 16'd1;
+                        strb_cnt <= strb_cnt + 1'b1;
                     end
                 end
 
@@ -341,7 +352,7 @@ module pll_controller #(
                         pll_data_strb_o <= 1'b1;   // rising edge into READ_HIGH
                         state_current   <= READ_HIGH;
                     end else begin
-                        strb_cnt <= strb_cnt + 16'd1;
+                        strb_cnt <= strb_cnt + 1'b1;
                     end
                 end
 
@@ -362,7 +373,7 @@ module pll_controller #(
                             state_current <= READ_LOW;
                         end
                     end else begin
-                        strb_cnt <= strb_cnt + 16'd1;
+                        strb_cnt <= strb_cnt + 1'b1;
                     end
                 end
 

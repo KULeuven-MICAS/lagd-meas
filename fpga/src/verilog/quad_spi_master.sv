@@ -64,6 +64,10 @@ module quad_spi_master #(
 );
 
     localparam int SCK_HALF = CLK_HZ / SCK_HZ / 2;
+    // Width must hold SCK_HALF-1 (e.g. 49999 at SCK_HZ=1 kHz). A fixed narrow
+    // counter silently overflows at low SCK_HZ and sck_edge_tick never fires
+    // -> the SPI engine hangs. Size it from the parameter.
+    localparam int SCK_CW = (SCK_HALF <= 2) ? 1 : $clog2(SCK_HALF);
     // 33 dummy SCK cycles are required by the SPI slave between the read address
     // and the first read data nibble (slave dummy register defaults to 32, plus
     // one extra cycle from the ETHz RX counter off-by-one => 33 actual cycles).
@@ -81,7 +85,7 @@ module quad_spi_master #(
     } spi_state_t;
 
     (* mark_debug = "true" *) spi_state_t state_current;
-    (* mark_debug = "true" *) logic [6:0]  sck_cnt_r;
+    (* mark_debug = "true" *) logic [SCK_CW-1:0] sck_cnt_r;
     (* mark_debug = "true" *) logic [5:0]  dummy_cnt_r;
     (* mark_debug = "true" *) logic [4:0]  bit_cnt_r;
     (* mark_debug = "true" *) logic [3:0]  nibble_cnt_r;

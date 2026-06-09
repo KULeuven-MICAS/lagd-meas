@@ -288,7 +288,7 @@ set_property DRIVE 8 [get_ports clk_chip_o]
 set_property DRIVE 4 [get_ports chip_arst_no]
 
 # Others (slow signals: weak drive)
-set_property DRIVE 4 [get_ports chip_rtc_o]
+set_property DRIVE 2 [get_ports chip_rtc_o]
 set_property DRIVE 4 [get_ports {chip_bootmode_o[*]}]
 
 # PLL serial config (slow ~1 MHz strobed signals: weak drive to limit overshoot).
