@@ -3,6 +3,9 @@
 # Licensed under the Apache License, Version 2.0, see LICENSE for details.
 # SPDX-License-Identifier: Apache-2.0
 #
+# Author: Jiacong Sun <jiacong.sun@kuleuven.be>
+# Created by Claude on 2025-06
+#
 # UART loader for the LAGD / Cheshire SoC.
 #
 # This speaks the Cheshire bootrom's UART debug protocol (passive boot, boot_mode 0):
@@ -44,10 +47,10 @@ class ProtoError(RuntimeError):
 def open_port(device, baud, rtscts):
     fd = os.open(device, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     try:
-        speed = getattr(termios, "B%d" % baud)
+        speed = getattr(termios, f"B{baud}")
     except AttributeError:
         os.close(fd)
-        raise SystemExit("Unsupported baud rate: %d" % baud)
+        raise SystemExit(f"Unsupported baud rate: {baud}")
 
     iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(fd)
 
@@ -89,8 +92,8 @@ def read_exact(fd, n, timeout):
     while len(buf) < n:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise ProtoError("timeout: wanted %d byte(s), got %d (%s)"
-                             % (n, len(buf), bytes(buf).hex()))
+            raise ProtoError(f"timeout: wanted {n} byte(s), got {len(buf)} "
+                             f"({bytes(buf).hex()})")
         r, _, _ = select.select([fd], [], [], remaining)
         if r:
             chunk = os.read(fd, n - len(buf))
@@ -102,7 +105,7 @@ def read_exact(fd, n, timeout):
 def expect(fd, byte, timeout, what):
     got = read_exact(fd, 1, timeout)[0]
     if got != byte:
-        raise ProtoError("expected %s (0x%02x), received 0x%02x" % (what, byte, got))
+        raise ProtoError(f"expected {what} (0x{byte:02x}), received 0x{got:02x}")
 
 
 # --- Protocol operations -----------------------------------------------------
@@ -192,7 +195,7 @@ def parse_elf(path):
     with open(path, "rb") as f:
         data = f.read()
     if data[:4] != b"\x7fELF":
-        raise SystemExit("%s is not an ELF file" % path)
+        raise SystemExit(f"{path} is not an ELF file")
     if data[4] != 2:   # EI_CLASS == ELFCLASS64
         raise SystemExit("only ELF64 is supported")
     if data[5] != 1:   # EI_DATA == ELFDATA2LSB
@@ -217,7 +220,7 @@ def parse_elf(path):
         if p_filesz:
             segments.append((p_paddr, data[p_offset:p_offset + p_filesz]))
     if not segments:
-        raise SystemExit("no loadable (PT_LOAD) segments found in %s" % path)
+        raise SystemExit(f"no loadable (PT_LOAD) segments found in {path}")
     return e_entry, segments
 
 
@@ -252,14 +255,14 @@ def main():
 
     entry, segments = parse_elf(args.elf)
     total = sum(len(b) for _, b in segments)
-    print("ELF      : %s" % args.elf)
-    print("Entry    : 0x%016x" % entry)
-    print("Segments : %d, %d bytes total" % (len(segments), total))
+    print(f"ELF      : {args.elf}")
+    print(f"Entry    : 0x{entry:016x}")
+    print(f"Segments : {len(segments)}, {total} bytes total")
     for paddr, blob in segments:
-        print("  0x%016x  %d bytes" % (paddr, len(blob)))
+        print(f"  0x{paddr:016x}  {len(blob)} bytes")
 
-    print("Port     : %s @ %d 8N1, RTS/CTS=%s"
-          % (args.device, args.baud, "on" if args.rtscts else "off"))
+    print(f"Port     : {args.device} @ {args.baud} 8N1, "
+          f"RTS/CTS={'on' if args.rtscts else 'off'}")
 
     fd = open_port(args.device, args.baud, args.rtscts)
     try:
@@ -271,19 +274,19 @@ def main():
             for i in range(0, len(blob), args.chunk):
                 chunk = blob[i:i + args.chunk]
                 cmd_write(fd, paddr + i, chunk, args.timeout)
-            print("Loaded   : 0x%016x (%d bytes)" % (paddr, len(blob)))
+            print(f"Loaded   : 0x{paddr:016x} ({len(blob)} bytes)")
             if args.verify:
                 rb = cmd_read(fd, paddr, len(blob), args.timeout)
                 if rb != blob:
-                    raise ProtoError("verify FAILED at 0x%016x" % paddr)
-                print("Verified : 0x%016x OK" % paddr)
+                    raise ProtoError(f"verify FAILED at 0x{paddr:016x}")
+                print(f"Verified : 0x{paddr:016x} OK")
 
         if not args.do_exec:
             print("Done (load only, --no-exec).")
             return 0
 
         cmd_exec(fd, entry, args.timeout)
-        print("Exec     : jumped to 0x%016x" % entry)
+        print(f"Exec     : jumped to 0x{entry:016x}")
 
         if not args.wait:
             print("Done (--no-wait).")
@@ -291,10 +294,10 @@ def main():
 
         rt = None if args.run_timeout == 0 else args.run_timeout
         ret = wait_for_eoc(fd, rt)
-        print("EOC      : return code %d" % ret)
+        print(f"EOC      : return code {ret}")
         return 0 if ret == 0 else 2
     except ProtoError as e:
-        sys.stderr.write("ERROR: %s\n" % e)
+        sys.stderr.write(f"ERROR: {e}\n")
         return 1
     finally:
         os.close(fd)

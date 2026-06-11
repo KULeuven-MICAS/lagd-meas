@@ -3,6 +3,9 @@
 # Licensed under the Apache License, Version 2.0, see LICENSE for details.
 # SPDX-License-Identifier: Apache-2.0
 #
+# Author: Jiacong Sun <jiacong.sun@kuleuven.be>
+# Created by Claude on 2025-06
+#
 # Offline self-test for send_uart.py -- NO physical hardware required.
 #
 # It creates a virtual serial port (pty pair), runs a small mock of the Cheshire
@@ -24,12 +27,13 @@ import subprocess
 import sys
 import threading
 import tty
+from pathlib import Path
 
 ACK, EOT, EOC = 0x06, 0x04, 0x14
 CMD_READ, CMD_WRITE, CMD_EXEC = 0x11, 0x12, 0x13
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_ELF = os.path.join(HERE, "../inputs/helloworld.spm.elf")
+HERE = Path(__file__).resolve().parent
+DEFAULT_ELF = HERE / "../inputs/helloworld.spm.elf"
 
 
 def readn(fd, n):
@@ -72,14 +76,14 @@ def mock_chip(fd, mem, result):
                 result["ok"] = True
                 return
             else:
-                result["error"] = "unexpected command 0x%02x" % cmd
+                result["error"] = f"unexpected command 0x{cmd:02x}"
                 return
     except (EOFError, OSError) as e:
-        result.setdefault("error", "mock I/O ended: %s" % e)
+        result.setdefault("error", f"mock I/O ended: {e}")
 
 
 def load_driver():
-    spec = importlib.util.spec_from_file_location("su", os.path.join(HERE, "send_uart.py"))
+    spec = importlib.util.spec_from_file_location("su", str(HERE / "send_uart.py"))
     su = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(su)
     return su
@@ -99,10 +103,10 @@ def main():
     t = threading.Thread(target=mock_chip, args=(master, mem, result), daemon=True)
     t.start()
 
-    print("=== self-test: running send_uart.py against mock chip on %s ===" % dev)
+    print(f"=== self-test: running send_uart.py against mock chip on {dev} ===")
     try:
         proc = subprocess.run(
-            [sys.executable, os.path.join(HERE, "send_uart.py"), elf,
+            [sys.executable, str(HERE / "send_uart.py"), str(elf),
              "--device", dev, "--no-rtscts", "--verify", "--run-timeout", "10"],
             timeout=30)
         rc = proc.returncode
@@ -115,23 +119,23 @@ def main():
     # --- checks ---
     fails = []
     if rc != 0:
-        fails.append("driver exit code = %s (expected 0)" % rc)
+        fails.append(f"driver exit code = {rc} (expected 0)")
     if not result.get("ok"):
-        fails.append("mock did not reach EXEC/EOC (error: %s)" % result.get("error"))
+        fails.append(f"mock did not reach EXEC/EOC (error: {result.get('error')})")
     if result.get("entry") != entry:
-        fails.append("EXEC entry 0x%x != ELF entry 0x%x" % (result.get("entry", 0), entry))
+        fails.append(f"EXEC entry 0x{result.get('entry', 0):x} != ELF entry 0x{entry:x}")
     nbytes = 0
     for addr, blob in segs:
         for i, b in enumerate(blob):
             if mem.get(addr + i) != b:
-                fails.append("byte mismatch at 0x%x" % (addr + i))
+                fails.append(f"byte mismatch at 0x{addr + i:x}")
                 break
         nbytes += len(blob)
 
     print("--- checks ---")
-    print("  driver exit code : %s" % rc)
-    print("  bytes received   : %d / %d" % (len(mem), nbytes))
-    print("  exec entry       : 0x%016x" % result.get("entry", 0))
+    print(f"  driver exit code : {rc}")
+    print(f"  bytes received   : {len(mem)} / {nbytes}")
+    print(f"  exec entry       : 0x{result.get('entry', 0):016x}")
     if fails:
         print("RESULT: FAIL")
         for f in fails:
