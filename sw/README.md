@@ -132,3 +132,15 @@ The tools folder contains the program loader (load an ELF onto the chip and run 
 - tests/: prebuilt ELFs (e.g. helloworld.spm.elf) copied from the lagd-im SW build, plus their .dump disassembly for reference.
 
 See `doc/spi_program_loading.md` for the full SPI load-and-launch background.
+
+## two loaders: Xillybus drivers vs UART
+Firmware/control reaches the chip over two independent transports, both run from
+this Zedboard host and both consuming the same chip ELFs in `inputs/`:
+- **Via the FPGA (Xillybus):** the `lib/` drivers and `tools/spi_program_loader.py`
+  push data through the FPGA fabric over `/dev/xillybus_*`. Requires the bitstream
+  to be loaded (this is the "control the FPGA drivers" path).
+- **Direct UART (FT4232):** `uart/send_uart.py` loads and runs an ELF over the chip's
+  Cheshire bootrom UART debug protocol on `/dev/ttyUSBn`. It talks to the chip
+  directly and **bypasses the FPGA entirely** (no bitstream needed for the link
+  itself; the chip just has to be clocked and out of reset). Offline self-test:
+  `python3 uart/selftest.py`. See `uart/README.md` for the protocol and flags.
