@@ -28,6 +28,7 @@ import struct
 import sys
 import termios
 import time
+from pathlib import Path
 
 # --- Protocol opcodes (cheshire sw/lib/hal/uart_debug.c) ---------------------
 ACK = 0x06
@@ -76,7 +77,7 @@ def open_port(device, baud, rtscts):
 
 def write_all(fd, data):
     mv = memoryview(bytes(data))
-    while len(mv):
+    while mv:
         try:
             n = os.write(fd, mv)
             mv = mv[n:]
@@ -192,7 +193,7 @@ def wait_for_eoc(fd, timeout):
 # --- ELF parsing (ELF64 little-endian, stdlib only) --------------------------
 
 def parse_elf(path):
-    with open(path, "rb") as f:
+    with Path(path).open("rb") as f:
         data = f.read()
     if data[:4] != b"\x7fELF":
         raise SystemExit(f"{path} is not an ELF file")
