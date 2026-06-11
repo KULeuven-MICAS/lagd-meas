@@ -421,11 +421,11 @@ module xillydemo
 
   // LED activity/status signals (see user_led assignment near the FIFOs below)
   wire chip_clk_en;        // chip clock enabled (from chip_controller)
-  wire chip_write_pulse;   // 1-cycle pulse when a chip write starts
-  wire perip_write_pulse;  // 1-cycle pulse when a perip (DAC) write is issued
+  wire chip_busy;          // chip_controller SPI bus busy (level, any write/read/config)
+  wire perip_busy;         // perip_controller busy (level, any DAC/S2P write/readback/echo)
   wire pll_busy;           // pll_controller mid-transaction (level, from pll_controller)
-  wire chip_write_led;     // chip_write_pulse stretched to ~1 s
-  wire perip_write_led;    // perip_write_pulse stretched to ~1 s
+  wire chip_busy_led;      // chip_busy stretched to ~1 s
+  wire perip_busy_led;     // perip_busy stretched to ~1 s
   wire pll_busy_led;       // pll_busy stretched to ~1 s
   reg  heartbeat_led;      // ~1 Hz blink from clk_100
 
@@ -615,21 +615,21 @@ module xillydemo
   // LED indication (user_led[3:0] = board LD[7:4])
   //   LD4: ~1 Hz heartbeat from clk_100  -> bitstream alive / clock running
   //   LD5: pll controller activity (~1 s) -> PLL config (load/readback/etc.)
-  //   LD6: chip write activity (~1 s)    -> write_mem / verify_write_mem (not read)
-  //   LD7: perip write activity (~1 s)   -> DAC write (not writeback/read)
+  //   LD6: chip controller busy (~1 s)   -> any chip SPI activity (write/read/config)
+  //   LD7: perip controller busy (~1 s)  -> any perip activity (DAC/S2P write/readback/echo)
   // The activity LEDs stretch a brief event/level to ~1 s so it stays visible.
-  pulse_stretch #(.STRETCH_CYCLES(100_000_000)) chip_write_blink (
+  pulse_stretch #(.STRETCH_CYCLES(100_000_000)) chip_busy_blink (
     .clk_i   (clk_chip_ctrl   ),
     .rst_i   (rst_chip_ctrl   ),
-    .pulse_i (chip_write_pulse ),
-    .level_o (chip_write_led  )
+    .pulse_i (chip_busy        ),
+    .level_o (chip_busy_led   )
   );
 
-  pulse_stretch #(.STRETCH_CYCLES(100_000_000)) perip_write_blink (
+  pulse_stretch #(.STRETCH_CYCLES(100_000_000)) perip_busy_blink (
     .clk_i   (clk_perip_ctrl   ),
     .rst_i   (rst_perip_ctrl   ),
-    .pulse_i (perip_write_pulse ),
-    .level_o (perip_write_led  )
+    .pulse_i (perip_busy        ),
+    .level_o (perip_busy_led   )
   );
 
   pulse_stretch #(.STRETCH_CYCLES(100_000_000)) pll_busy_blink (
@@ -641,8 +641,8 @@ module xillydemo
 
   assign user_led[0] = heartbeat_led;
   assign user_led[1] = pll_busy_led;
-  assign user_led[2] = chip_write_led;
-  assign user_led[3] = perip_write_led;
+  assign user_led[2] = chip_busy_led;
+  assign user_led[3] = perip_busy_led;
 
   // 8-BIT PLL-CONTROLLER FIFOS
   //  signal naming: FIFO signals from/to pll_controller are "fifo_pll_XXX".
@@ -719,7 +719,7 @@ module xillydemo
     .chip_arst_no      (chip_arst_no    ),
     // status / activity for LEDs
     .chip_clk_en_o     (chip_clk_en     ),
-    .chip_write_pulse_o(chip_write_pulse)
+    .chip_busy_o       (chip_busy       )
   );
 
   // Controller for the peripheral DAC (single-port SPI) and HV9308 S2P converter
@@ -749,7 +749,7 @@ module xillydemo
     .s2p_oe_o           (s2p_oe_o          ),
     .s2p_dout_i         (s2p_dout_i        ),
     // activity for LED
-    .perip_write_pulse_o(perip_write_pulse )
+    .perip_busy_o       (perip_busy        )
   );
 
   // Controller for the Pomelo PLL serial configuration (8-bit FIFO stream)

@@ -66,8 +66,9 @@ module perip_controller #(
     (* mark_debug = "true" *) output logic s2p_oe_o,
     (* mark_debug = "true" *) input  logic s2p_dout_i,
 
-    // activity output (for LED): 1-cycle pulse when a DAC or S2P write is issued
-    output logic perip_write_pulse_o
+    // activity output (for LED): level high while the controller is busy with any
+    // operation (DAC/S2P write, S2P readback, writeback echo)
+    output logic perip_busy_o
 );
 
     typedef enum logic [2:0] {
@@ -165,8 +166,10 @@ module perip_controller #(
     // exactly one cycle per accepted word, so no word is dropped.
     assign fifo_rd_ready = (state_current == IDLE) || (state_current == S2P_FETCH);
 
-    // perip "write activity" (for LED): a DAC load or an S2P load.
-    assign perip_write_pulse_o = dac_load_o | s2p_load_o;
+    // perip activity (for LED): high whenever the controller is busy with ANY
+    // operation -- DAC write, S2P write, S2P readback or writeback echo.
+    // "busy" = FSM not in IDLE, or either device driver still running.
+    assign perip_busy_o = (state_current != IDLE) | dac_busy_o | s2p_busy_o;
 
     always_ff @(posedge clk_i or posedge rst_i) begin
         if (rst_i) begin

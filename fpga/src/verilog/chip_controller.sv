@@ -57,7 +57,7 @@ module chip_controller#(
     output logic chip_arst_no,
     // status / activity outputs (for LED indication)
     output logic chip_clk_en_o,      // 1 = chip clock currently enabled
-    output logic chip_write_pulse_o  // 1-cycle pulse when a write transaction starts
+    output logic chip_busy_o  // level high while the SPI bus is busy (any write/read/config)
   );
 
     typedef enum logic [3:0] {
@@ -164,11 +164,11 @@ module chip_controller#(
 
     // Activity/status for LEDs. Track spi_busy_o so the indicator stays asserted
     // for the whole SPI transaction (e.g. a long burst write that streams for
-    // seconds), not just a single cycle at its start. Note spi_busy_o is high for
-    // ALL SPI activity -- writes, reads and the init/config transfer -- so this is
-    // now a general "SPI bus active" level, not strictly a write-only pulse.
-    assign chip_clk_en_o      = chip_clk_en_r;
-    assign chip_write_pulse_o = spi_busy_o;
+    // seconds), not just a single cycle at its start. spi_busy_o is high for ALL
+    // SPI activity -- writes, reads and the init/config transfer -- so this is a
+    // general "SPI bus busy" level.
+    assign chip_clk_en_o = chip_clk_en_r;
+    assign chip_busy_o   = spi_busy_o;
 
     // ------------------------------------------------------------------
     // Streaming data path / handshake (combinational)
