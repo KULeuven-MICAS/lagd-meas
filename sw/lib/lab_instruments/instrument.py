@@ -4,8 +4,10 @@
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
+from dataclasses import dataclass
+
 @dataclass
-class BaseInstrumentData():
+class BaseInstrumentData:
     """
     Data class for the base instrument.
     It contains the common information that all instruments should have.
@@ -18,7 +20,7 @@ class BaseInstrumentData():
     IP: str
     args: dict
 
-class BaseInstrument():
+class BaseInstrument:
     """
     Base class for all instruments.
     It defines the common interface and methods that all instruments should implement.
@@ -49,14 +51,14 @@ class BaseInstrument():
         This method should be implemented by the specific instrument class.
         """
         raise NotImplementedError
-    
+
     def status(self):
         """ Get the status of the instrument."""
         idn = self.tool.query_str('*IDN?')
-        print("Hello, I am: '{}'".format(idn))
+        print(f"Instrument {self.info.name} ID: {idn}")
         return idn
 
     def close(self):
         """ Close the resource for the instrument."""
-        if self.tool != None:
+        if self.tool is not None:
             self.tool._close()
