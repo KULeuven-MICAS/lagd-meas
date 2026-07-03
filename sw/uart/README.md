@@ -26,6 +26,9 @@ python3 send_uart.py ../inputs/helloworld.spm.elf
 
 # connectivity check only: ACK handshake with the bootrom, no ELF loaded
 ./send_uart.py --ping
+
+# memory integrity + volume test (no ELF)
+./send_uart.py --memtest --mem-size 0x10000
 ```
 
 ## Useful flags (`send_uart.py`)
@@ -34,6 +37,9 @@ python3 send_uart.py ../inputs/helloworld.spm.elf
 |------|---------|--------------|
 | `elf` (positional) | — | Path to the ELF to load. Optional only with `--ping`. |
 | `--ping` | off | Do only the ACK handshake with the bootrom, then exit (connectivity check; no ELF needed). |
+| `--memtest` | off | Write/read-back a memory region with patterns (integrity + volume), then exit. No ELF. |
+| `--mem-base` | `0x80000000` | Memtest region base address (with `--memtest`). |
+| `--mem-size` | `0x2000` | Memtest region size in bytes (with `--memtest`); larger = more flow-control stress. |
 | `-d`, `--device` | `/dev/ttyUSB10` | Serial device node. |
 | `-b`, `--baud` | `115200` | Baud rate. **Must match the chip** (`__BOOT_BAUDRATE`). |
 | `--no-rtscts` | (RTS/CTS on) | Disable hardware flow control. Use if RTS/CTS aren't wired. |

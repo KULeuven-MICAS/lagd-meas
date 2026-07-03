@@ -11,6 +11,7 @@ step-by-step bring-up diagnostics live in `lagd-meas/testcases/jtag/`.
 | `openocd.ft4232.tcl` | **Adapter** config only (FTDI driver, pins, speed). No target. |
 | `openocd.common.tcl` | **Tap + target** definitions + riscv settings. No actions. |
 | `openocd.run.tcl` | **Load-and-run flow**: halt → load ELF → resume → poll EOC → report. |
+| `openocd.memtest.tcl` | **Memory test**: pattern write/read-back over the system bus. |
 | `openocd.server.tcl` | **Interactive GDB server**: halt and wait for GDB/telnet/tcl. |
 | `run_elf.sh` | Shell wrapper around `openocd.run.tcl` (the easy entry point). |
 
@@ -37,6 +38,17 @@ Options (passed through to OpenOCD):
 How completion is detected: when the program's `main` returns, `crt0.S` `_exit` writes
 `(return_code << 1) | 1` to **SCRATCH_2 at `0x03000008`**. The flow polls that word —
 bit0 = done, `value >> 1` = return code.
+
+## Memory test
+
+```bash
+cd lagd-meas/sw/jtag
+openocd -f openocd.memtest.tcl                     # 8 KiB at 0x80000000
+openocd -c "set MEM_WORDS 16384" -f openocd.memtest.tcl   # 64 KiB, more stress
+```
+
+Writes `0x00 / 0xFF / 0x55·0xAA / addr-as-data / seeded-random` over the region and reads
+each back. Slow at 100 kHz — raise `ADAPTER_KHZ` once `01_idcode` proves a higher speed.
 
 ## Interactive debugging (GDB)
 

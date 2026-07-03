@@ -190,6 +190,47 @@ def wait_for_eoc(fd, timeout):
             line.append(b)
 
 
+# --- Memory test -------------------------------------------------------------
+
+def _lcg_bytes(n, seed):
+    """Deterministic pseudo-random bytes (reproducible; no external deps)."""
+    x = seed & 0xFFFFFFFF
+    out = bytearray(n)
+    for i in range(n):
+        x = (1103515245 * x + 12345) & 0x7FFFFFFF
+        out[i] = (x >> 16) & 0xFF
+    return bytes(out)
+
+
+def mem_patterns(base, size, seed):
+    """Yield (name, data) test patterns, each exactly `size` bytes.
+
+    Each pattern is written over the WHOLE region, so every cell sees every value
+    (catches stuck bits). 'addr-as-data' catches address aliasing; 'random' catches
+    the rest and is seeded so a failure always reproduces.
+    """
+    yield ("0x00", bytes(size))
+    yield ("0xFF", b"\xFF" * size)
+    yield ("0x55/0xAA", bytes(0x55 if (i & 1) == 0 else 0xAA for i in range(size)))
+    ad = bytearray(size)
+    for off in range(0, size - 3, 4):
+        struct.pack_into("<I", ad, off, (base + off) & 0xFFFFFFFF)
+    yield ("addr-as-data", bytes(ad))
+    yield ("random", _lcg_bytes(size, seed))
+
+
+def run_memtest(fd, base, size, timeout, seed=0xC0FFEE):
+    """Write each pattern over [base, base+size), read it back, and compare."""
+    for name, data in mem_patterns(base, size, seed):
+        cmd_write(fd, base, data, timeout)          # one sustained WRITE (stress)
+        rb = cmd_read(fd, base, size, timeout)
+        if rb != data:
+            i = next(k for k in range(size) if rb[k] != data[k])
+            raise ProtoError("memtest '%s' MISMATCH at 0x%x: wrote 0x%02x, read 0x%02x"
+                             % (name, base + i, data[i], rb[i]))
+        print("  [%-12s] OK  (%d bytes)" % (name, size))
+
+
 # --- ELF parsing (ELF64 little-endian, stdlib only) --------------------------
 
 def parse_elf(path):
@@ -237,6 +278,13 @@ def main():
     ap.add_argument("--ping", action="store_true",
                     help="only do the ACK handshake with the bootrom, then exit "
                          "(connectivity check; no ELF needed)")
+    ap.add_argument("--memtest", action="store_true",
+                    help="write/read-back a memory region (integrity + volume test), "
+                         "then exit; no ELF needed")
+    ap.add_argument("--mem-base", type=lambda x: int(x, 0), default=0x80000000,
+                    help="memtest region base address (default: 0x80000000, L2 SPM)")
+    ap.add_argument("--mem-size", type=lambda x: int(x, 0), default=0x2000,
+                    help="memtest region size in bytes (default: 0x2000 = 8 KiB)")
     ap.add_argument("-d", "--device", default="/dev/ttyUSB10",
                     help="serial device (default: /dev/ttyUSB10)")
     ap.add_argument("-b", "--baud", type=int, default=115200,
@@ -277,6 +325,31 @@ def main():
         finally:
             os.close(fd)
         print("Handshake: chip responded -- bootrom UART debug server is up.")
+        return 0
+
+    # --memtest: handshake, then write/read-back a memory region and exit (no ELF).
+    if args.memtest:
+        base, size = args.mem_base, args.mem_size
+        op_to = max(args.timeout, size * 10.0 / args.baud * 2 + 5)  # cover the transfer
+        print(f"Port     : {args.device} @ {args.baud} 8N1, "
+              f"RTS/CTS={'on' if args.rtscts else 'off'}")
+        print(f"Memtest  : 0x{base:08x} .. 0x{base + size:08x}  ({size} bytes)")
+        try:
+            fd = open_port(args.device, args.baud, args.rtscts)
+        except OSError as e:
+            sys.stderr.write(f"ERROR: cannot open {args.device}: {e}\n")
+            return 1
+        try:
+            print("Handshake: sending ACK challenge ...")
+            handshake(fd, args.connect_timeout)
+            print("Handshake: chip responded, debug server is up.")
+            run_memtest(fd, base, size, op_to)
+        except ProtoError as e:
+            sys.stderr.write(f"FAIL: {e}\n")
+            return 1
+        finally:
+            os.close(fd)
+        print(f"PASS: memtest OK over {size} bytes at 0x{base:08x}.")
         return 0
 
     if args.elf is None:
