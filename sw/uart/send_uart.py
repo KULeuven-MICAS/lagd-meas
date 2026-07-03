@@ -231,7 +231,12 @@ def main():
     ap = argparse.ArgumentParser(
         description="Load and run an ELF on the LAGD/Cheshire SoC over UART "
                     "(passive boot debug protocol).")
-    ap.add_argument("elf", help="path to the ELF to load (e.g. helloworld.spm.elf)")
+    ap.add_argument("elf", nargs="?",
+                    help="path to the ELF to load (e.g. helloworld.spm.elf); "
+                         "omit only with --ping")
+    ap.add_argument("--ping", action="store_true",
+                    help="only do the ACK handshake with the bootrom, then exit "
+                         "(connectivity check; no ELF needed)")
     ap.add_argument("-d", "--device", default="/dev/ttyUSB10",
                     help="serial device (default: /dev/ttyUSB10)")
     ap.add_argument("-b", "--baud", type=int, default=115200,
@@ -254,6 +259,29 @@ def main():
                     help="seconds to wait for the initial ACK handshake (default: 10)")
     args = ap.parse_args()
 
+    # --ping: only do the ACK handshake with the bootrom, then exit (no ELF).
+    if args.ping:
+        print(f"Port     : {args.device} @ {args.baud} 8N1, "
+              f"RTS/CTS={'on' if args.rtscts else 'off'}")
+        try:
+            fd = open_port(args.device, args.baud, args.rtscts)
+        except OSError as e:
+            sys.stderr.write(f"ERROR: cannot open {args.device}: {e}\n")
+            return 1
+        try:
+            print("Handshake: sending ACK challenge ...")
+            handshake(fd, args.connect_timeout)
+        except ProtoError as e:
+            sys.stderr.write(f"ERROR: {e}\n")
+            return 1
+        finally:
+            os.close(fd)
+        print("Handshake: chip responded -- bootrom UART debug server is up.")
+        return 0
+
+    if args.elf is None:
+        ap.error("the 'elf' argument is required unless --ping is given")
+
     entry, segments = parse_elf(args.elf)
     total = sum(len(b) for _, b in segments)
     print(f"ELF      : {args.elf}")
@@ -265,7 +293,11 @@ def main():
     print(f"Port     : {args.device} @ {args.baud} 8N1, "
           f"RTS/CTS={'on' if args.rtscts else 'off'}")
 
-    fd = open_port(args.device, args.baud, args.rtscts)
+    try:
+        fd = open_port(args.device, args.baud, args.rtscts)
+    except OSError as e:
+        sys.stderr.write(f"ERROR: cannot open {args.device}: {e}\n")
+        return 1
     try:
         print("Handshake: sending ACK challenge ...")
         handshake(fd, args.connect_timeout)

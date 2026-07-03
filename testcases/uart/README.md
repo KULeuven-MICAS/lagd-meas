@@ -1,0 +1,49 @@
+# UART bring-up testcases
+
+Step-by-step bring-up ladder for the UART link to the LAGD / Cheshire chip, via the
+on-board **FT4232H** UART channel. Run the rungs **in order** — each proves a new layer
+and is a prerequisite for the next.
+
+| # | Test | Proves | Needs chip? | On failure, suspect |
+|---|------|--------|-------------|---------------------|
+| 1 | [`01_loopback/`](01_loopback/) | Host serial path — device, 115200 8N1, converter, cabling | **No** (TX↔RX jumper) | wrong device, baud, or cabling |
+| 2 | [`02_handshake/`](02_handshake/) | Chip reachable — powered, **clocked (⇒ baud right)**, **bootrom in passive boot**, wiring | Yes | boot mode / clock-baud / bootrom |
+| 3 | [`03_load_run/`](03_load_run/) | Full UART data path — load ELF, run, return code 0 | Yes | payload, or link corruption |
+
+Each folder has its own README with expected output and failure modes.
+
+## Quick run
+
+```bash
+cd 01_loopback   && ./loopback.py --device /dev/ttyUSB10   # host sanity (jumper TX<->RX)
+cd ../02_handshake && ./run.sh                             # reach the bootrom (ACK<->ACK)
+cd ../03_load_run  && ./run.sh                             # load & run helloworld
+```
+
+## Key difference from the JTAG ladder
+
+UART goes **through the bootrom**; JTAG bypasses it. Consequences:
+
+- UART needs **`boot_mode = 0` (passive)** and a working bootrom; JTAG does not care about
+  boot mode.
+- The UART baud is **derived from the core clock/RTC**, so a wrong clock garbles UART even
+  when JTAG's IDCODE still reads fine.
+- So if UART fails from rung 2 on but the JTAG ladder passes, suspect **boot mode / clock
+  / bootrom**, not the UART wires (those are proven by `01_loopback`).
+
+## Diagnostics vs. tool
+
+- **`01_loopback`** is a host-only diagnostic (reuses `sw/uart/send_uart.py`'s port code
+  to validate the exact serial setup the loader uses).
+- **`02_handshake` and `03_load_run`** are thin examples of the reusable loader in
+  [`../../sw/uart/`](../../sw/uart/) (`send_uart.py`, via `--ping` and the full flow).
+  That's the tool you use routinely; `sw/uart/selftest.py` is its offline unit test.
+
+## Common prerequisites
+
+- Python 3 (standard library only — no pyserial).
+- The FT4232H connected; the **UART channel** device known (same one you pass to
+  `send_uart.py`). The UART channel is a normal `/dev/ttyUSB*` — no `ftdi_sio` unbinding
+  (that's only for the JTAG channel, interface 0).
+- From rung 2 on: chip powered, **`boot_mode = 0` (passive)**, and the **core clock
+  running**.
