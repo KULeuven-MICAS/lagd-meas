@@ -226,9 +226,9 @@ def run_memtest(fd, base, size, timeout, seed=0xC0FFEE):
         rb = cmd_read(fd, base, size, timeout)
         if rb != data:
             i = next(k for k in range(size) if rb[k] != data[k])
-            raise ProtoError("memtest '%s' MISMATCH at 0x%x: wrote 0x%02x, read 0x%02x"
-                             % (name, base + i, data[i], rb[i]))
-        print("  [%-12s] OK  (%d bytes)" % (name, size))
+            raise ProtoError(f"memtest '{name}' MISMATCH at 0x{base + i:x}: "
+                             f"wrote 0x{data[i]:02x}, read 0x{rb[i]:02x}")
+        print(f"  [{name:<12}] OK  ({size} bytes)")
 
 
 # --- ELF parsing (ELF64 little-endian, stdlib only) --------------------------
