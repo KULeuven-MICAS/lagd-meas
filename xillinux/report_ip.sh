@@ -1,7 +1,14 @@
 #!/bin/bash
 
-# This script is used to report the IP address of the ZedBoard (lagdboard) after it boots up and connects to the campus network.
+# Copyright 2026 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
 
+# Author: Jiacong Sun <jiacong.sun@kuleuven.be>
+
+# Description: This script is used to report the IP address of the ZedBoard (lagdboard) after it boots up and connects to the campus network.
+
+# Notes:
 # Please place this file under /usr/local/bin/report_ip.sh
 # and change the email address to your own.
 # Then, trigger it on reboot by entering:
