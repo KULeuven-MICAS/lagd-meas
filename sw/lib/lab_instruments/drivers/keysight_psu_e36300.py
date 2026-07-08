@@ -4,6 +4,7 @@
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
+import pyvisa
 import instrument as inst
 
 class KeysightPSUE36300(inst.BaseInstrument):
@@ -23,7 +24,6 @@ class KeysightPSUE36300(inst.BaseInstrument):
         """
         Open the resource for the Keysight E36300 series power supply.
         """
-        import pyvisa
         rm = pyvisa.ResourceManager()
         return rm.open_resource(f'TCPIP0::{self.info.IP}::inst0::INSTR')
 
@@ -33,7 +33,7 @@ class KeysightPSUE36300(inst.BaseInstrument):
         """
         self.tool.write('*RST')  # Reset the instrument to default settings
         self.tool.write('SYST:REM')  # Set to remote mode
-    
+
     def set_current_limit(self, channel, current_limit):
         """
         Set the current limit for the specified channel of the Keysight E36300 series power supply.
