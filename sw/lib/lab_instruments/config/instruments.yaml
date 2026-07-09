@@ -1,0 +1,33 @@
+# Copyright 2026 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
+
+# This file contains the configuration for the lab instruments used in the project.
+
+# First power supply for VDDIO and VDDA PLL
+- name: "KeySight E36312A PS - Chip"
+  IP: "10.91.16.86"
+  args: # list of channels and corresponding voltages and currents
+    - channel: "CH1" # VDDIO
+      voltage: 1.8
+      current: 0.5
+    - channel: "CH2" # VDDA PLL
+      voltage: 0.8
+      current: 0.2
+
+# Second power supply for the board supplies
+- name: "KeySight E36312A PS - Board"
+  IP: "10.91.16.95"
+  args: # list of channels and corresponding voltages and currents
+    channels:
+      - name: "CH1" # 5V
+        voltage: 5.0
+        current: 1.0
+      - name: "CH2" # 9V
+        voltage: 9.0
+        current: 0.5
+      - name: "CH3" # 3V
+        voltage: 3.0
+        current: 0.5
