@@ -103,8 +103,8 @@ class KeysightPSUE36300(inst.BaseInstrument):
             if ch_info is not None:
                 if 'voltage' in ch_info:
                     self.set_voltage(channel, ch_info['voltage'])  # Set the voltage
-                if 'current_limit' in ch_info:
-                    self.set_current_limit(channel, ch_info['current_limit'])  # Set the current limit
+                if 'current' in ch_info:
+                    self.set_current_limit(channel, ch_info['current'])  # Set the current limit
             else:
                 raise ValueError(f"Channel {channel} not found in instrument info.")
 
