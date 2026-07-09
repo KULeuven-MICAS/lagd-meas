@@ -23,9 +23,8 @@ class KeysightPSUE36300(inst.BaseInstrument):
         Open the resource for the Keysight E36300 series power supply.
         """
         rm = pyvisa.ResourceManager()
-        print(f"Opening resource for instrument {self.info['name']} at IP {self.info['IP']}")
-        print(f"Resource string: TCPIP0::{self.info['IP']}::inst0::INSTR")
-        return rm.open_resource(f"TCPIP0::{self.info['IP']}::inst0::INSTR")
+        print(f"Reaching {self.info['name']} at: TCPIP::{self.info['IP']}::inst0::INSTR")
+        return rm.open_resource(f"TCPIP::{self.info['IP']}::inst0::INSTR")
 
     def _init_instrument(self):
         """
