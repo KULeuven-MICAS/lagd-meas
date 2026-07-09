@@ -31,7 +31,7 @@ class BaseInstrument:
         self.tool = self._open_resource()
         self._init_instrument()
 
-    def _open_resource(self):
+    def _open_resource(self): # Add return type hint
         """
         Open the resource for the instrument.
         This method should be implemented by the specific instrument class.
@@ -61,4 +61,4 @@ class BaseInstrument:
     def close(self):
         """ Close the resource for the instrument."""
         if self.tool is not None:
-            self.tool._close()
+            self._close()
