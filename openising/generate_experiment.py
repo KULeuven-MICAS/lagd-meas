@@ -23,23 +23,21 @@ with experiment_config_dir.open("r") as f:
     experiment_config = yaml.safe_load(f)
 
 experiment_config.update(base_config)
+experiment_config["benchmark"] = str(current_dir / args.config_file / "benchmark.yaml")
 save_folder = current_dir / args.config_file
 
 config_path = "./ising/inputs/config/config_experiment.yaml"
 openising_config = toppath / config_path
+
 with openising_config.open("w") as f:
     yaml.safe_dump(experiment_config, f)
 problem_type = experiment_config["problem_type"]
 # Start openising run
 if problem_type != "MPPI":
     ans,_ = get_hamiltonian_energy(problem_type, config_path, args.logging_level)
+    # Store everything
+    store_run(ans, save_folder, problem_type)
 else:
-    pass
-    ans, _ = mppi_experiment(problem_type, config_path, args.logging_level)
+    mppi_experiment(config_path, save_folder)
 
-# Store everything
-if "MIMO" in args.config_file:
-    is_MIMO = True
-else:
-    is_MIMO = False
-store_run(ans, save_folder, is_MIMO=is_MIMO)
+

@@ -10,3 +10,4 @@ seed: 100
 dummy_seed: 42
 nb_trials: 10
 nb_runs: 1
+dummy_creator: True

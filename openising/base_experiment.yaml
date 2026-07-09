@@ -90,4 +90,3 @@ nodes_scaling: 2
 #################################
 ## Dummy creator hyperparameters
 #################################
-dummy_creator: True
