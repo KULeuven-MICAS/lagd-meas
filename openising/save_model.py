@@ -1,27 +1,30 @@
 from pathlib import Path
 import numpy as np
-from typing import Any
 
 from openising.ising.utils.HDF5Logger import return_data
 from openising.ising.stages.model import IsingModel
 from openising.ising.stages.simulation_stage import Ans
 
-def store_run(ans: Ans, save_folder:Path, is_MIMO:bool=False) -> None:
+def store_run(ans: Ans, save_folder:Path, problem_type:str) -> None:
     """Save the model and solver parameters in binary format.
-    
     @type ans: Ans
     @param ans: return ans of the run
     @type save_folder: str
     @param save_folder: folder in which to save the results
     """
-    if is_MIMO:
+    if problem_type == "MIMO":
         nb_runs = ans.config.dummy_case_num
+    elif problem_type == "MPPI":
+        nb_runs = 1
     else:
         nb_runs = ans.config.nb_runs
     for i in range(nb_runs):
-        if is_MIMO:
+        if problem_type=="MIMO":
             logfile = ans.MIMO[i].logfiles[0]
             scale_factor = ans.MIMO[i].h_scale_factor
+        elif problem_type=="MPPI":
+            logfile = ans.logfiles[0]
+            scale_factor = ans.h_scale_factor
         else:
             logfile = ans.logfiles[i]
             scale_factor = ans.h_scale_factor
@@ -29,7 +32,7 @@ def store_run(ans: Ans, save_folder:Path, is_MIMO:bool=False) -> None:
         Path.mkdir(folder_run, exist_ok=True)
         store_results_logfile(logfile, "cluster", folder_run, "clusters.txt")
         store_results_logfile(logfile, "state_in", folder_run, "initial_state.txt")
-        if is_MIMO:
+        if problem_type=="MIMO":
             quantized_model:IsingModel = ans.MIMO[i].quantized_model
         else:
             quantized_model:IsingModel = ans.quantized_model
@@ -48,8 +51,7 @@ def store_run(ans: Ans, save_folder:Path, is_MIMO:bool=False) -> None:
             np.savetxt(f, quantized_model_h, fmt="%4s")
             f.write(f"# offset\n{quantized_model.c}\n")
             f.write(f"# scaling factor h: {scale_factor}\n")
-    
-    
+
 def store_results_logfile(logfile: Path, data_name: str, save_folder:Path, file_name: str) -> None:
     """Loads and stores the data from the given logfile
 
@@ -71,6 +73,6 @@ def store_results_logfile(logfile: Path, data_name: str, save_folder:Path, file_
         new_data = data
         if data.shape[0] < 513:
             padding = np.full((513 - data.shape[0], data.shape[1]), 0)
-            new_data = np.append(new_data, padding, axis=0)       
+            new_data = np.append(new_data, padding, axis=0)
     with save_path.open("w") as f:
         np.savetxt(f, new_data, fmt="%1u", delimiter="")

@@ -1,0 +1,5 @@
+dummy_creator: False
+nb_runs: 1
+problem_type: MPPI
+initialization_seed: 42
+seed: 100
