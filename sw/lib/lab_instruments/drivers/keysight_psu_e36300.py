@@ -11,8 +11,11 @@ class KeysightPSUE36300(inst.BaseInstrument):
     """
     Class for the Keysight E36300 series power supply.
     It implements the specific methods for this instrument.
+    info: inst.BaseInstrumentData: The data class containing the instrument's information.
+    info.args: dict: Additional arguments for the instrument. Expects a list of channels
+
     """
-    def __init__(self, info):
+    def __init__(self, info: inst.BaseInstrumentData):
         """
         Initialize the Keysight E36300 series power supply with the given instrument information.
         """
@@ -34,36 +37,76 @@ class KeysightPSUE36300(inst.BaseInstrument):
         self.tool.write('*RST')  # Reset the instrument to default settings
         self.tool.write('SYST:REM')  # Set to remote mode
 
-    def set_current_limit(self, channel, current_limit):
+    def set_current_limit(self, channel: str, current_limit: float):
         """
         Set the current limit for the specified channel of the Keysight E36300 series power supply.
         """
-        self.tool.write(f'INST:NSEL {channel}')  # Select the channel
+        self.tool.write(f'INST:SEL {channel}')  # Select the channel
         self.tool.write(f'CURR {current_limit}')  # Set the current limit
 
-    def set_voltage(self, channel, voltage, current_limit=None):
+    def set_voltage(self, channel: str, voltage: float, current_limit: float = None):
         """
         Set the voltage for the specified channel of the Keysight E36300 series power supply.
         """
-        self.tool.write(f'INST:NSEL {channel}')  # Select the channel
+        self.tool.write(f'INST:SEL {channel}')  # Select the channel
         self.tool.write(f'VOLT {voltage}')  # Set the voltage
 
         if current_limit is not None:
             self.set_current_limit(channel, current_limit)
 
-    def get_voltage(self, channel):
+    def get_voltage(self, channel: str):
         """
         Get the voltage for the specified channel of the Keysight E36300 series power supply.
         """
-        self.tool.write(f'INST:NSEL {channel}')  # Select the channel
+        self.tool.write(f'INST:SEL {channel}')  # Select the channel
         return float(self.tool.query('MEAS:VOLT?'))  # Query and return the measured voltage
 
-    def get_current(self, channel):
+    def get_current(self, channel: str):
         """
         Get the current for the specified channel of the Keysight E36300 series power supply.
         """
-        self.tool.write(f'INST:NSEL {channel}')  # Select the channel
+        self.tool.write(f'INST:SEL {channel}')  # Select the channel
         return float(self.tool.query('MEAS:CURR?'))  # Query and return the measured current
+
+    def get_channel_from_info(self, channel: str):
+        """
+        Get the channel settings from the instrument info.
+        channel: str: The channel to get (e.g., 'CH1', 'CH2', 'CH3').
+        Returns:
+            dict: A dictionary containing the settings for the channel.
+        """
+        # Get the channel with the channel name from the instrument info channels list
+        ret = None
+        for ch in self.info.args['channels']:
+            if ch['name'] == channel:
+                ret = ch
+                break
+        return ret
+
+    def set_channel(self, channel: str, settings: dict = None):
+        """
+        Set the settings for the specified channel of the Keysight E36300 series power supply.
+        channel: str: The channel to set (e.g., 'CH1', 'CH2', 'CH3').
+        settings: dict: A dictionary containing the settings for the channel.
+            Example: {'voltage': 5.0, 'current': 1.0}
+        If settings is None, the default settings from the instrument info will be used.
+        """
+        self.tool.write(f'INST:SEL {channel}')  # Select the channel
+
+        if settings is not None:
+            if 'voltage' in settings:
+                self.set_voltage(channel, settings['voltage'])  # Set the voltage
+            if 'current_limit' in settings:
+                self.set_current_limit(channel, settings['current'])  # Set the current limit
+        else: # Use the default settings from the instrument info
+            ch_info = self.get_channel_from_info(channel)
+            if ch_info is not None:
+                if 'voltage' in ch_info:
+                    self.set_voltage(channel, ch_info['voltage'])  # Set the voltage
+                if 'current_limit' in ch_info:
+                    self.set_current_limit(channel, ch_info['current_limit'])  # Set the current limit
+            else:
+                raise ValueError(f"Channel {channel} not found in instrument info.")
 
     def _close(self):
         """
