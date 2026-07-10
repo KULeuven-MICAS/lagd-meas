@@ -8,7 +8,6 @@ import threading
 import requests
 
 from contextlib import contextmanager
-from typing import Tuple
 
 from .crypto_utils import Credentials
 
