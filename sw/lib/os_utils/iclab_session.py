@@ -50,7 +50,7 @@ class _ICLabKeepAlive:
         response = self._session.get(
             url,
             auth=(self._auth.username, self._auth.password), # converting to tuple for get API
-            verify=False,  # equivalent to curl -k
+            verify=True,
             timeout=self._request_timeout_s,
         )
         response.raise_for_status()
@@ -58,7 +58,7 @@ class _ICLabKeepAlive:
 
 @contextmanager
 def iclab_session(
-    key: Tuple[str, str],
+    key: Credentials,
     keepalive_period_s: float = 59.0,
     request_timeout_s: float = 10.0,
 ):
@@ -68,8 +68,7 @@ def iclab_session(
     Yields:
         requests.Session: A session object for making requests to the ICLab API.
     """
-    username, password = key
-    auth = Credentials(username=username, password=password)
+    auth = key
     session = requests.Session()
     keepalive = _ICLabKeepAlive(
         session=session,

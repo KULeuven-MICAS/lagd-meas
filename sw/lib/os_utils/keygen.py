@@ -5,7 +5,7 @@
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
 from getpass import getpass
-from crypto import create_keyfile
+from crypto_utils import create_keyfile
 
 filename = input("Output key file [credentials.key]: ").strip()
 if filename == "":

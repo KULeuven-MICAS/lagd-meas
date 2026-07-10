@@ -90,7 +90,7 @@ def load_credentials(filename, master_password):
 
     return credentials["username"], credentials["password"]
 
-def get_credentials_from_keyfile(filename: str, master_password: str):
+def get_credentials_from_keyfile(filename: str) -> Credentials:
     """
     Load credentials from an encrypted key file.
     """
@@ -101,8 +101,10 @@ def get_credentials_from_keyfile(filename: str, master_password: str):
             filename,
             master_password
         )
+        credentials = Credentials(username=username, password=password)
     except ValueError:
         print("Incorrect master password.")
 
-print("Successfully decrypted credentials.")
+    print("Successfully decrypted credentials.")
+    return credentials
 
