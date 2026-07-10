@@ -15,4 +15,5 @@ results/
 *.swp
 
 # data files
-openising/**/*.txt
+openising/**/run_*/**
+**.pkl

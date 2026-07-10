@@ -9,5 +9,5 @@ initialization_seed: 42
 seed: 100
 dummy_seed: 42
 nb_trials: 10
-nb_runs: 1
+nb_runs: 2
 dummy_creator: True
