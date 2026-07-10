@@ -101,10 +101,9 @@ def decrypt_keyfile(filename: str) -> Credentials:
             filename,
             master_password
         )
-        credentials = Credentials(username=username, password=password)
-    except ValueError:
-        print("Incorrect master password.")
+    except ValueError as e:
+        raise SystemExit("Incorrect master password.") from e
 
     print("Successfully decrypted credentials.")
-    return credentials
+    return Credentials(username=username, password=password)
 
