@@ -54,7 +54,7 @@ class BaseInstrument:
 
     def status(self):
         """ Get the status of the instrument."""
-        idn = self.tool.query_str('*IDN?')
+        idn = self.tool.query('*IDN?').strip()
         print(f"Instrument {self.info.name} ID: {idn}")
         return idn
 
