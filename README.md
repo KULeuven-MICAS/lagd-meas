@@ -39,7 +39,7 @@ _Coming soon: a `requirements.txt` for the Python host-side code, and a Vivado v
 ## Lab instrument control
 
 The host-side Python can also control lab instruments (power supplies, multimeters, etc.) over LAN.
-To setup lan connections, you need to autenticate with the iclab secure server. 
+To set up LAN connections, you need to authenticate with the IC-LAB secure server.
 You can authenticate by:
   * prompting for your username and password from command line
   * passing your username and password as arguments to the script (not recommended)
