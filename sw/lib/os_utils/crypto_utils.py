@@ -85,8 +85,7 @@ def load_credentials(filename, master_password):
     except InvalidToken:
         raise ValueError("Invalid master password")
 
-    credentials = yaml.load(plaintext, Loader=yaml.FullLoader)
-
+    credentials = yaml.safe_load(plaintext.decode("utf-8"))
     return credentials["username"], credentials["password"]
 
 def decrypt_keyfile(filename: str) -> Credentials:
