@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 
-class BaseParser():
+class BaseParser:
     def __init__(self, args=None):
         self.parser = argparse.ArgumentParser(description='Gets options from command line.')
         self.init_parser()
