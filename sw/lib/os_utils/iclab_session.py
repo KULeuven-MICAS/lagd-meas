@@ -6,10 +6,10 @@
 
 import threading
 import requests
-
 from contextlib import contextmanager
+from getpass import getpass
 
-from .crypto_utils import Credentials
+from .crypto_utils import Credentials, decrypt_keyfile
 
 ICLAB_BASE_URL = "https://securewww.esat.kuleuven.be/iclab"
 ICLAB_LANDING_URL = f"{ICLAB_BASE_URL}/"
@@ -82,3 +82,31 @@ def iclab_session(
     finally:
         keepalive.stop()
         session.close()
+
+def prompt_for_credentials() -> Credentials:
+    """
+    Prompt the user for their ICLab credentials.
+    Returns:
+        Credentials: An object containing the username and password.
+    """
+    username = input("University username: ")
+    password = getpass("University password: ")
+    return Credentials(username=username, password=password)
+
+def get_credentials_from_keyfile(keyfile_path: str) -> Credentials:
+    """
+    Load credentials from a keyfile.
+    Args:
+        keyfile_path (str): The path to the keyfile.
+    Returns:
+        Credentials: An object containing the username and password.
+    """
+    credentials = None
+    # Load credentials from the keyfile
+    while credentials is None:
+        try:
+            credentials = decrypt_keyfile(keyfile_path)
+        except Exception as e:
+            print(f"Error loading credentials: {e}")
+            raise SystemExit("Failed to load credentials from keyfile.")
+    return credentials

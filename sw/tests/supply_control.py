@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.lab_instruments.drivers.keysight_psu_e36300 import KeysightPSUE36300
 from lib.os_utils.iclab_session import iclab_session
-from lib.os_utils.crypto_utils import get_credentials_from_keyfile
 from lib.os_utils.parser import Parser
 
 PRJ_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -29,19 +28,7 @@ def main():
     with INSTR_CFG_PATH.open(encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    credentials = None
-    # Load credentials from the keyfile
-    while credentials is None:
-        try:
-            credentials = get_credentials_from_keyfile(parser.args.keyfile)
-        except FileNotFoundError:
-            print("Credentials key file not found. Please run keygen.py to create it.")
-            return
-        except Exception as e:
-            print(f"Error loading credentials: {e}")
-            return
-
-    with iclab_session(credentials):
+    with iclab_session(parser.credentials):
         # Create an instance of the KeysightPSUE36300 class with the loaded configuration.
         psu = KeysightPSUE36300(config[0])
 
@@ -56,7 +43,6 @@ def main():
 
         # Close the instrument connection.
         psu.close()
-
 
 if __name__ == "__main__":
     main()

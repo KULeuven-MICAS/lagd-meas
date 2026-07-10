@@ -4,27 +4,26 @@
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
-from getpass import getpass
 from crypto_utils import create_keyfile
+from iclab_session import prompt_for_credentials
+from getpass import getpass
+
 
 filename = input("Output key file [credentials.key]: ").strip()
 if filename == "":
     filename = "credentials.key"
 
-username = input("University username: ")
-
-password = getpass("University password: ")
+credentials = prompt_for_credentials()
 
 master1 = getpass("Choose a master password: ")
 master2 = getpass("Repeat master password: ")
-
 if master1 != master2:
     raise SystemExit("Master passwords do not match.")
 
 create_keyfile(
     filename,
-    username,
-    password,
+    credentials.username,
+    credentials.password,
     master1,
 )
 

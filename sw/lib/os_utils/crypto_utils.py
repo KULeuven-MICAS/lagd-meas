@@ -90,7 +90,7 @@ def load_credentials(filename, master_password):
 
     return credentials["username"], credentials["password"]
 
-def get_credentials_from_keyfile(filename: str) -> Credentials:
+def decrypt_keyfile(filename: str) -> Credentials:
     """
     Load credentials from an encrypted key file.
     """
