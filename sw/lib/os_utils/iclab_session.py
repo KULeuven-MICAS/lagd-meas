@@ -6,20 +6,22 @@
 
 import threading
 import requests
+
 from contextlib import contextmanager
 from typing import Tuple
+
+from .crypto_utils import Credentials
 
 ICLAB_BASE_URL = "https://securewww.esat.kuleuven.be/iclab"
 ICLAB_LANDING_URL = f"{ICLAB_BASE_URL}/"
 ICLAB_KEEPALIVE_URL = f"{ICLAB_BASE_URL}/lab-control.php"
-
 
 class _ICLabKeepAlive:
     """Keeps IC-LAB firewall access alive for the lifetime of a session."""
     def __init__(
         self,
         session: requests.Session,
-        auth: Tuple[str, str],
+        auth: Credentials,
         keepalive_period_s: float,
         request_timeout_s: float,
     ) -> None:
@@ -47,7 +49,7 @@ class _ICLabKeepAlive:
     def _request(self, url: str) -> requests.Response:
         response = self._session.get(
             url,
-            auth=self._auth,
+            auth=(self._auth.username, self._auth.password), # converting to tuple for get API
             verify=False,  # equivalent to curl -k
             timeout=self._request_timeout_s,
         )
@@ -67,7 +69,7 @@ def iclab_session(
         requests.Session: A session object for making requests to the ICLab API.
     """
     username, password = key
-    auth = (username, password)
+    auth = Credentials(username=username, password=password)
     session = requests.Session()
     keepalive = _ICLabKeepAlive(
         session=session,
