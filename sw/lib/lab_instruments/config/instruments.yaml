@@ -10,12 +10,13 @@
 - name: "KeySight E36312A PS - Chip"
   IP: "10.91.16.86"
   args: # list of channels and corresponding voltages and currents
-    - channel: "CH1" # VDDIO
-      voltage: 1.8
-      current: 0.5
-    - channel: "CH2" # VDDA PLL
-      voltage: 0.8
-      current: 0.2
+    channels:
+      - name: "CH1" # VDDIO
+        voltage: 1.8
+        current: 0.5
+      - name: "CH2" # VDDA PLL
+        voltage: 0.8
+        current: 0.2
 
 # Second power supply for the board supplies
 - name: "KeySight E36312A PS - Board"
