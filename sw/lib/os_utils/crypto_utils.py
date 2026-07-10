@@ -73,8 +73,7 @@ def create_keyfile(filename, username, password, master_password):
 
 def load_credentials(filename, master_password):
     with Path(filename).open() as f:
-        data = yaml.load(f, Loader=yaml.FullLoader)
-
+        data = yaml.safe_load(f)
     salt = base64.b64decode(data["salt"])
     encrypted = base64.b64decode(data["ciphertext"])
 
