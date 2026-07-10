@@ -1,5 +1,5 @@
 dummy_creator: False
-nb_runs: 1
+nb_runs: 2
 problem_type: MPPI
 initialization_seed: 42
 seed: 100
