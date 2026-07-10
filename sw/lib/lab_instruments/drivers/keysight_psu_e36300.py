@@ -99,7 +99,7 @@ class KeysightPSUE36300(inst.BaseInstrument):
         if settings is not None:
             if 'voltage' in settings:
                 self.set_voltage(channel, settings['voltage'])  # Set the voltage
-            if 'current_limit' in settings:
+            if 'current' in settings:
                 self.set_current_limit(channel, settings['current'])  # Set the current limit
         else: # Use the default settings from the instrument info
             ch_info = self.get_channel_from_info(channel)
