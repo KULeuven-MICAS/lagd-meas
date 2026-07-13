@@ -34,7 +34,7 @@ sudo hostnamectl set-hostname my-env
 
 - Reboot the FPGA to apply the change.
 
-**Update the IP email script**: Once you connect the FPGA to ethernet, it will send an email to notify its latest IP address. Please update the script so that it matches with your new own email address:
+**Update the IP email script**: Once you connect the FPGA to ethernet, it will send an email to notify its latest IP address. Please update the script so that it matches with your new own email address (a copy of the same script is put under current github folder):
 
 - Open the script by `vim /usr/local/bin/report_ip.sh`
 
