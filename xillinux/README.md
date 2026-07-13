@@ -45,7 +45,7 @@ sudo hostnamectl set-hostname my-env
 
 ## Others
 
-### How to run `sudo apt update`?
+### Why cannot I run `sudo apt update`?
 
 The Xillinux OS is using an outdated Ubuntu. So, to update packages, we need to relink the ubuntu's location so that it correctly accesses the one that correponds to our current OS.
 
