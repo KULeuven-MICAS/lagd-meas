@@ -4,6 +4,43 @@ Reusable OpenOCD scripts for driving the chip over JTAG via the on-board **FT423
 (channel A / ADBUS). This is the "production" JTAG flow used **after bring-up**; the
 step-by-step bring-up diagnostics live in `lagd-meas/testcases/jtag/`.
 
+## How to insteall OpenOCD?
+
+Since the Xillinux is using an outdated ubuntu OS, it is not supported by the ubuntu official anymore. So, OpenOCD has to be downloaded and installed manually (takes ~300MB space).
+
+Note: do not install openOCD by `sudo apt install openocd`. It is an outdated version of OpenOCD.
+
+It can be installed by running the commands below (takes a few minutes):
+
+```[bash]
+cd ~/Downloads
+GIT_SSL_NO_VERIFY=true git clone --recurse-submodules https://github.com/openocd-org/openocd.git
+cd openocd
+./bootstrap
+./configure --enable-ftdi --enable-internal-jimtcl
+make -j$(nproc)
+make install
+```
+
+Check if OpenOCD has been installed by:
+
+```[bash]
+which openocd
+openocd --version
+```
+
+The tested OpenOCD version is: `Open On-Chip Debugger 0.12.0+dev-02587-g16b9eae (2026-07-12-17:53)`
+
+If those look good and you want to free up some space, you're safe to `rm -rf ~/Downloads/openocd` (note: this makes you lose easy uninstall by `make uninstall`).
+
+## How to install gdb debugger?
+
+Execute the command below:
+
+```[bash]
+sudo apt install gdb-multiarch
+```
+
 ## Files
 
 | File | Role |
@@ -63,8 +100,9 @@ riscv64-unknown-elf-gdb your.elf -ex "target extended-remote :3333"
 
 - **Speed**: defaults to 100 kHz (safe). Raise via `-c "set ADAPTER_KHZ <kHz>"` once the
   link is proven (see `testcases/jtag/01_idcode`).
-- **Memory access**: `openocd.run.tcl` sets `riscv set_prefer_sba on` so it can poll the
-  EOC register while the core runs. If SBA misbehaves, set it `off` (progbuf).
+- **Memory access**: `openocd.run.tcl` prefers the system bus (`riscv set_mem_access
+  sysbus progbuf`) so it can poll the EOC register while the core runs. If SBA
+  misbehaves, prefer progbuf (`riscv set_mem_access progbuf sysbus`).
 - **Prerequisite**: the chip's **core clock must be running** (external clk pad / PLL,
   `clk_sel`). If `init`/`halt` fails, see `testcases/jtag/02_halt`.
 - **Linux**: release `ftdi_sio` from interface 0 so OpenOCD can claim the JTAG channel;
