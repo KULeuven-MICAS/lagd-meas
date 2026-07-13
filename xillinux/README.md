@@ -6,6 +6,15 @@ Date: 2026/07/13
 
 This folder is a placeholder for all the settings required to deploy the xillinux on the FPGA, such as the Xillinux image, network scripts, scripts that are useful after the Xillinux is set up on the FPGA.
 
+You can find the Xillinux image in the release page. The image contains a built-in Xillinux OS (a Ubuntu OS). Commonly used python packages (please check the [sw/README.md](../sw/README.md) for more details) and OpenOCD have been installed. The OS has the following behaviors:
+
+- It is a standalone tiny Linux OS, but without GUI and VNC service.
+- The network automatically works once you connect an ethernet cable to the Zedboard. Remote SSH works.
+- The default logged user is `root`. There is another username `mlab_user` without root priviledge.
+- A train game is installed to test if the OS works. Try in the terminal: `sl`.
+- An example Zedboard bitstream file is placed under `/mnt/pl_sd/xillydemo.bit`. This bitstream enables two LEDs (LD4 and LD8) flash per second.
+- **Note**: The system date is always incorrect whenever it reboots, because it never syncs with the internet date.
+
 ## How to create your Xillinux OS on Zedboard?
 
 Please download a portable version of [DiskGenius](https://www.diskgenius.com/download.php) on your PERSONAL computer. Do not use your campus computer because you do not have full administration.
@@ -42,6 +51,33 @@ sudo hostnamectl set-hostname my-env
 
 
 **Note**: if the network does not work automatically, please check the script `/root/fixnetworking.sh` and `/root/fixboottime.sh`.
+
+## Scripts in this folder
+
+This folder ships a few helper scripts. Below is what each one does and how it is meant to be used.
+
+### `mount_pl_sd.sh`
+
+Mounts the SD card partition (`/dev/mmcblk0p1`) to `/mnt/pl_sd`. This is the partition that the PL (programmable logic) reads the FPGA bitstream from, and it is executed **automatically** on boot, so you normally do not need to run it by hand.
+
+The FPGA bitstream `xillydemo.bit` should be placed under this mounted folder (`/mnt/pl_sd/xillydemo.bit`) so that it is loaded into the PL.
+
+### `mount_workspace.sh`
+
+Mounts a remote server directory onto the local FPGA filesystem over `sshfs`, so that the FPGA can access files hosted on other servers. It first opens an SSH tunnel through the campus gateway and then mounts the remote path through that tunnel.
+
+Before running it, edit the configuration block at the top of the script to match your setup:
+
+- `PORT` — the local port used for the SSH tunnel.
+- `UNAME` — your username on the campus SSH gateway / remote server.
+- `REMOTE_PATH` — the directory on the remote server you want to access.
+- `LOCAL_DIR` — the local directory on the FPGA where the remote files are mounted.
+
+You will be prompted for your server password (once to open the tunnel, once to mount).
+
+### `report_ip.sh`
+
+Reports the IP address of the ZedBoard by email after it boots and connects to the campus network. See the [setup section above](#how-to-create-your-xillinux-os-on-zedboard) for how to update it under `/usr/local/bin/report_ip.sh` (it is automatically triggered on reboot via `crontab`). Remember to change the email address to your own.
 
 ## Others
 
