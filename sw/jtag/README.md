@@ -13,6 +13,7 @@ Note: do not install openOCD by `sudo apt install openocd`. It is an outdated ve
 It can be installed by running the commands below (takes a few minutes):
 
 ```[bash]
+apt-get install -y libusb-1.0-0-dev libftdi-dev libhidapi-dev pkg-config
 cd ~/Downloads
 GIT_SSL_NO_VERIFY=true git clone --recurse-submodules https://github.com/openocd-org/openocd.git
 cd openocd
