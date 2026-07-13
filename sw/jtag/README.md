@@ -30,7 +30,7 @@ which openocd
 openocd --version
 ```
 
-The tested OpenOCD version is: `Open On-Chip Debugger 0.12.0+dev-02587-g16b9eae (2026-07-12-17:53)`
+The tested OpenOCD version is: `Open On-Chip Debugger 0.12.0+dev-02587-g16b9eae`
 
 If those look good and you want to free up some space, you're safe to `rm -rf ~/Downloads/openocd` (note: this makes you lose easy uninstall by `make uninstall`).
 
