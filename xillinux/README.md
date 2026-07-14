@@ -52,6 +52,28 @@ sudo hostnamectl set-hostname my-env
 
 **Note**: if the network does not work automatically, please check the script `/root/fixnetworking.sh` and `/root/fixboottime.sh`.
 
+## What if I want to the date to be correct?
+
+The issue is that the Zedboard does not run-time clock when it is powered off. However, we can sync the date manually each time it is powered on.
+
+Please follow the steps below:
+
+- Open `vim /etc/chrony/chrony.conf`
+- Locate the line `pool 2.debian.pool.ntp.org iburst #offline` (should be on line 20), and change it to:
+
+```[bach]
+server 2.debian.pool.ntp.org iburst
+```
+
+- Enter the command `chronyd -d` in the terminal. If it shows ` System clock was stepped by ... seconds` without errors, stop it by pressing `Ctrl+C`.
+- Now we can sync the time by entering the commands below:
+
+```[bash]
+sudo invoke-rc.d chrony restart
+date
+chronyc tracking
+```
+
 ## Scripts in this folder
 
 This folder ships a few helper scripts. Below is what each one does and how it is meant to be used.
