@@ -5,12 +5,7 @@
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
 import yaml
-import sys
 from pathlib import Path
-
-# This is quite bad! To fix this would require a lot of refactoring and directory structure changes
-# I highly suggest to look into this.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.lab_instruments.drivers.keysight_psu_e36300 import KeysightPSUE36300
 from lib.os_utils.iclab_session import iclab_session

@@ -26,14 +26,9 @@ import sys
 import random
 import logging
 import time
-from pathlib import Path
 
-# Allow running this file directly (`python tests/chip_test.py`): put sw/ on the
-# path so `lib`/`tools` are importable. Harmless under `python -m tests.chip_test`.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from lib.chip_driver import ChipDriver  # noqa: E402
-from lib.chip_command_api import WRITEBACK_FIFO, make_command  # noqa: E402
+from lib.chip_driver import ChipDriver
+from lib.chip_command_api import WRITEBACK_FIFO, make_command
 
 # Configure logging: include timestamp and level
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')

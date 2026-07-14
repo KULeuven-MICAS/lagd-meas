@@ -4,6 +4,13 @@ Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 
 This folder holds python scripts and libraries for LAGD project for controlling Xillybus on Zedboard environment.
 
+Before running any script under sw/, please source the env.sh (to ensure the import works correctly in python):
+
+```[bash]
+cd sw/
+source env.sh
+```
+
 ## Environment requirements
 The Xillinux used by LAGD has installed a python, version: 3.6.15; and the pip, version: 21.3.1
 

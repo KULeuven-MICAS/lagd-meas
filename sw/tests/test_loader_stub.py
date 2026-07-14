@@ -14,27 +14,19 @@
 # the physical chip. For the RTL path use the fpga/ chip_controller sim; for the
 # live software->FPGA path the writeback loopback in chip_test.py.
 #
-# Run from the sw/ directory (so lib.* / tools.* import), with stdlib unittest:
+# Run from the sw/ directory with sw/ on PYTHONPATH (source env.sh), stdlib unittest:
 #   python3 -m unittest tests.test_loader_stub
-#   python3 tests/test_loader_stub.py            # also works (adds sw/ to path)
+#   python3 tests/test_loader_stub.py            # also works once env.sh is sourced
 #
 # Targets Python 3.6 (locked Zedboard runtime).
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-# Allow running the file directly from anywhere: ensure sw/ is importable so
-# `tools.*` resolves. (Harmless when run via `python3 -m unittest` from sw/.)
-_SW_DIR = str(Path(__file__).resolve().parent.parent)
-if _SW_DIR not in sys.path:
-    sys.path.insert(0, _SW_DIR)
-
-# Imported after the sys.path fix above so `tools.*` resolves when run directly.
-from tools.elf_loader import parse_elf, bytes_to_words, ElfImage, Segment  # noqa: E402
-from tools.spi_program_loader import (  # noqa: E402
+from tools.elf_loader import parse_elf, bytes_to_words, ElfImage, Segment
+from tools.spi_program_loader import (
     SpiProgramLoader,
     SCRATCH_0, SCRATCH_1, SCRATCH_2,
     SCRATCH2_GO_BIT, SCRATCH2_DONE_BIT,
@@ -42,7 +34,8 @@ from tools.spi_program_loader import (  # noqa: E402
 )
 
 # Prebuilt ELF copied from the lagd-im SW build (helloworld). Resolved relative
-# to this file so the test passes regardless of the current directory.
+# to this file (sw/tests/ -> sw/) so the test passes regardless of the cwd.
+_SW_DIR = str(Path(__file__).resolve().parent.parent)
 ELF_PATH = str(Path(_SW_DIR) / "inputs" / "helloworld.spm.elf")
 
 # Known facts about helloworld.spm.elf (cross-checked against objdump / .dump):

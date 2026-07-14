@@ -29,9 +29,7 @@
 
 
 import argparse
-import sys
 import time
-from pathlib import Path
 
 from tools.elf_loader import parse_elf, bytes_to_words
 
@@ -174,12 +172,6 @@ def _first_mismatch(expected, got):
 
 def _main():
     """CLI: load (and optionally verify/run) an ELF onto the chip over SPI."""
-    # Allow `python3 sw/tools/spi_program_loader.py ...` from the sw/ dir by
-    # putting sw/ on the path so `tools.*` and `lib.*` import cleanly.
-    sw_dir = str(Path(__file__).resolve().parent.parent)
-    if sw_dir not in sys.path:
-        sys.path.insert(0, sw_dir)
-
     ap = argparse.ArgumentParser(description="Load an ELF onto the LAGD chip over SPI")
     ap.add_argument("elf", help="path to the .elf to load")
     ap.add_argument("--write-dev", default="/dev/xillybus_write_32")
@@ -194,8 +186,9 @@ def _main():
                     help="poll for end-of-computation and print the exit code")
     args = ap.parse_args()
 
-    # Deferred until after the sys.path fix above: chip_driver pulls in the
-    # hardware/port dependencies, unlike the pure-stdlib elf_loader.
+    # Imported lazily (not at module top) so importing this module -- e.g. from
+    # the hardware-free stub tests -- doesn't pull in chip_driver's hardware/port
+    # dependencies, unlike the pure-stdlib elf_loader.
     from lib.chip_driver import ChipDriver  # noqa: PLC0415
 
     with ChipDriver(args.write_dev, args.read_dev) as chip:
