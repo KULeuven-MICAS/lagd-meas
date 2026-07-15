@@ -1,6 +1,6 @@
 # ☯ LAGD-MEAS
 
-Author: Jiacong Sun <jiacong.sun@kuleuven.be>
+Author: Jiacong Sun \<jiacong.sun@kuleuven.be\>
 
 Measurement and software environment for the **LAGD** chip: an FPGA bitstream plus
 host-side Python that let a Linux host configure the chip and its on-board DAC and
