@@ -15,9 +15,9 @@ cd lagd-meas/
 source env.sh
 ```
 
-The measurement consists of the following parts:
+The measurement consists of the functional test and the performance measurement.
 
-## Functional Tests
+## Functional Test
 
 ### **Lab-Instrument Test**
 
@@ -147,7 +147,16 @@ openocd -f /testcases/jtag/02_halt/openocd.halt.tcl
 
 ## Performance Measurement
 
-### TTS @ 0.8V, 500MHz
+### Single case: 256x128 QAM4 MIMO @ 0.8V, 500 MHz
+
+#### Energy
+
+#### TTS
+
+```[bash]
+python sw/uart/send_uart.py sw/inputs/lagd_scompute.spm.elf --device /dev/ttyUSB2 --verify ─▶ Via UART (115200)
+./sw/jtag/run_elf.sh sw/inputs/lagd_scompute.spm.elf -c "set ADAPTER_KHZ 4000" ─▶ Via JTAG
+```
 
 ### BER-SNR @ 24x24 BPSK MIMO
 
