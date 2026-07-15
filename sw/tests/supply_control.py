@@ -23,7 +23,7 @@ def main():
     with INSTR_CFG_PATH.open(encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    with iclab_session(parser.credentials):
+    with iclab_session(parser.get_credentials()):
         # Create an instance of the KeysightPSUE36300 class with the loaded configuration.
         psu = KeysightPSUE36300(config[0])
 
