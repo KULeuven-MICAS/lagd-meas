@@ -71,6 +71,22 @@ jobs:
           echo "Event: ${{ github.event_name }}"
           echo "Actor: ${{ github.actor }}"
 
+    ##################
+    # Lint YML Files #
+    ##################
+    yaml-lint:
+        name: Lint YAML Sources
+        runs-on: ubuntu-latest
+        steps:
+            -
+                name: Checkout
+                uses: actions/checkout@v4
+            -
+                name: yaml-lint
+                uses: ibiqlik/action-yamllint@v3
+                with:
+                    config_file: tools/lint/.yamllint.yml
+
   ######################
   # Lint Editor Config #
   ######################
