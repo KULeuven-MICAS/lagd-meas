@@ -65,7 +65,8 @@ def test_writeback(payload=0xADBEE):
         logging.info('[FPGA FIFO Test] PASS: Data sent: 0x%08X, Data received: 0x%08X', command, received)
         return True
     else:
-        logging.error('[FPGA FIFO Test] FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', command, received)
+        logging.error('[FPGA FIFO Test] FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X',
+                      command, received)
         return False
 
 

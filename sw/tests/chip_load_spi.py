@@ -117,7 +117,7 @@ def parse_args(argv=None):
     args = ap.parse_args(argv)
     # Check the ELF here so a typo fails before the smoke test powers anything.
     if not Path(args.elf).is_file():
-        ap.error("ELF not found: %s" % args.elf)
+        ap.error(f"ELF not found: {args.elf}")
     return args
 
 
