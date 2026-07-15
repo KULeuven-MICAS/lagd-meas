@@ -35,8 +35,7 @@ This is the rung where a "clock not enabled" problem shows up.
 ## How to run
 
 ```bash
-cd lagd-meas/testcases/jtag/02_halt
-openocd -f openocd.halt.tcl
+openocd -f /testcases/jtag/02_halt/openocd.halt.tcl
 ```
 
 Runs at 100 kHz and exits on its own (it does not stay up as a server).

@@ -14,8 +14,8 @@
 import time
 from typing import List, Optional, TypeVar
 
-from lib.write_port import WritePort
-from lib.read_port import ReadPort
+from sw.lib.write_port import WritePort
+from sw.lib.read_port import ReadPort
 
 # Bound to the concrete subclass so `with ChipDriver(...) as c` types `c` as a
 # ChipDriver (not the PortDriver base).

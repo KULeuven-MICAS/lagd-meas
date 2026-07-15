@@ -12,8 +12,7 @@ folder just calls it on a known ELF and checks the result.
 ## How to run
 
 ```bash
-cd lagd-meas/testcases/jtag/03_load_run
-./run.sh
+./testcases/jtag/03_load_run/run.sh
 ```
 
 `run.sh` invokes `lagd-meas/sw/jtag/run_elf.sh` on

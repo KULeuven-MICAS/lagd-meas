@@ -17,9 +17,9 @@
 #   - EXEC carried the correct entry point,
 #   - the driver exited 0 on EOC return code 0.
 #
-# Usage:  python3 selftest.py [path/to/file.elf]
+# Usage:  source ../../env.sh                  # repo root on PYTHONPATH; once per shell
+#         python3 selftest.py [path/to/file.elf]
 
-import importlib.util
 import os
 import pty
 import struct
@@ -29,9 +29,13 @@ import threading
 import tty
 from pathlib import Path
 
+from sw.uart.send_uart import parse_elf
+
 ACK, EOT, EOC = 0x06, 0x04, 0x14
 CMD_READ, CMD_WRITE, CMD_EXEC = 0x11, 0x12, 0x13
 
+# Still needed for on-disk paths (the default ELF, and running the driver as a
+# subprocess) -- env.sh only covers imports.
 HERE = Path(__file__).resolve().parent
 DEFAULT_ELF = HERE / "../inputs/helloworld.spm.elf"
 
@@ -82,17 +86,9 @@ def mock_chip(fd, mem, result):
         result.setdefault("error", f"mock I/O ended: {e}")
 
 
-def load_driver():
-    spec = importlib.util.spec_from_file_location("su", str(HERE / "send_uart.py"))
-    su = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(su)
-    return su
-
-
 def main():
     elf = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_ELF
-    su = load_driver()
-    entry, segs = su.parse_elf(elf)
+    entry, segs = parse_elf(elf)
 
     master, slave = pty.openpty()
     tty.setraw(master)

@@ -16,7 +16,8 @@ Each folder has its own README with expected output and failure modes.
 ## Quick run
 
 ```bash
-cd 01_loopback   && ./loopback.py --device /dev/ttyUSB10   # host sanity (jumper TX<->RX)
+source ../../env.sh                                        # repo root on PYTHONPATH (for 01 only)
+cd 01_loopback   && ./loopback.py --device /dev/ttyUSB2    # host sanity (jumper TX<->RX)
 cd ../02_handshake && ./run.sh                             # reach the bootrom (ACK<->ACK)
 cd ../03_load_run  && ./run.sh                             # load & run helloworld
 cd ../04_memtest   && ./run.sh                             # memory integrity + volume
@@ -35,12 +36,14 @@ UART goes **through the bootrom**; JTAG bypasses it. Consequences:
 
 ## Diagnostics vs. tool
 
-- **`01_loopback`** is a host-only diagnostic (reuses `sw/uart/send_uart.py`'s port code
-  to validate the exact serial setup the loader uses).
+- **`01_loopback`** is a host-only diagnostic (imports `sw/uart/send_uart.py`'s port code
+  to validate the exact serial setup the loader uses). It is the one rung you must
+  `source env.sh` for yourself — it's run directly as `./loopback.py`.
 - **`02_handshake`, `03_load_run`, and `04_memtest`** are thin examples of the reusable
   loader in [`../../sw/uart/`](../../sw/uart/) (`send_uart.py`, via `--ping`, the full
   flow, and `--memtest`). That's the tool you use routinely; `sw/uart/selftest.py` is its
-  offline unit test.
+  offline unit test. Their `run.sh` wrappers source `env.sh` themselves and invoke the
+  loader as a module (`python3 -m sw.uart.send_uart`), so they need no setup from you.
 
 ## Common prerequisites
 

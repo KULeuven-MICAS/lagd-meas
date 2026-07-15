@@ -4,7 +4,7 @@
 
 # Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 
-# Hardware-free unit tests for the SPI program loader (elf_loader +
+# Hardware-free testbench for the SPI program loader (elf_loader +
 # spi_program_loader). They run the full Python logic against a StubChip that
 # records write_mem/read_mem into a flat memory dict -- no Zedboard, no FPGA,
 # no chip. This catches regressions in ELF parsing, segment addressing, byte
@@ -14,9 +14,9 @@
 # the physical chip. For the RTL path use the fpga/ chip_controller sim; for the
 # live software->FPGA path the writeback loopback in chip_test.py.
 #
-# Run from the sw/ directory with sw/ on PYTHONPATH (source env.sh), stdlib unittest:
-#   python3 -m unittest tests.test_loader_stub
-#   python3 tests/test_loader_stub.py            # also works once env.sh is sourced
+# Run with the repo root on PYTHONPATH (source env.sh), stdlib unittest:
+#   python3 -m unittest sw.tests.test_loader_stub
+#   python3 sw/tests/test_loader_stub.py         # also works once env.sh is sourced
 #
 # Targets Python 3.6 (locked Zedboard runtime).
 
@@ -25,8 +25,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.elf_loader import parse_elf, bytes_to_words, ElfImage, Segment
-from tools.spi_program_loader import (
+from sw.tools.elf_loader import parse_elf, bytes_to_words, ElfImage, Segment
+from sw.tools.spi_program_loader import (
     SpiProgramLoader,
     SCRATCH_0, SCRATCH_1, SCRATCH_2,
     SCRATCH2_GO_BIT, SCRATCH2_DONE_BIT,

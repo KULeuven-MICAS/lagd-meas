@@ -7,9 +7,9 @@
 import yaml
 from pathlib import Path
 
-from lib.lab_instruments.drivers.keysight_psu_e36300 import KeysightPSUE36300
-from lib.os_utils.iclab_session import iclab_session
-from lib.os_utils.parser import Parser
+from sw.lib.lab_instruments.drivers.keysight_psu_e36300 import KeysightPSUE36300
+from sw.lib.os_utils.iclab_session import iclab_session
+from sw.lib.os_utils.parser import Parser
 
 PRJ_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTR_CFG_PATH = PRJ_ROOT/"sw"/"lib"/"lab_instruments"/"config"/"instruments.yaml"

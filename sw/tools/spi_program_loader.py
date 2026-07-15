@@ -31,7 +31,7 @@
 import argparse
 import time
 
-from tools.elf_loader import parse_elf, bytes_to_words
+from sw.tools.elf_loader import parse_elf, bytes_to_words
 
 # Cheshire register block base and SCRATCH offsets.
 # __base_regs = 0x0300_0000 (lagd-im sw/link/common.ldh); SCRATCH_n at +4*n

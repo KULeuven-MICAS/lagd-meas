@@ -27,8 +27,8 @@ import random
 import logging
 import time
 
-from lib.chip_driver import ChipDriver
-from lib.chip_command_api import WRITEBACK_FIFO, make_command
+from sw.lib.chip_driver import ChipDriver
+from sw.lib.chip_command_api import WRITEBACK_FIFO, make_command
 
 # Configure logging: include timestamp and level
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -58,14 +58,14 @@ def test_writeback(payload=0xADBEE):
     command = make_command(WRITEBACK_FIFO, payload)
     received = chip.writeback(payload)
     if received is None:
-        logging.error('FAIL: Data sent: 0x%08X, Data received: None', command)
+        logging.error('[FPGA FIFO Test] FAIL: Data sent: 0x%08X, Data received: None', command)
         return False
 
     if received == command:
-        logging.info('PASS: Data sent: 0x%08X, Data received: 0x%08X', command, received)
+        logging.info('[FPGA FIFO Test] PASS: Data sent: 0x%08X, Data received: 0x%08X', command, received)
         return True
     else:
-        logging.error('FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', command, received)
+        logging.error('[FPGA FIFO Test] FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', command, received)
         return False
 
 
@@ -80,12 +80,12 @@ def test_verify_write_mem(addr=0x200, data=None):
         data = [0xC0DE0000 + i for i in range(4)]
     received = chip.verify_write_mem(addr, data)
     if received == data:
-        logging.info('PASS: verify_write_mem echoed %d words at 0x%08X', len(data), addr)
+        logging.info('[Chip mem test] PASS: verify_write_mem echoed %d words at 0x%08X', len(data), addr)
         logging.debug('      Sent: %s', [hex(d) for d in data])
         logging.debug('      Received: %s', [hex(r) for r in received])
         return True
     else:
-        logging.error('FAIL: verify_write_mem at 0x%08X: sent %s, received %s',
+        logging.error('[Chip mem test] FAIL: verify_write_mem at 0x%08X: sent %s, received %s',
                       addr, [hex(d) for d in data], [hex(r) for r in received])
         return False
 

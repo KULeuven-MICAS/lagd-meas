@@ -24,7 +24,8 @@ is **off** by default, because a plain TX↔RX jumper does not loop RTS/CTS — 
 
 ## Prerequisites
 
-- Python 3 (standard library only — no pyserial).
+- Python 3 (standard library only — no pyserial), with the repo root on `PYTHONPATH`
+  (`source env.sh`).
 - The USB-to-UART converter connected; the **UART channel** device known. This is the
   same device you'll pass to `send_uart.py` (the FT4232H UART channel = USB interface 2).
 - No `ftdi_sio` unbinding needed here: the UART channel *is* a normal `/dev/ttyUSB*`
@@ -33,8 +34,9 @@ is **off** by default, because a plain TX↔RX jumper does not loop RTS/CTS — 
 ## How to run
 
 ```bash
-cd lagd-meas/testcases/uart/01_loopback
-./loopback.py --device /dev/ttyUSB10
+cd lagd-meas/
+source env.sh          # puts the repo root on PYTHONPATH; once per shell
+python testcases/uart/01_loopback/loopback.py --device /dev/ttyUSB10
 ```
 
 Options: `--baud` (default 115200), `--bytes` (default 256), `--timeout`,

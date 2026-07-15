@@ -5,7 +5,7 @@
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
 import pyvisa
-from lib.lab_instruments import instrument as inst
+from sw.lib.lab_instruments import instrument as inst
 
 class KeysightPSUE36300(inst.BaseInstrument):
     """

@@ -26,8 +26,8 @@ import sys
 import logging
 import time
 
-from lib.perip_driver import PeripDriver
-from lib.perip_command_api import OP_WRITEBACK, make_command, cmd_dac_write_loopback
+from sw.lib.perip_driver import PeripDriver
+from sw.lib.perip_command_api import OP_WRITEBACK, make_command, cmd_dac_write_loopback
 
 # Configure logging: include timestamp and level
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
