@@ -8,11 +8,12 @@ import yaml
 from pathlib import Path
 
 from lib.lab_instruments.drivers.keysight_psu_e36300 import KeysightPSUE36300
+from lib.lab_instruments.instrument import BasePowerSupplyData
 from lib.os_utils.iclab_session import iclab_session
 from lib.os_utils.parser import Parser
 
-PRJ_ROOT = Path(__file__).resolve().parent.parent.parent
-INSTR_CFG_PATH = PRJ_ROOT/"sw"/"lib"/"lab_instruments"/"config"/"instruments.yaml"
+PRJ_ROOT = Path(__file__).resolve().parent.parent
+INSTR_CFG_PATH = PRJ_ROOT/"lib"/"lab_instruments"/"config"/"instruments.yaml"
 
 def main():
 
@@ -25,7 +26,7 @@ def main():
 
     with iclab_session(parser.get_credentials()):
         # Create an instance of the KeysightPSUE36300 class with the loaded configuration.
-        psu = KeysightPSUE36300(config[0])
+        psu = KeysightPSUE36300(BasePowerSupplyData.from_mapping(config[0]))
 
         # Example usage: Set voltage and current limit for channel 3.
         psu.set_voltage("CH3", 0.75)

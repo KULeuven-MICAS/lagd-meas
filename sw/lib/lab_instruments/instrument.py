@@ -4,7 +4,7 @@
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class BaseInstrumentData:
@@ -18,7 +18,21 @@ class BaseInstrumentData:
     """
     name: str
     IP: str
-    args: dict
+    args: dict = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, data: dict):
+        """Build an instrument description from a YAML mapping."""
+        return cls(**data)
+
+@dataclass
+class BasePowerSupplyData(BaseInstrumentData):
+    """
+    Data class for the base power supply.
+    It contains the common information that all power supplies should have.
+    :channels: list: The list of channels of the power supply.
+    """
+    channels: list = field(default_factory=list)
 
 class BaseInstrument:
     """

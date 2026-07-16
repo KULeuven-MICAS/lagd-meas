@@ -23,8 +23,8 @@ class KeysightPSUE36300(inst.BaseInstrument):
         Open the resource for the Keysight E36300 series power supply.
         """
         rm = pyvisa.ResourceManager()
-        print(f"Reaching {self.info['name']} at: TCPIP::{self.info['IP']}::inst0::INSTR")
-        return rm.open_resource(f"TCPIP::{self.info['IP']}::inst0::INSTR")
+        print(f"Reaching {self.info.name} at: TCPIP::{self.info.IP}::inst0::INSTR")
+        return rm.open_resource(f"TCPIP::{self.info.IP}::inst0::INSTR")
 
     def _init_instrument(self):
         """
@@ -73,7 +73,7 @@ class KeysightPSUE36300(inst.BaseInstrument):
         """
         # Get the channel with the channel name from the instrument info channels list
         ret = None
-        for ch in self.info.args['channels']:
+        for ch in self.info.channels:
             if ch['name'] == channel:
                 ret = ch
                 break
