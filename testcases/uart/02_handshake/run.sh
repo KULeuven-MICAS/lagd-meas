@@ -12,7 +12,7 @@
 
 set -e
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-SEND_UART="${SCRIPT_DIR}/../../../sw/uart/send_uart.py"
+REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../../.." && pwd)"
+source "${REPO_ROOT}/env.sh" >/dev/null
 
-exec python3 "$SEND_UART" --ping "$@"
+exec python3 -m sw.uart.send_uart --ping "$@"

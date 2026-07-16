@@ -24,8 +24,8 @@
 import time
 from typing import Dict, List, Optional
 
-from lib.port_driver import PortDriver
-from lib.pll_command_api import (
+from sw.lib.port_driver import PortDriver
+from sw.lib.pll_command_api import (
     CFG_BYTES,
     STATUS_LOCK_BIT,
     DEFAULT_CFG,

@@ -13,8 +13,8 @@
 import time
 from typing import List, Optional, Union
 
-from lib.port_driver import PortDriver
-from lib.chip_command_api import (
+from sw.lib.port_driver import PortDriver
+from sw.lib.chip_command_api import (
     WRITEBACK_FIFO,
     make_command,
     cmd_config_spi_slave,

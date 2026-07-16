@@ -31,8 +31,8 @@ import sys
 import logging
 import time
 
-from lib.pll_driver import PllDriver
-from lib.pll_command_api import default_cfg_word, OP_WRITEBACK, header
+from sw.lib.pll_driver import PllDriver
+from sw.lib.pll_command_api import default_cfg_word, OP_WRITEBACK, header
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 

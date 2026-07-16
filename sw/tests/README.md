@@ -26,13 +26,15 @@ On startup it runs `smoke_test()` first; `main()` only proceeds if that passes.
   point to SCRATCH_0/1, set the SCRATCH_2 go bit (the core jumps to the entry),
   and poll SCRATCH_2 for the exit code.
 
-Edit `ELF_PATH` (default `inputs/helloworld.spm.elf`) to load a different
-program. **Prerequisite (hardware): boot_mode pins strapped to 0** (passive boot).
+Pass the ELF as an argument to load a different program; it defaults to
+`sw/inputs/helloworld.spm.elf`. **Prerequisite (hardware): boot_mode pins
+strapped to 0** (passive boot).
 
-Run:
+Run (after `source env.sh` at the repo root):
 ```
-python3 tests/chip_load_spi.py            # smoke test, then load + launch
-python3 -i tests/chip_load_spi.py         # interactive: open_ports(); loader.load_and_run(...)
+python3 sw/tests/chip_load_spi.py                    # smoke test, then load + launch
+python3 sw/tests/chip_load_spi.py path/to/other.elf  # a different program
+python3 -i sw/tests/chip_load_spi.py                 # interactive: open_ports(); loader.load_and_run(...)
 ```
 
 See `doc/spi_program_loading.md` for the full background (boot handshake, address

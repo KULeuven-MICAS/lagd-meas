@@ -14,8 +14,7 @@
 
 set -e
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-JTAG_DIR="${SCRIPT_DIR}/../../../sw/jtag"
-ELF="${SCRIPT_DIR}/../../../sw/inputs/helloworld.spm.elf"
+REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../../.." && pwd)"
+ELF="${REPO_ROOT}/sw/inputs/helloworld.spm.elf"
 
-exec "${JTAG_DIR}/run_elf.sh" "$ELF" "$@"
+exec "${REPO_ROOT}/sw/jtag/run_elf.sh" "$ELF" "$@"

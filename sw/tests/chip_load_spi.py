@@ -6,8 +6,9 @@
 
 # Example: load a program ELF onto the chip over SPI and launch it.
 #
-# Run from the sw/ directory so the lib.* / tools.* imports resolve, e.g.:
-#   python3 tests/chip_load_spi.py
+# Source env.sh once per shell (puts the repo root on PYTHONPATH), then:
+#   python3 sw/tests/chip_load_spi.py                      # default helloworld.spm.elf
+#   python3 sw/tests/chip_load_spi.py path/to/other.elf    # load a different ELF
 #
 # This wires the reusable pieces together for the full flow:
 #   lib/chip_driver.py          -> ChipDriver (SPI transport via the FPGA)
@@ -29,16 +30,18 @@
 # Prerequisite (hardware, NOT done here): boot_mode pins strapped to 0
 # (passive boot). See doc/spi_program_loading.md for the full background.
 #
-# Interactive use (after `python -i tests/chip_load_spi.py`):
-#   open_ports()                       # -> module-global `chip`, `loader`
-#   loader.load_and_run(ELF_PATH, ...) # rerun the flow with different options
-#   chip.read_mem(0x80000000, 4)       # peek at loaded memory
+# Interactive use (after `python -i sw/tests/chip_load_spi.py`):
+#   open_ports()                          # -> module-global `chip`, `loader`
+#   loader.load_and_run(DEFAULT_ELF, ...) # rerun the flow with different options
+#   chip.read_mem(0x80000000, 4)          # peek at loaded memory
 
+import argparse
 import sys
 import logging
+from pathlib import Path
 
-from lib.chip_driver import ChipDriver
-from tools.spi_program_loader import SpiProgramLoader, SCRATCH_0
+from sw.lib.chip_driver import ChipDriver
+from sw.tools.spi_program_loader import SpiProgramLoader, SCRATCH_0
 
 # Configure logging: include timestamp and level (matches chip_test.py).
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -47,9 +50,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(mes
 WRITE_DEV = '/dev/xillybus_write_32'
 READ_DEV = '/dev/xillybus_read_32'
 
-# Program to load. Prebuilt ELFs live under inputs/ (copied from the lagd-im SW
-# build). helloworld prints "Hello World!" over the chip UART when it runs.
-ELF_PATH = 'inputs/helloworld.spm.elf'
+# Program to load when none is given on the command line. Prebuilt ELFs live
+# under sw/inputs/ (copied from the lagd-im SW build); helloworld prints
+# "Hello World!" over the chip UART when it runs. Resolved relative to this file
+# (sw/tests/ -> sw/) so it works from any cwd.
+DEFAULT_ELF = str(Path(__file__).resolve().parent.parent / 'inputs' / 'helloworld.spm.elf')
 
 # Smoke-test pattern: an arbitrary, easily-recognizable 32-bit value. A clean
 # round-trip of this word proves the path works and the byte order is correct.
@@ -104,7 +109,19 @@ def smoke_test():
     return True
 
 
-def main():
+def parse_args(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Load a program ELF onto the chip over SPI and launch it.")
+    ap.add_argument('elf', nargs='?', default=DEFAULT_ELF,
+                    help='path to the ELF to load (default: %(default)s)')
+    args = ap.parse_args(argv)
+    # Check the ELF here so a typo fails before the smoke test powers anything.
+    if not Path(args.elf).is_file():
+        ap.error(f"ELF not found: {args.elf}")
+    return args
+
+
+def main(elf=DEFAULT_ELF):
     # Open the ports (caller owns the lifecycle; the loader never opens/closes).
     chip = ChipDriver(WRITE_DEV, READ_DEV)
     with chip:
@@ -114,14 +131,16 @@ def main():
 
         loader = SpiProgramLoader(chip)
         # init_spi: enable Quad-SPI ; verify: read-back check ; wait: poll EOC.
-        loader.load_and_run(ELF_PATH, init_spi=True, verify=True, wait=True)
+        loader.load_and_run(elf, init_spi=True, verify=True, wait=True)
 
     return 0
 
 
 if __name__ == '__main__':
-    # Run the smoke test first; only proceed to the full load+launch if it passes.
+    # Parse first, so --help / a bad path fail before touching the hardware.
+    args = parse_args()
+    # Run the smoke test next; only proceed to the full load+launch if it passes.
     if not smoke_test():
         logging.error("aborting: smoke test did not pass, not loading the program")
         sys.exit(1)
-    sys.exit(main())
+    sys.exit(main(args.elf))

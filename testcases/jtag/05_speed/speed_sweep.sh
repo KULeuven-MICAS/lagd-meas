@@ -20,8 +20,9 @@
 set -u
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-JTAG_DIR="${SCRIPT_DIR}/../../../sw/jtag"
-SCAN_TCL="${SCRIPT_DIR}/../01_idcode/openocd.scan.tcl"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+JTAG_DIR="${REPO_ROOT}/sw/jtag"
+SCAN_TCL="${SCRIPT_DIR}/../01_idcode/openocd.scan.tcl"   # sibling testcase, stays local
 IDCODE="0x1c5e5db3"
 
 SPEEDS="${SPEEDS:-100 500 1000 2000 4000 8000 12000 16000 20000 30000}"   # kHz
