@@ -5,6 +5,7 @@
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
 from dataclasses import dataclass, field
+from typing import List, Union
 
 @dataclass
 class BaseInstrumentData:
@@ -76,3 +77,102 @@ class BaseInstrument:
         """ Close the resource for the instrument."""
         if self.tool is not None:
             self._close()
+
+
+class BasePowerSupply(BaseInstrument):
+    """
+    Base class for all power supplies.
+    It defines the common interface and methods that all power supplies should implement.
+    :data: BasePowerSupplyData: The data class containing the instrument's information.
+    """
+    def __init__(self, data: BasePowerSupplyData):
+        super().__init__(data)
+        self._num_channels = None
+
+    def _validate_channel(self, channel: int):
+        """Validate channel number against configured channel count."""
+        if self._num_channels is None:
+            raise NotImplementedError("Channel count not set. Please set _num_channels in the subclass.")
+        if channel + 1 > self._num_channels:
+            raise ValueError(
+                f"Invalid channel {channel}. Valid range is 1..{self._num_channels}."
+            )
+
+    def set_current_limit(self, channel: Union[int, str], current_limit: float):
+        if isinstance(channel, int):
+            self._validate_channel(channel)
+            self.tool.write(f'CURR {current_limit}, (@{channel})') # Set the current limit
+            return
+        if isinstance(channel, str):
+            self.tool.write(f'CURR {channel} {current_limit}') # Set the current limit
+            return
+        raise TypeError(f"Unsupported channel type: {type(channel).__name__}")
+
+    def set_voltage(self, channel: Union[int, str], voltage: float, current_limit: float = None):
+        if isinstance(channel, int):
+            self._validate_channel(channel)
+            self.tool.write(f'VOLT {voltage}, (@{channel})') # Set the voltage
+        elif isinstance(channel, str):
+            self.tool.write(f'VOLT {channel} {voltage}') # Set the voltage
+        else:
+            raise TypeError(f"Unsupported channel type: {type(channel).__name__}")
+        if current_limit is not None:
+            self.set_current_limit(channel, current_limit)
+
+    def set_channel_from_dict(self, channel: int, settings: dict):
+        self._validate_channel(channel)
+        if 'voltage' in settings:
+            self.set_voltage(channel, settings['voltage'])
+        if 'current' in settings:
+            self.set_current_limit(channel, settings['current'])
+
+    def set_channel(self, channel: int, settings: dict = None):
+        self._validate_channel(channel)
+        if settings is not None:
+            self.set_channel_from_dict(channel, settings)
+        else:
+            # Get the channel settings from the instrument info
+            self.set_channel_from_dict(channel, self.info.channels[channel - 1])
+
+    def get_voltage(self, channel: int):
+        self._validate_channel(channel)
+        # Query and return the measured voltage
+        return float(self.tool.query(f'MEAS:VOLT? (@{channel})'))
+
+    def get_current(self, channel: int):
+        self._validate_channel(channel)
+        # Query and return the measured current
+        return float(self.tool.query(f'MEAS:CURR? (@{channel})'))
+
+    def turn_on_channels(self, channels: Union[int, str, List[Union[int, str]]]):
+        """
+        Turn on the specified channel of the Keysight N6700 series power analyzer.
+        channel: str: The channel to turn on (e.g., '1', '2', '3', '4').
+        If a list is provided, it will turn on all specified channels.
+        """
+        if isinstance(channels, (int, str)):
+            channels = [channels]
+        elif not isinstance(channels, list):
+            raise TypeError(f"Unsupported channels container type: {type(channels).__name__}")
+
+        channel_terms = []
+        for channel in channels:
+            if isinstance(channel, int):
+                self._validate_channel(channel)
+                channel_terms.append(f'(@{channel})')
+            elif isinstance(channel, str):
+                self.tool.write(f'OUTP {channel} ON')
+            else:
+                raise TypeError(f"Unsupported channel type: {type(channel).__name__}")
+        if channel_terms:
+            ch_str = ','.join(channel_terms)
+            # Turn on the output for the specified channels
+            self.tool.write(f'OUTP ON, {ch_str}')
+
+    def _close(self):
+        """
+        Close the resource for the instrument.
+        This method should be implemented by the specific instrument class.
+        """
+        ch_str = ','.join([f'(@{ch})' for ch in range(0, self._num_channels)])
+        self.tool.write(f'OUTP OFF, {ch_str}')  # Turn off the output

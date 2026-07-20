@@ -31,7 +31,7 @@ def main():
         # Example usage: Set voltage and current limit for channel 3.
         psu.set_voltage("CH3", 0.75)
         psu.set_current_limit("CH3", 1.0)
-        psu.turn_channel_on("CH3")  # Turn on channel 3
+        psu.turn_on_channels("CH3")  # Turn on channel 3
 
         # Get the voltage for channel 3.
         voltage = psu.get_voltage("CH3")
