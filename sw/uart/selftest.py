@@ -17,8 +17,8 @@
 #   - EXEC carried the correct entry point,
 #   - the driver exited 0 on EOC return code 0.
 #
-# Usage:  source ../../env.sh                  # repo root on PYTHONPATH; once per shell
-#         python3 selftest.py [path/to/file.elf]
+# Usage:  source env.sh                  # repo root on PYTHONPATH; once per shell
+#         python3 sw/uart/selftest.py [path/to/file.elf]
 
 import logging
 import os
