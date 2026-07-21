@@ -118,5 +118,5 @@ class ReadPort:
         data = self.readInt()
         while data is not None:
             if printData:
-                print(hex(data))
+                logger.info("0x%08x", data)
             data = self.readInt()

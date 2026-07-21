@@ -53,7 +53,10 @@
 # console). --scan finds the right one for you.
 
 import argparse
+import logging
 import sys
+
+logger = logging.getLogger(__name__)
 
 # Imported lazily so that --help still works on a machine without pyserial (this
 # script runs on the laptop wired to J83, not on the Vivado build server).
@@ -130,7 +133,8 @@ def scan(baud, timeout):
     if not ports:
         sys.exit("error: no serial ports found. Is the ZCU102 USB-UART (J83) plugged in?")
 
-    print(f"Scanning {len(ports)} serial port(s) at {baud} baud, {timeout}s timeout\n")
+    logger.info("Scanning %d serial port(s) at %d baud, %ss timeout",
+                len(ports), baud, timeout)
     hits, echoes = [], []
     for p in ports:
         status, detail = ping(p.device, baud, timeout)
@@ -144,32 +148,31 @@ def scan(baud, timeout):
             echoes.append(p.device)
         else:
             label = f"silent   ({detail})"
-        print(f"  {p.device:<20} {label}")
+        logger.info("  %-20s %s", p.device, label)
         if p.description and p.description != "n/a":
-            print(f"  {'':<20} {p.description}")
+            logger.info("  %-20s %s", "", p.description)
 
-    print()
     if echoes:
-        print(f"Loopback port(s) ignored: {', '.join(echoes)}")
-        print("These return whatever is sent to them, so a plain 0x06 test would")
-        print("wrongly report them as a live bootrom.\n")
+        logger.info("Loopback port(s) ignored: %s", ", ".join(echoes))
+        logger.info("These return whatever is sent to them, so a plain 0x06 test would")
+        logger.info("wrongly report them as a live bootrom.")
 
     if not hits:
-        print("No port answered the handshake. Either the SoC is stuck waiting on")
-        print("rtc_i, or none of these ports is the PL UART. See the notes at the")
-        print("top of this script.")
+        logger.error("No port answered the handshake. Either the SoC is stuck waiting on")
+        logger.error("rtc_i, or none of these ports is the PL UART. See the notes at the")
+        logger.error("top of this script.")
         return 1
 
     if len(hits) > 1:
-        print(f"WARNING: {len(hits)} ports answered: {', '.join(hits)}")
-        print("The SoC has exactly ONE UART, so this cannot be right - suspect a")
-        print("loopback that also passes the echo test, or crossed wiring. Do not")
-        print("trust this result; investigate before loading.")
+        logger.warning("%d ports answered: %s", len(hits), ", ".join(hits))
+        logger.warning("The SoC has exactly ONE UART, so this cannot be right - suspect a")
+        logger.warning("loopback that also passes the echo test, or crossed wiring. Do not")
+        logger.warning("trust this result; investigate before loading.")
         return 1
 
-    print(f"Bootrom answered on: {hits[0]}")
-    print("That is your PL-UART channel. NOTE: the session is now in")
-    print("uart_debug_serve() - press CPU_RESET (AM13) before loading a program.")
+    logger.info("Bootrom answered on: %s", hits[0])
+    logger.info("That is your PL-UART channel. NOTE: the session is now in")
+    logger.info("uart_debug_serve() - press CPU_RESET (AM13) before loading a program.")
     return 0
 
 
@@ -187,6 +190,10 @@ def main():
                     help="seconds to wait for the reply (default 2.0)")
     args = ap.parse_args()
 
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
+
     _need_serial()
 
     if args.scan:
@@ -198,37 +205,34 @@ def main():
     status, detail = ping(args.port, args.baud, args.timeout)
 
     if status is None:
-        print(f"FAIL  {args.port}: could not open port ({detail})")
+        logger.error("FAIL  %s: could not open port (%s)", args.port, detail)
         return 2
 
     if status == "bootrom":
-        print(f"PASS  {args.port}: bootrom replied ACK (0x06), and did not echo")
-        print()
-        print("The RTC is ticking, clint_get_core_freq() returned, and the bootrom")
-        print("is in passive boot ready to load.")
-        print("The session is now inside uart_debug_serve(): press CPU_RESET (AM13)")
-        print("to restart the bootrom before running a loader.")
+        logger.info("PASS  %s: bootrom replied ACK (0x06), and did not echo", args.port)
+        logger.info("The RTC is ticking, clint_get_core_freq() returned, and the bootrom")
+        logger.info("is in passive boot ready to load.")
+        logger.info("The session is now inside uart_debug_serve(): press CPU_RESET (AM13)")
+        logger.info("to restart the bootrom before running a loader.")
         return 0
 
     if status == "echo":
-        print(f"FAIL  {args.port}: {detail}")
-        print()
-        print("This port hands back whatever is sent to it, so it is a loopback,")
-        print("not the SoC. A naive 0x06-only test would have called this a PASS.")
-        print("Try the other CP2108 channels with --scan.")
+        logger.error("FAIL  %s: %s", args.port, detail)
+        logger.error("This port hands back whatever is sent to it, so it is a loopback,")
+        logger.error("not the SoC. A naive 0x06-only test would have called this a PASS.")
+        logger.error("Try the other CP2108 channels with --scan.")
         return 1
 
-    print(f"FAIL  {args.port}: {detail}")
-    print()
-    print("Most likely one of:")
-    print("  * rtc_i is not toggling -> the SoC is stuck in clint_get_core_freq()")
-    print("    before the UART is ever initialised. Connect the driver board, or")
-    print("    build with the on-FPGA RTC (Standalone=1).")
-    print("  * wrong CP2108 channel  -> try --scan; the PL UART is not the same")
-    print("    port as the PS/PYNQ Linux console.")
-    print(f"  * wrong baud            -> the bootrom uses {DEFAULT_BAUD} 8N1.")
-    print("  * the bootrom already exited (passive boot is one-shot). Press")
-    print("    CPU_RESET (AM13) and try again.")
+    logger.error("FAIL  %s: %s", args.port, detail)
+    logger.error("Most likely one of:")
+    logger.error("  * rtc_i is not toggling -> the SoC is stuck in clint_get_core_freq()")
+    logger.error("    before the UART is ever initialised. Connect the driver board, or")
+    logger.error("    build with the on-FPGA RTC (Standalone=1).")
+    logger.error("  * wrong CP2108 channel  -> try --scan; the PL UART is not the same")
+    logger.error("    port as the PS/PYNQ Linux console.")
+    logger.error("  * wrong baud            -> the bootrom uses %d 8N1.", DEFAULT_BAUD)
+    logger.error("  * the bootrom already exited (passive boot is one-shot). Press")
+    logger.error("    CPU_RESET (AM13) and try again.")
     return 1
 
 

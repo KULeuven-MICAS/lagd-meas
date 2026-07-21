@@ -4,10 +4,18 @@
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
-from crypto_utils import create_keyfile
-from iclab_session import prompt_for_credentials
+import logging
+import sys
 from getpass import getpass
 
+from crypto_utils import create_keyfile
+from iclab_session import prompt_for_credentials
+
+logger = logging.getLogger(__name__)
+
+logging_level = logging.INFO
+logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
 
 filename = input("Output key file [credentials.key]: ").strip()
 if filename == "":
@@ -27,4 +35,4 @@ create_keyfile(
     master1,
 )
 
-print(f"Encrypted credential file written to '{filename}'.")
+logger.info(f"Encrypted credential file written to '{filename}'.")
