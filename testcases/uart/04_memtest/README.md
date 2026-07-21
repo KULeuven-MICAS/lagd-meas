@@ -37,6 +37,15 @@ cd lagd-meas/testcases/uart/04_memtest
 Bigger `--mem-size` = more stress but longer (8 KiB × 5 patterns ≈ a few seconds at
 115200; scales linearly). Keep the region inside writable memory (L2 SPM is 64 KiB).
 
+## Test commands (add `--no-rtscts` when mapping the chip on FPGA):
+
+```bash
+./testcases/uart/04_memtest/run.sh --no-rtscts --mem-base 0x10000000 --mem-size 0x4000 # check stack memory
+./testcases/uart/04_memtest/run.sh --no-rtscts --mem-base 0x80000000 --mem-size 0x10000 # check l2 spm
+./testcases/uart/04_memtest/run.sh --no-rtscts --mem-base 0x90000000 --mem-size 0x10000 # check l1_j_spm_c0 and l1_f_spm_c0
+./testcases/uart/04_memtest/run.sh --no-rtscts --mem-base 0x90010000 --mem-size 0x10000 # check l1_j_spm_c1 and l1_f_spm_c1
+```
+
 ## Expected output — PASS
 
 ```
@@ -66,7 +75,8 @@ diverged.
 
 ## Where this sits in the UART ladder
 
-1. `01_loopback/` → host serial path OK. *(no chip)*
-2. `02_handshake/` → bootrom reachable. *(chip powered, clocked, passive boot)*
+0. `00_loopback/` → host serial path OK. *(optional, no chip)*
+1. `01_portsweep/` → chip's UART found, bootrom answers. *(chip powered, clocked, passive boot)*
+2. `02_handshake/` → bootrom reachable via the real loader.
 3. `03_load_run/` → load & run an ELF. *(functional data path)*
 4. **`04_memtest/`** (this test) → memory integrity + volume over UART. *(robustness)*
