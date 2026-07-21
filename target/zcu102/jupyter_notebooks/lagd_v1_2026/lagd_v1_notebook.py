@@ -24,16 +24,21 @@
 
 import os
 import pwd
-import datetime
+import logging
+import platform
 from pynq import Bitstream
+
+# Initialize the logger
+logging_level = logging.INFO
+logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+logging.basicConfig(level=logging_level, format=logging_format)
 # Load the bitstream
 bitfile = "lagd.zcu102.bit"
-now = str(datetime.datetime.now())
-print(f"Current username: {pwd.getpwuid(os.geteuid()).pw_name}")
-print(f"[{now}] Start loading the bitstream {bitfile}, CWD: {os.getcwd()}")
+logging.info(f"Current host: {platform.node()}, username: {pwd.getpwuid(os.geteuid()).pw_name}")
+logging.info(f"Start loading the bitstream {bitfile}, CWD: {os.getcwd()}")
 bit = Bitstream(bitfile)
 bit.download()
-print("Bitstream loaded")
+logging.info("Bitstream loaded")
 
 
 # In[ ]:
