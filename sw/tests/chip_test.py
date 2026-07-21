@@ -104,8 +104,8 @@ def example_with_driver():
 
 def main():
     open_ports()
-    # config clock and reset
-    chip.config_clk_rst(chip_clk_en=1, chip_rstn=1)
+    # reset the chip
+    chip.reset_chip(hold=0.001, chip_clk_en=1)
     # init quad-spi
     chip.init_spi()
     # smoke test: test writeback loop
