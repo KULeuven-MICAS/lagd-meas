@@ -285,8 +285,8 @@ def main():
                     help="memtest region base address (default: 0x80000000, L2 SPM)")
     ap.add_argument("--mem-size", type=lambda x: int(x, 0), default=0x2000,
                     help="memtest region size in bytes (default: 0x2000 = 8 KiB)")
-    ap.add_argument("-d", "--device", default="/dev/ttyUSB10",
-                    help="serial device (default: /dev/ttyUSB10)")
+    ap.add_argument("-d", "--device", default="/dev/ttyUSB2",
+                    help="serial device (default: /dev/ttyUSB2)")
     ap.add_argument("-b", "--baud", type=int, default=115200,
                     help="baud rate (default: 115200 -- must match the chip)")
     ap.add_argument("--no-rtscts", dest="rtscts", action="store_false",
