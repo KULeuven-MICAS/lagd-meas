@@ -2,7 +2,7 @@
 # Copyright 2026 KU Leuven.
 # Licensed under the Apache License, Version 2.0, see LICENSE for details.
 # SPDX-License-Identifier: Apache-2.0
-#
+
 # Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 #
 # Host UART loopback test -- NO chip involved.
@@ -14,36 +14,26 @@
 # It reuses send_uart.py's open_port/write_all/read_exact, so it validates the exact
 # serial setup the real loader (send_uart.py) uses.
 #
-#   ./loopback.py --device /dev/ttyUSB10
+#   source ../../../env.sh             # repo root on PYTHONPATH; needed once per shell
+#   ./loopback.py --device /dev/ttyUSB2
 #
 # NOTE: flow control is OFF by default; a plain TX<->RX jumper does not loop RTS/CTS.
 # Only pass --rtscts if you have also jumpered RTS<->CTS.
 
 import argparse
-import importlib.util
 import os
 import sys
 import termios
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SEND_UART = os.path.normpath(os.path.join(HERE, "..", "..", "..", "sw", "uart", "send_uart.py"))
-
-
-def load_send_uart():
-    if not os.path.isfile(SEND_UART):
-        sys.exit("ERROR: cannot find send_uart.py at %s" % SEND_UART)
-    spec = importlib.util.spec_from_file_location("send_uart", SEND_UART)
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+from sw.uart.send_uart import ProtoError, open_port, read_exact, write_all
 
 
 def main():
     ap = argparse.ArgumentParser(
         description="Host UART loopback test (TX<->RX jumper, no chip).")
-    ap.add_argument("-d", "--device", default="/dev/ttyUSB10",
+    ap.add_argument("-d", "--device", default="/dev/ttyUSB2",
                     help="serial device -- the FT4232H UART channel, same as send_uart.py "
-                         "(default: /dev/ttyUSB10)")
+                         "(default: /dev/ttyUSB2)")
     ap.add_argument("-b", "--baud", type=int, default=115200,
                     help="baud rate (default: 115200, matching the chip)")
     ap.add_argument("--rtscts", action="store_true",
@@ -54,8 +44,6 @@ def main():
                     help="seconds to wait for the echo (default: 2)")
     args = ap.parse_args()
 
-    su = load_send_uart()
-
     # Deterministic test pattern (0..255 repeating).
     pattern = bytes((i & 0xFF) for i in range(args.bytes))
 
@@ -64,7 +52,7 @@ def main():
     print("Requires a TX<->RX jumper on the port. No chip involved.")
 
     try:
-        fd = su.open_port(args.device, args.baud, args.rtscts)
+        fd = open_port(args.device, args.baud, args.rtscts)
     except Exception as e:  # noqa: BLE001 -- report any open failure cleanly
         print("FAIL: could not open %s: %s" % (args.device, e))
         print("  -> wrong device, no permission, or the converter is not present.")
@@ -72,10 +60,10 @@ def main():
 
     try:
         termios.tcflush(fd, termios.TCIOFLUSH)
-        su.write_all(fd, pattern)
+        write_all(fd, pattern)
         try:
-            got = su.read_exact(fd, len(pattern), args.timeout)
-        except su.ProtoError as e:
+            got = read_exact(fd, len(pattern), args.timeout)
+        except ProtoError as e:
             print("FAIL: did not receive the echo: %s" % e)
             print("  -> no loopback. Check the TX<->RX jumper, the device, and converter power.")
             return 1

@@ -28,7 +28,7 @@ if {![info exists SEED]}      { set SEED 12648430 }
 gdb_port disabled
 telnet_port disabled
 tcl_port disabled
-riscv set_prefer_sba on
+riscv set_mem_access sysbus progbuf
 
 proc bail {msg err} {
     echo "=================================================================="

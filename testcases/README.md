@@ -6,7 +6,7 @@ step-by-step ladder — run the rungs in order; a failure tells you which layer 
 | Group | Ladder | Reusable tool |
 |-------|--------|---------------|
 | [`jtag/`](jtag/) | `01_idcode` → `02_halt` → `03_load_run` → `04_memtest` → `05_speed` | [`../sw/jtag/`](../sw/jtag/) (`run_elf.sh`, OpenOCD scripts) |
-| [`uart/`](uart/) | `01_loopback` → `02_handshake` → `03_load_run` → `04_memtest` | [`../sw/uart/`](../sw/uart/) (`send_uart.py`) |
+| [`uart/`](uart/) | `00_loopback` *(optional)* → `01_portsweep` → `02_handshake` → `03_load_run` → `04_memtest` | [`../sw/uart/`](../sw/uart/) (`send_uart.py`) |
 
 See each group's `README.md` for the ladder details.
 

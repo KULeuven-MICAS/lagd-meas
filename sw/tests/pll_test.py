@@ -30,14 +30,9 @@
 import sys
 import logging
 import time
-from pathlib import Path
 
-# Allow running this file directly (`python tests/pll_test.py`): put sw/ on the
-# path so `lib`/`tools` are importable. Harmless under `python -m tests.pll_test`.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from lib.pll_driver import PllDriver  # noqa: E402
-from lib.pll_command_api import default_cfg_word, OP_WRITEBACK, header  # noqa: E402
+from sw.lib.pll_driver import PllDriver
+from sw.lib.pll_command_api import default_cfg_word, OP_WRITEBACK, header
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 

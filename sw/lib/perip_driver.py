@@ -16,8 +16,8 @@
 
 from typing import Optional
 
-from lib.port_driver import PortDriver
-from lib.perip_command_api import (
+from sw.lib.port_driver import PortDriver
+from sw.lib.perip_command_api import (
     OP_WRITEBACK,
     OP_S2P_READBACK,
     make_command,

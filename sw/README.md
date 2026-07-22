@@ -4,6 +4,17 @@ Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 
 This folder holds python scripts and libraries for LAGD project for controlling Xillybus on Zedboard environment.
 
+Before running any script under sw/, please source the env.sh at the repo root (to ensure the import works correctly in python):
+
+```[bash]
+cd lagd-meas/
+source env.sh
+```
+
+This puts the repo root on `PYTHONPATH`, so intra-repo imports are `sw.`-prefixed
+(`from sw.lib.chip_driver import ChipDriver`). It covers `testcases/` too, and only
+needs sourcing once per shell — it works from any cwd afterwards.
+
 ## Environment requirements
 The Xillinux used by LAGD has installed a python, version: 3.6.15; and the pip, version: 21.3.1
 

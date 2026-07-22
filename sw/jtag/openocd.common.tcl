@@ -22,13 +22,13 @@ target create $_TARGETNAME riscv -chain-position $_TARGETNAME -coreid 0
 gdb_report_data_abort enable
 gdb_report_register_access_error enable
 
-riscv set_reset_timeout_sec 120
-riscv set_command_timeout_sec 120
+riscv set_reset_timeout_sec 5
+riscv set_command_timeout_sec 5
 
 # Default memory access via the CPU program buffer. Callers that need to access
 # memory while the core RUNS (e.g. polling EOC in openocd.run.tcl) switch this to
-# 'on' to use the debug system bus (SBA).
-riscv set_prefer_sba off
+# prefer the debug system bus (SBA).
+riscv set_mem_access progbuf sysbus
 
 # Try enabling address translation (only works for newer versions)
 if { [catch { riscv set_enable_virtual on } ] } {

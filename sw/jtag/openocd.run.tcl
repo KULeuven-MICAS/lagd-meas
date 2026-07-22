@@ -39,8 +39,9 @@ tcl_port disabled
 
 # Use the debug module's system bus for memory: matches the sim VIP, and lets us poll
 # the EOC register while the core RUNS without halting it. If SBA misbehaves on the
-# bench, set this 'off' (progbuf) -- polling then halts the core briefly each read.
-riscv set_prefer_sba on
+# bench, prefer progbuf ('set_mem_access progbuf sysbus') -- polling then halts the
+# core briefly each read.
+riscv set_mem_access sysbus progbuf
 
 proc bail {msg err} {
     echo "=================================================================="
@@ -80,7 +81,7 @@ if {!$found} {
     echo "  bit0 of $EOC_ADDR never set. Possible causes:"
     echo "  - program trapped/crashed before reaching _exit"
     echo "  - wrong ENTRY ($ENTRY) or ELF not placed where expected"
-    echo "  - SBA memory access not working (try 'riscv set_prefer_sba off')"
+    echo "  - SBA memory access not working (try 'riscv set_mem_access progbuf sysbus')"
     echo "=================================================================="
     shutdown error
 }

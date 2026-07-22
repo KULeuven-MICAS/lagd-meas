@@ -24,10 +24,23 @@ and a **seeded** pseudo-random fill (reproducible).
 
 ```bash
 cd lagd-meas/testcases/jtag/04_memtest
-./run.sh                              # default 8 KiB (2048 words) at 0x80000000
-./run.sh -c "set MEM_WORDS 16384"     # 64 KiB -- more volume stress
+./run.sh                              # default 8 Kb (2048 words) at 0x80000000
+./run.sh -c "set MEM_WORDS 16384"     # 64 Kb -- more volume stress
 ./run.sh -c "set ADAPTER_KHZ 4000"    # faster JTAG clock
 ```
+
+To set **several variables**, either repeat `-c` or separate them with `;` inside one
+`-c` (`;` is Tcl's statement separator) — the two forms are equivalent:
+
+```bash
+./run.sh -c "set MEM_WORDS 16384" -c "set ADAPTER_KHZ 4000"   # 64 Kb at a faster clock
+./run.sh -c "set MEM_WORDS 16384; set ADAPTER_KHZ 4000"       # same thing, one -c
+```
+
+Any variable you don't set keeps its default, and `run.sh` places your `-c` **before**
+`-f` so the values are in place by the time the Tcl script reads them. The full list of
+variables and defaults is in the header of `sw/jtag/openocd.memtest.tcl` (`MEM_BASE`,
+`MEM_WORDS`, `SEED`, `ADAPTER_KHZ`).
 
 > **Speed:** at the 100 kHz bring-up clock, SBA is slow and a large region takes a
 > while. Establish a reliable higher speed with `01_idcode` first, then raise

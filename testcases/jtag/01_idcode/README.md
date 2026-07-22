@@ -30,8 +30,7 @@ hart or touch memory, so it won't fail for reasons unrelated to the JTAG link.
 ## How to run
 
 ```bash
-cd lagd-meas/testcases/jtag/01_idcode
-openocd -f openocd.scan.tcl
+openocd -f testcases/jtag/01_idcode/openocd.scan.tcl
 ```
 
 The script runs at **100 kHz** (slow, for reliable first contact) and exits on its own.

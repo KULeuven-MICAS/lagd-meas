@@ -2,6 +2,8 @@
 # Copyright 2026 KU Leuven.
 # Licensed under the Apache License, Version 2.0, see LICENSE for details.
 # SPDX-License-Identifier: Apache-2.0
+
+# Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 #
 # Example / regression check: use the UART loader to load & run helloworld on the chip.
 # PASS = the program finishes with return code 0.
@@ -15,8 +17,9 @@
 
 set -e
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-SEND_UART="${SCRIPT_DIR}/../../../sw/uart/send_uart.py"
-ELF="${SCRIPT_DIR}/../../../sw/inputs/helloworld.spm.elf"
+REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../../.." && pwd)"
+source "${REPO_ROOT}/env.sh" >/dev/null
 
-exec python3 "$SEND_UART" "$ELF" "$@"
+ELF="${REPO_ROOT}/sw/inputs/helloworld.spm.elf"
+
+exec python3 -m sw.uart.send_uart "$ELF" "$@"

@@ -25,14 +25,9 @@
 import sys
 import logging
 import time
-from pathlib import Path
 
-# Allow running this file directly (`python tests/perip_test.py`): put sw/ on the
-# path so `lib`/`tools` are importable. Harmless under `python -m tests.perip_test`.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from lib.perip_driver import PeripDriver  # noqa: E402
-from lib.perip_command_api import OP_WRITEBACK, make_command, cmd_dac_write_loopback  # noqa: E402
+from sw.lib.perip_driver import PeripDriver
+from sw.lib.perip_command_api import OP_WRITEBACK, make_command, cmd_dac_write_loopback
 
 # Configure logging: include timestamp and level
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')

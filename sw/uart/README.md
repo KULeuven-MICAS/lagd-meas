@@ -19,7 +19,7 @@ Loads and runs an ELF on the chip over UART, using the Cheshire bootrom's
 ./send_uart.py ../inputs/helloworld.spm.elf
 
 # with options
-./send_uart.py ../inputs/helloworld.spm.elf --device /dev/ttyUSB10 --verify
+./send_uart.py ../inputs/helloworld.spm.elf --device /dev/ttyUSB2 --verify
 
 # equivalent explicit-interpreter form
 python3 send_uart.py ../inputs/helloworld.spm.elf
@@ -27,7 +27,7 @@ python3 send_uart.py ../inputs/helloworld.spm.elf
 # connectivity check only: ACK handshake with the bootrom, no ELF loaded
 ./send_uart.py --ping
 
-# memory integrity + volume test (no ELF)
+# memory integrity + volume test (no ELF) (mem size in bit)
 ./send_uart.py --memtest --mem-size 0x10000
 ```
 
@@ -40,7 +40,7 @@ python3 send_uart.py ../inputs/helloworld.spm.elf
 | `--memtest` | off | Write/read-back a memory region with patterns (integrity + volume), then exit. No ELF. |
 | `--mem-base` | `0x80000000` | Memtest region base address (with `--memtest`). |
 | `--mem-size` | `0x2000` | Memtest region size in bytes (with `--memtest`); larger = more flow-control stress. |
-| `-d`, `--device` | `/dev/ttyUSB10` | Serial device node. |
+| `-d`, `--device` | `/dev/ttyUSB2` | Serial device node. |
 | `-b`, `--baud` | `115200` | Baud rate. **Must match the chip** (`__BOOT_BAUDRATE`). |
 | `--no-rtscts` | (RTS/CTS on) | Disable hardware flow control. Use if RTS/CTS aren't wired. |
 | `--chunk N` | `1024` | Max bytes per WRITE command (no chip-side limit; cosmetic/progress). |
@@ -72,6 +72,7 @@ Run the self-test. It spins up a virtual serial port (pty), runs a mock of the
 bootrom debug server on one end, and the **real** `send_uart.py` on the other:
 
 ```bash
+source ../../env.sh                         # repo root on PYTHONPATH; once per shell
 python3 selftest.py                         # uses helloworld.spm.elf
 python3 selftest.py path/to/other.elf       # test a different ELF
 ```
@@ -86,7 +87,7 @@ address, read-back verify, the EXEC entry point, and a clean exit on return code
 
 Other no-hardware checks:
 ```bash
-python3 -c "import send_uart as s; print(hex(s.parse_elf('../inputs/helloworld.spm.elf')[0]))"  # entry point
+python3 -c "from sw.uart.send_uart import parse_elf; print(hex(parse_elf('../inputs/helloworld.spm.elf')[0]))"  # entry point (needs env.sh)
 python3 send_uart.py app.elf --device /dev/pts/<n>   # against a socat/pty pair, if you prefer
 ```
 

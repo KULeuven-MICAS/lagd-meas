@@ -13,8 +13,8 @@
 import time
 from typing import List, Optional, Union
 
-from lib.port_driver import PortDriver
-from lib.chip_command_api import (
+from sw.lib.port_driver import PortDriver
+from sw.lib.chip_command_api import (
     WRITEBACK_FIFO,
     make_command,
     cmd_config_spi_slave,
@@ -50,6 +50,17 @@ class ChipDriver(PortDriver):
     def config_clk_rst(self, chip_clk_en: int, chip_rstn: int) -> None:
         """Drive the chip clock enable (bit 1) and reset-n (bit 0)."""
         self._send_words(cmd_config_clk_rst(chip_clk_en, chip_rstn))
+
+    def reset_chip(self, hold: float = 0.001, chip_clk_en: int = 1) -> None:
+        """Pulse the chip's active-low reset: assert reset_n=0, hold, then release.
+
+        Restarts the core over the reset signal without reloading the bitstream.
+        The clock is left enabled (chip_clk_en=1) across the pulse so the core
+        clocks out of reset on release; `hold` is the assert time in seconds.
+        """
+        self.config_clk_rst(chip_clk_en=chip_clk_en, chip_rstn=0)
+        time.sleep(hold)
+        self.config_clk_rst(chip_clk_en=chip_clk_en, chip_rstn=1)
 
     def write_mem(self, addr: int, data_words: Union[int, List[int]]) -> None:
         """Single or burst memory write. data_words: int or list of ints.
