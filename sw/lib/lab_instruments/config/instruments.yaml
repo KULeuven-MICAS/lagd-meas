@@ -21,15 +21,15 @@
 - name: "KeySight E36312A PS - Board"
   IP: "10.91.16.95"
   channels:
-    - 
+    -
       name: "CH1" # 5V
       voltage: 5.0
       current: 1.0
-    - 
+    -
       name: "CH2" # 9V
       voltage: 9.0
       current: 0.5
-    - 
+    -
       name: "CH3" # 3V
       voltage: 3.0
       current: 0.5
