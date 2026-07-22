@@ -28,6 +28,7 @@ def main():
         # Create an instance of the KeysightPSUE36300 class with the loaded configuration.
         psu = KeysightPSUE36300(inst.BasePowerSupplyData.from_mapping(config[0]))
 
+        psu.set_verbose(True)
         # Example usage: Set voltage and current limit for channel 3.
         psu.set_voltage("CH3", 0.75)
         psu.set_current_limit("CH3", 1.0)

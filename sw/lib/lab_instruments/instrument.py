@@ -43,6 +43,7 @@ class BaseInstrument:
     """
     def __init__(self, data: BaseInstrumentData):
         self.info = data
+        self._verbose = False
         self.tool = self._open_resource()
         self._init_instrument()
 
@@ -67,6 +68,22 @@ class BaseInstrument:
         """
         raise NotImplementedError
 
+    def set_verbose(self, verbose: bool):
+        """Set the verbosity level for the instrument."""
+        self._verbose = verbose
+
+    def write(self, command: str):
+        """ Write a command to the instrument."""
+        if self._verbose:
+            print(f"\t{self.info.name}: {command}")
+        self.tool.write(command)
+
+    def query(self, command: str):
+        """ Query the instrument and return the response."""
+        if self._verbose:
+            print(f"\t{self.info.name}: {command}")
+        return self.tool.query(command)
+
     def status(self):
         """ Get the status of the instrument."""
         idn = self.tool.query('*IDN?').strip()
@@ -87,67 +104,73 @@ class BasePowerSupply(BaseInstrument):
     """
     def __init__(self, data: BasePowerSupplyData):
         super().__init__(data)
-        self._num_channels = None
-        self._channel_names = None
+        if not hasattr(self, '_num_channels'):
+            raise NotImplementedError(
+                "Channel count not set. Please set _num_channels in the subclass.")
+        self._selected_channel = None
+        # Track the state of each channel (on/off)
+        self._channel_state = [False] * self._num_channels
 
-    def _validate_channel(self, channel: Union[int, str]):
+    def _validate_channel(self, channel: Union[int, str]) -> int:
         """Validate channel number against configured channel count."""
-        if self._num_channels is None:
-            raise NotImplementedError("Channel count not set. Please set _num_channels in the subclass.")
         if isinstance(channel, str):
             if channel not in self._channel_names:
-                raise ValueError(f"Invalid channel name '{channel}'. Valid names are: {self._channel_names}.")
-        elif isinstance(channel, int):
-            if channel + 1 > self._num_channels:
                 raise ValueError(
-                    f"Invalid channel {channel}. Valid range is 1..{self._num_channels}."
-                )
+                    f"Invalid channel name '{channel}'. Valid names are: {self._channel_names}.")
+            return self._lookup_channel[channel]  # Return the corresponding index
+        elif isinstance(channel, int):
+            if channel > self._num_channels + 1:
+                raise ValueError(
+                    f"Invalid channel {channel}. Valid range is 1..{self._num_channels}.")
+            return channel
 
-    def set_current_limit(self, channel: Union[int, str], current_limit: float):
-        self._validate_channel(channel)
-        if isinstance(channel, int):
-            self.tool.write(f'CURR {current_limit}, (@{channel})') # Set the current limit
-            return
-        if isinstance(channel, str):
-            self.tool.write(f'CURR {channel} {current_limit}') # Set the current limit
-            return
-        raise TypeError(f"Unsupported channel type: {type(channel).__name__}")
-
-    def set_voltage(self, channel: Union[int, str], voltage: float, current_limit: float = None):
-        self._validate_channel(channel)
-        if isinstance(channel, int):
-            self.tool.write(f'VOLT {voltage}, (@{channel})') # Set the voltage
-        elif isinstance(channel, str):
-            self.tool.write(f'VOLT {channel} {voltage}') # Set the voltage
+    def _select_channel(self, channel: Union[int, str]):
+        if channel == self._selected_channel:
+            return  # Already selected
         else:
-            raise TypeError(f"Unsupported channel type: {type(channel).__name__}")
-        if current_limit is not None:
-            self.set_current_limit(channel, current_limit)
+            if isinstance(channel, int):
+                self.write(f'INST:NSEL {channel}')  # Select the channel by index
+            elif isinstance(channel, str):
+                self.write(f'INST:SEL {channel}')  # Select the channel by name
+            else:
+                raise TypeError(f"Unsupported channel type: {type(channel).__name__}")
+            self._selected_channel = channel
 
-    def set_channel_from_dict(self, channel: Union[int, str], settings: dict):
-        self._validate_channel(channel)
+    def _set_channel_from_dict(self, channel: Union[int, str], settings: dict):
         if 'voltage' in settings:
             self.set_voltage(channel, settings['voltage'])
         if 'current' in settings:
             self.set_current_limit(channel, settings['current'])
 
+    def set_current_limit(self, channel: Union[int, str], current_limit: float):
+        channel = self._validate_channel(channel)
+        self._select_channel(channel)
+        self.write(f'CURR {current_limit}')  # Set the current limit
+
+    def set_voltage(self, channel: Union[int, str], voltage: float, current_limit: float = None):
+        channel = self._validate_channel(channel)
+        self._select_channel(channel)
+        self.write(f'VOLT {voltage}')  # Set the voltage
+        if current_limit is not None:
+            self.set_current_limit(channel, current_limit)
+
     def set_channel(self, channel: Union[int, str], settings: dict = None):
-        self._validate_channel(channel)
+        channel = self._validate_channel(channel)
         if settings is not None:
-            self.set_channel_from_dict(channel, settings)
+            self._set_channel_from_dict(channel, settings)
         else:
             # Get the channel settings from the instrument info
-            self.set_channel_from_dict(channel, self.info.channels[channel - 1])
+            self._set_channel_from_dict(channel, self.info.channels[channel - 1])
 
-    def get_voltage(self, channel: int):
-        self._validate_channel(channel)
-        # Query and return the measured voltage
-        return float(self.tool.query(f'MEAS:VOLT? (@{channel})'))
+    def get_voltage(self, channel: Union[int, str]):
+        channel = self._validate_channel(channel)
+        self._select_channel(channel)
+        return float(self.query('MEAS:VOLT?'))
 
-    def get_current(self, channel: int):
-        self._validate_channel(channel)
-        # Query and return the measured current
-        return float(self.tool.query(f'MEAS:CURR? (@{channel})'))
+    def get_current(self, channel: Union[int, str]):
+        channel = self._validate_channel(channel)
+        self._select_channel(channel)
+        return float(self.query('MEAS:CURR?'))
 
     def turn_on_channels(self, channels: Union[int, str, List[Union[int, str]]]):
         """
@@ -160,24 +183,16 @@ class BasePowerSupply(BaseInstrument):
         elif not isinstance(channels, list):
             raise TypeError(f"Unsupported channels container type: {type(channels).__name__}")
 
-        channel_terms = []
         for channel in channels:
-            self._validate_channel(channel)
-            if isinstance(channel, int):
-                channel_terms.append(f'(@{channel})')
-            elif isinstance(channel, str):
-                self.tool.write(f'OUTP {channel} ON')
-            else:
-                raise TypeError(f"Unsupported channel type: {type(channel).__name__}")
-        if channel_terms:
-            ch_str = ','.join(channel_terms)
-            # Turn on the output for the specified channels
-            self.tool.write(f'OUTP ON, {ch_str}')
+            channel = self._validate_channel(channel)
+            self._select_channel(channel)
+            self.write('OUTP ON')  # Turn on the output for the selected channel
+            self._channel_state[channel-1] = True  # Mark the channel as on
 
     def _close(self):
         """
         Close the resource for the instrument.
         This method should be implemented by the specific instrument class.
         """
-        ch_str = ','.join([f'(@{ch})' for ch in range(0, self._num_channels)])
-        self.tool.write(f'OUTP OFF, {ch_str}')  # Turn off the output
+        ch_str = ','.join([f'{ch+1}' for ch in range(0, self._num_channels) if self._channel_state[ch]])
+        self.write(f'OUTP OFF, @({ch_str})')  # Turn off the output

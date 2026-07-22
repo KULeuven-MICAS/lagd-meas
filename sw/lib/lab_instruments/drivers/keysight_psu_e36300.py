@@ -16,8 +16,16 @@ class KeysightPSUE36300(inst.BasePowerSupply):
 
     """
     def __init__(self, info: inst.BasePowerSupplyData):
-        super().__init__(info)
         self._num_channels = 3 # It has 3 channels
+        self._channel_names = [
+            "CH1", "P6V",  # Channel 1: 6V output
+            "CH2", "P25V",  # Channel 2: 25V output
+            "CH3", "N25V"]  # Channel 3: -25V output
+        self._lookup_channel = {
+            "CH1": 1, "P6V": 1,
+            "CH2": 2, "P25V": 2,
+            "CH3": 3, "N25V": 3}
+        super().__init__(info)
 
     def _open_resource(self):
         """
@@ -28,5 +36,5 @@ class KeysightPSUE36300(inst.BasePowerSupply):
         return rm.open_resource(f"TCPIP::{self.info.IP}::inst0::INSTR")
 
     def _init_instrument(self):
-        self.tool.write('*RST')  # Reset the instrument to default settings
-        self.tool.write('SYST:REM')  # Set to remote mode
+        self.write('*RST')  # Reset the instrument to default settings
+        self.write('SYST:REM')  # Set to remote mode
