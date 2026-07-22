@@ -88,19 +88,24 @@ class BasePowerSupply(BaseInstrument):
     def __init__(self, data: BasePowerSupplyData):
         super().__init__(data)
         self._num_channels = None
+        self._channel_names = None
 
-    def _validate_channel(self, channel: int):
+    def _validate_channel(self, channel: Union[int, str]):
         """Validate channel number against configured channel count."""
         if self._num_channels is None:
             raise NotImplementedError("Channel count not set. Please set _num_channels in the subclass.")
-        if channel + 1 > self._num_channels:
-            raise ValueError(
-                f"Invalid channel {channel}. Valid range is 1..{self._num_channels}."
-            )
+        if isinstance(channel, str):
+            if channel not in self._channel_names:
+                raise ValueError(f"Invalid channel name '{channel}'. Valid names are: {self._channel_names}.")
+        elif isinstance(channel, int):
+            if channel + 1 > self._num_channels:
+                raise ValueError(
+                    f"Invalid channel {channel}. Valid range is 1..{self._num_channels}."
+                )
 
     def set_current_limit(self, channel: Union[int, str], current_limit: float):
+        self._validate_channel(channel)
         if isinstance(channel, int):
-            self._validate_channel(channel)
             self.tool.write(f'CURR {current_limit}, (@{channel})') # Set the current limit
             return
         if isinstance(channel, str):
@@ -109,8 +114,8 @@ class BasePowerSupply(BaseInstrument):
         raise TypeError(f"Unsupported channel type: {type(channel).__name__}")
 
     def set_voltage(self, channel: Union[int, str], voltage: float, current_limit: float = None):
+        self._validate_channel(channel)
         if isinstance(channel, int):
-            self._validate_channel(channel)
             self.tool.write(f'VOLT {voltage}, (@{channel})') # Set the voltage
         elif isinstance(channel, str):
             self.tool.write(f'VOLT {channel} {voltage}') # Set the voltage
@@ -119,14 +124,14 @@ class BasePowerSupply(BaseInstrument):
         if current_limit is not None:
             self.set_current_limit(channel, current_limit)
 
-    def set_channel_from_dict(self, channel: int, settings: dict):
+    def set_channel_from_dict(self, channel: Union[int, str], settings: dict):
         self._validate_channel(channel)
         if 'voltage' in settings:
             self.set_voltage(channel, settings['voltage'])
         if 'current' in settings:
             self.set_current_limit(channel, settings['current'])
 
-    def set_channel(self, channel: int, settings: dict = None):
+    def set_channel(self, channel: Union[int, str], settings: dict = None):
         self._validate_channel(channel)
         if settings is not None:
             self.set_channel_from_dict(channel, settings)
@@ -157,8 +162,8 @@ class BasePowerSupply(BaseInstrument):
 
         channel_terms = []
         for channel in channels:
+            self._validate_channel(channel)
             if isinstance(channel, int):
-                self._validate_channel(channel)
                 channel_terms.append(f'(@{channel})')
             elif isinstance(channel, str):
                 self.tool.write(f'OUTP {channel} ON')
