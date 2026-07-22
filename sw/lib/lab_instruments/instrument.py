@@ -77,6 +77,9 @@ class BaseInstrument:
         if self._verbose:
             print(f"\t{self.info.name}: {command}")
         self.tool.write(command)
+        ret = self.tool.query("SYST:ERR?")
+        if not ret.find("No Error"):
+            raise ValueError(f'Instrument {self.info.name} error: {ret}')
 
     def query(self, command: str):
         """ Query the instrument and return the response."""
@@ -194,5 +197,7 @@ class BasePowerSupply(BaseInstrument):
         Close the resource for the instrument.
         This method should be implemented by the specific instrument class.
         """
-        ch_str = ','.join([f'{ch+1}' for ch in range(0, self._num_channels) if self._channel_state[ch]])
-        self.write(f'OUTP OFF, @({ch_str})')  # Turn off the output
+        for ch in range(self._num_channels):
+            if self._channel_state[ch]:
+                self._select_channel(ch+1)
+                self.write('OUTP OFF')  # Turn off the output

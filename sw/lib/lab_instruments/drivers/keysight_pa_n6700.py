@@ -7,7 +7,7 @@
 import pyvisa
 from sw.lib.lab_instruments import instrument as inst
 
-class KeysightPAN6700(inst.BaseInstrument):
+class KeysightPAN6700(inst.BasePowerSupply):
     """
     Class for the Keysight N6700 series power analyzer.
     It implements the specific methods for this instrument.
