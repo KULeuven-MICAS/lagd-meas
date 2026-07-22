@@ -3,7 +3,7 @@ import yaml
 from pathlib import Path
 from argparse import Namespace
 
-from send_chip import send_chip
+from send_chip import send_chip, compile_data
 from save_model import store_run
 from ising.stages import TOP
 from ising.stages.model import IsingModel
@@ -104,6 +104,7 @@ def mppi_experiment(config_path, save_folder):
 
     # Iterate over reference points
     for point in np.arange(start=1, stop=x_ref.shape[0], step=benchmark.action_horizon):
+        # TODO: chip and sw model
         # Most recently visited state
         state = executed_trajectory[-1]
         # Get horizon view
@@ -130,7 +131,8 @@ def mppi_experiment(config_path, save_folder):
             # Store answers
             ans, _ = next(sub_stage.run()) # This runs the ising model
             store_run(ans, save_folder, "MPPI")
-            send_chip(ans.states)
+            compile_data(save_folder, 1, 1)
+            send_chip(save_folder, 1, 1, "uart")
         break
             # actions = 0
             # # Apply actions in continuous space

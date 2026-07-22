@@ -14,12 +14,14 @@ def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
     @param save_folder: folder in which to save the results
     """
     if problem_type == "MIMO":
-        nb_runs = ans.config.dummy_case_num * 2
+        nb_runs = min(ans.config.dummy_case_num, ans.config.nb_trials) * 2
     elif problem_type == "MPPI":
         nb_runs = 1
     else:
         nb_runs = ans.config.nb_runs
+    save_folders = []
     for i in range(0, nb_runs, 2):
+        print(f"run: {i}")
         if problem_type == "MIMO":
             logfile_1 = ans.MIMO[int(i / 2)].logfiles[0]
             logfile_2 = ans.MIMO[int(i / 2)].logfiles[1]
@@ -33,6 +35,7 @@ def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
             logfile_2 = ans.logfiles[i + 1]
             scale_factor = ans.h_scale_factor
         folder_run = save_folder / f"run_{int(i / 2)}"
+        save_folders.append(folder_run)
         Path.mkdir(folder_run, exist_ok=True)
         data_names = ["cluster", "state_in", "energy_best", "energy"]
         for num, logfile in enumerate([logfile_1, logfile_2]):
@@ -48,16 +51,16 @@ def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
                     else "clusters" + f"_{num + 1}",
                 )
         if problem_type == "MIMO":
-            quantized_model: IsingModel = ans.MIMO[i].quantized_model
+            quantized_model: IsingModel = ans.MIMO[int(i/2)].quantized_model
         else:
             quantized_model: IsingModel = ans.quantized_model
         quantized_model_J = np.zeros_like(quantized_model.J, dtype="<U4")
         quantized_model_h = np.zeros_like(quantized_model.h, dtype="<U4")
-        for i in range(quantized_model.num_variables):
-            quantized_model_h[i] = np.binary_repr(int(quantized_model.h[i]), width=4)
-            for j in range(i, quantized_model.num_variables):
-                quantized_model_J[i, j] = np.binary_repr(int(quantized_model.J[i, j]), width=4)
-                quantized_model_J[j, i] = quantized_model_J[i, j]
+        for j in range(quantized_model.num_variables):
+            quantized_model_h[j] = np.binary_repr(int(quantized_model.h[j]), width=4)
+            for k in range(j, quantized_model.num_variables):
+                quantized_model_J[j, k] = np.binary_repr(int(quantized_model.J[j, k]), width=4)
+                quantized_model_J[k, j] = quantized_model_J[j, k]
 
         with (folder_run / "model").open("w") as f:
             f.write("# J matrix\n")
@@ -66,6 +69,7 @@ def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
             np.savetxt(f, quantized_model_h, fmt="%4s")
             f.write(f"# offset\n{quantized_model.c}\n")
             f.write(f"# scaling factor h \n {scale_factor}\n")
+    return save_folders
 
 
 def store_results_logfile(logfile: Path, data_name: str, save_folder: Path, file_name: str) -> None:

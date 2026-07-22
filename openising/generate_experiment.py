@@ -6,12 +6,13 @@ from __init__ import toppath, current_dir
 from ising.api import get_hamiltonian_energy
 from save_model import store_run
 from mppi_experiment import mppi_experiment
+from send_chip import compile_data
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "-config_file", help="directory to yaml file for experiment.", type=str, default="Maxcut_experiment/model_0"
+    "-config_file", help="directory to yaml file for experiment.", type=str, default="MIMO_experiment/model_0"
 )
-parser.add_argument("--logging_level", help="level of logging. Defaults to INFO", default=logging.WARNING)
+parser.add_argument("--logging_level", help="level of logging. Defaults to INFO", default=logging.INFO)
 
 args = parser.parse_args()
 
@@ -41,6 +42,8 @@ if problem_type != "MPPI":
     ans, _ = get_hamiltonian_energy(problem_type, config_path, args.logging_level)
     # Store everything
     ans.save(save_folder / "ans.pkl")
-    store_run(ans, save_folder, problem_type)
+    data_folders = store_run(ans, save_folder, problem_type)
+    # compile everything
+    compile_data(data_folders, 2)
 else:
     mppi_experiment(config_path, save_folder)
