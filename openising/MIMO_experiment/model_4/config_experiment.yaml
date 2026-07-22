@@ -1,6 +1,6 @@
 problem_type: MIMO
 dummy_qam: 4
-dummy_snr: -5
+dummy_snr: 15
 dummy_spacing: 1.0
 dummy_user_num: 128
 dummy_ant_num: 256

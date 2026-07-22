@@ -17,3 +17,4 @@ results/
 # data files
 openising/**/run_*/**
 **.pkl
+**.out
