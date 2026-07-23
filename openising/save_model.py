@@ -21,7 +21,6 @@ def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
         nb_runs = ans.config.nb_runs
     save_folders = []
     for i in range(0, nb_runs, 2):
-        print(f"run: {i}")
         if problem_type == "MIMO":
             logfile_1 = ans.MIMO[int(i / 2)].logfiles[0]
             logfile_2 = ans.MIMO[int(i / 2)].logfiles[1]
