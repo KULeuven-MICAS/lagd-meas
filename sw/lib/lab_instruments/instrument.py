@@ -78,14 +78,18 @@ class BaseInstrument:
             print(f"\t{self.info.name}: {command}")
         self.tool.write(command)
         ret = self.tool.query("SYST:ERR?")
-        if not ret.find("No Error"):
+        if "+0," not in ret:
             raise ValueError(f'Instrument {self.info.name} error: {ret}')
 
     def query(self, command: str):
         """ Query the instrument and return the response."""
         if self._verbose:
             print(f"\t{self.info.name}: {command}")
-        return self.tool.query(command)
+        val = self.tool.query(command)
+        ret = self.tool.query("SYST:ERR?")
+        if "+0," not in ret:
+            raise ValueError(f'Instrument {self.info.name} error: {ret}')
+        return val
 
     def status(self):
         """ Get the status of the instrument."""
