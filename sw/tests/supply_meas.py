@@ -8,7 +8,7 @@ import yaml
 from pathlib import Path
 
 from sw.lib.lab_instruments import instrument as inst
-from sw.lib.lab_instruments.drivers.keysight_psu_e36300 import KeysightPSUE36300
+from sw.lib.lab_instruments.drivers.keysight_pa_n6700 import KeysightPAN6700
 from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 
@@ -25,21 +25,25 @@ def main():
         config = yaml.safe_load(f)
 
     with iclab_session(parser.get_credentials()):
-        # Create an instance of the KeysightPSUE36300 class with the loaded configuration.
-        psu = KeysightPSUE36300(inst.BasePowerSupplyData.from_mapping(config["power_supply_pcb"]))
+        # Create an instance of the KeysightPAN6700 class with the loaded configuration.
+        smu = KeysightPAN6700(inst.BasePowerSupplyData.from_mapping(config["power_analyzer_chip"]))
 
-        psu.set_verbose(True)
-        # Example usage: Set voltage and current limit for channel 3.
-        psu.set_voltage("CH3", 0.75)
-        psu.set_current_limit("CH3", 1.0)
-        psu.turn_on_channels("CH3")  # Turn on channel 3
+        smu.set_verbose(True)
+        # Example usage: Set voltage and current limit for channel 2.
+        smu.set_voltage("CH2", 0.75)
+        smu.set_current_limit("CH2", 1.0)
+        smu.turn_on_channels("CH2")  # Turn on channel 2
 
-        # Get the voltage for channel 3.
-        voltage = psu.get_voltage("CH3")
-        print(f"Voltage on CH3: {voltage} V")
+        # Report the maximum settings of the instrument.
+        _ = input("Press Enter to continue...")
+        smu.report_max_settings()
+
+        # Get the voltage for channel 2.
+        voltage = smu.get_voltage("CH2")
+        print(f"Voltage on CH2: {voltage} V")
 
         # Close the instrument connection.
-        psu.close()
+        smu.close()
 
 if __name__ == "__main__":
     main()
