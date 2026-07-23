@@ -57,7 +57,6 @@ weight_constant: 0
 
 # Parameters for MIMO
 SNR: 10
-nb_trials: 100
 mimo_seed: 12
 use_ZF: False
 is_hamming_encoding: False
