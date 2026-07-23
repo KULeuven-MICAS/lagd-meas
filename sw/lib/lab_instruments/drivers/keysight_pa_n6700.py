@@ -96,9 +96,10 @@ class KeysightPAN6700(inst.BasePowerSupply):
             raise Warning(
                 "Auto current range is set to 0, no range selection supported.")
 
-        self.write(f"SENS:SWE:TINT {sample_int}")
         self.write("SENS:SWE:TINT:RES RES20")  # Set the resolution to 20us
-        self.write(f"SENS:SWE:POIN {sample_points}")
+
+        self.write(f"SENS:SWE:TINT {sample_int},(@{channel})")
+        self.write(f"SENS:SWE:POIN {sample_points},(@{channel})")
 
     def fetch(self, channel: int, what: str) -> Union[float, List[float]]:
         """
@@ -110,16 +111,16 @@ class KeysightPAN6700(inst.BasePowerSupply):
             float: The measured current value.
         """
         # Set the channel to measure
-        self.write("INIT:IMM")  # Start the measurement
+        self.write("INIT:IMM,(@{channel})")  # Start the measurement
         self.write("*WAI")  # Wait for the measurement to complete
-        samples = self.query(f"FETC:{what}?")  # Fetch the measurement data
+        samples = self.query(f"FETC:{what}?,(@{channel})")  # Fetch the measurement data
         return mean(samples)  # Return the average of the measured samples
 
-    def get_current(self, channel: int) -> float:
+    def fetch_current(self, channel: int) -> float:
         return self.fetch(channel, "CURR")
 
-    def get_rms_current(self, channel: int) -> float:
+    def fetch_rms_current(self, channel: int) -> float:
         return self.fetch(channel, "CURR:ACDC")
 
-    def get_max_current(self, channel: int) -> float:
+    def fetch_max_current(self, channel: int) -> float:
         return self.fetch(channel, "CURR:MAX")
