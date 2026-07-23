@@ -34,10 +34,6 @@ def main():
         smu.set_current_limit("CH2", 1.0)
         smu.turn_on_channels("CH2")  # Turn on channel 2
 
-        # Report the maximum settings of the instrument.
-        _ = input("Press Enter to continue...")
-        smu.report_max_settings()
-
         # Get the voltage for channel 2.
         voltage = smu.get_voltage("CH2")
         print(f"Voltage on CH2: {voltage} V")

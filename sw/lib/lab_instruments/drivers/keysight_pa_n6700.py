@@ -27,6 +27,14 @@ class KeysightPAN6700(inst.BasePowerSupply):
             "CH3": 3,
             "CH4": 4
         }
+        self._TINT_MIN = {
+            "CH1": 1.024e-05,
+            "CH2": 5.12e-06,
+            "CH3": 5.12e-06,
+            "CH4": 1.024e-05
+        }  # Minimum integration time in seconds
+        self._TINT_MAX = 40000  # Maximum integration time in seconds
+        self._POIN_MAX = 524288  # Maximum number of points
         super().__init__(info)
 
     def _open_resource(self):
@@ -40,16 +48,14 @@ class KeysightPAN6700(inst.BasePowerSupply):
     def _init_instrument(self):
         self.tool.write('*RST')  # Reset the instrument to default settings
 
-    def report_max_settings(self):
-        """
-        Report the maximum settings of the instrument.
-        """
-        self.write("SENS:SWE:TINT MIN")
-        min_tint = self.query("SENS:SWE:TINT?")
-        self.write("SENS:SWE:POIN MAX")
-        max_points = self.query("SENS:SWE:POIN?")
-        print(f"Minimum integration time: {min_tint} s")
-        print(f"Maximum number of points: {max_points}")
+    def close(self):
+        for ch in range(self._num_channels):
+            if self._channel_state[ch]:
+                self.write(f'OUTP OFF,(@{ch+1})')  # Turn off the output,
+
+    def get_voltage(self, channel: Union[str, int]) -> float:
+        channel = self._validate_channel(channel)
+        return float(self.query(f"MEAS:VOLT? (@{channel})"))
 
     def set_voltage(self, channel: Union[str, int], voltage: float):
         channel = self._validate_channel(channel)
@@ -83,9 +89,9 @@ class KeysightPAN6700(inst.BasePowerSupply):
             float: The integrated current value.
         """
         # Set the channel to measure
-        self.write("SENS:FUNC:CURR ON")
+        self.write("SENS:FUNC:CURR ON,(@{channel})")
 
-        self.write(f"SENS:CURR:RANG:AUTO {auto_curr_range}")
+        self.write(f"SENS:CURR:RANG:AUTO {auto_curr_range},(@{channel})")
         if auto_curr_range == 0:
             raise Warning(
                 "Auto current range is set to 0, no range selection supported.")
