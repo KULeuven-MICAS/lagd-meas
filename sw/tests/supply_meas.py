@@ -41,11 +41,11 @@ def main():
 
         smu.set_current_meter("CH2", auto_curr_range = 1,
             sample_int = 5.12e-06, sample_points = 524288)  # Set current meter for channel 2
+        # Repeat some times to validate consistency of the measurement.
         for i in range(5):
             current = smu.measure_current("CH2")  # Measure current on channel 2
             print(f"{i}: Current on CH2: {current} A")
             time.sleep(1)  # Wait for 1 second before the next measurement
-        current = smu.measure_current("CH2")  # Measure current on channel 2
         print(f"Current on CH2: {current} A")
 
         # Close the instrument connection.
