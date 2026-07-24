@@ -68,6 +68,22 @@ class BaseInstrument:
         """
         raise NotImplementedError
 
+    @staticmethod
+    def _ret_to_int(ret: str) -> int:
+        """Convert the instrument return value to an integer. + followed by an integer."""
+        plus_pos = ret.find("+")
+        if plus_pos != -1:
+            # Scan until digits are found after the plus sign
+            digit = ""
+            for i in range(plus_pos + 1, len(ret)):
+                if ret[i].isdigit():
+                    digit += ret[i]
+                else:
+                    break  # Stop if a non-digit character is found after the digits
+            if digit:
+                return int(digit)
+        raise ValueError(f"_ret_to_int failed: {ret}")
+
     def set_verbose(self, verbose: bool):
         """Set the verbosity level for the instrument."""
         self._verbose = verbose
@@ -79,7 +95,7 @@ class BaseInstrument:
         self.tool.write(command)
         if check:
             ret = self.tool.query("SYST:ERR?")
-            if "+0," not in ret:
+            if self._ret_to_int(ret) != 0:
                 raise ValueError(f'Instrument {self.info.name} error: {ret}')
 
     def query(self, command: str):
