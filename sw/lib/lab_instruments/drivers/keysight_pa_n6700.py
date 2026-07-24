@@ -5,7 +5,7 @@
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
 import pyvisa
-from statistics import mean
+import time
 from typing import List, Union
 
 from sw.lib.lab_instruments import instrument as inst
@@ -46,7 +46,12 @@ class KeysightPAN6700(inst.BasePowerSupply):
         return rm.open_resource(f"TCPIP::{self.info.IP}::inst0::INSTR")
 
     def _init_instrument(self):
+        print(f"Initializing {self.info.name}")
         self.tool.write('*RST')  # Reset the instrument to default settings
+        for ch in range(self._num_channels):
+            self.write(f"SENS:FUNC:CURR OFF,(@{ch+1})")
+            self.write(f"SENS:FUNC:VOLT OFF,(@{ch+1})")
+        print(f"{self.info.name} initialized successfully.")
 
     def close(self):
         for ch in range(self._num_channels):
@@ -88,18 +93,21 @@ class KeysightPAN6700(inst.BasePowerSupply):
         Returns:
             float: The integrated current value.
         """
-        # Set the channel to measure
-        self.write("SENS:FUNC:CURR ON,(@{channel})")
+        channel = self._validate_channel(channel)
 
+        self.write(f"SENS:FUNC:CURR ON,(@{channel})")
         self.write(f"SENS:CURR:RANG:AUTO {auto_curr_range},(@{channel})")
+
+        # Setting the current range improves the measurement accuracy.
+        # Automatic range should be good enough.
         if auto_curr_range == 0:
             raise Warning(
                 "Auto current range is set to 0, no range selection supported.")
 
         self.write("SENS:SWE:TINT:RES RES20")  # Set the resolution to 20us
-
         self.write(f"SENS:SWE:TINT {sample_int},(@{channel})")
         self.write(f"SENS:SWE:POIN {sample_points},(@{channel})")
+        self.write(f"TRIG:ACQ:SOUR BUS,(@{channel})")
 
     def fetch(self, channel: int, what: str) -> Union[float, List[float]]:
         """
@@ -110,17 +118,24 @@ class KeysightPAN6700(inst.BasePowerSupply):
         Returns:
             float: The measured current value.
         """
+        channel = self._validate_channel(channel)
         # Set the channel to measure
-        self.write("INIT:IMM,(@{channel})")  # Start the measurement
+        self.write(f"INIT:ACQ (@{channel})")  # Start the measurement
+        time.sleep(0.5)  # Wait for the measurement to complete
+        self.write("*TRG")  # Trigger the measurement
         self.write("*WAI")  # Wait for the measurement to complete
-        samples = self.query(f"FETC:{what}?,(@{channel})")  # Fetch the measurement data
-        return mean(samples)  # Return the average of the measured samples
+        time.sleep(2)  # Wait for the measurement to complete. This is TINT and POIN dependent.
+        samples = self.query(f"FETC:{what}? (@{channel})")  # Fetch the measurement data
+        return samples  # Return the average of the measured samples
 
-    def fetch_current(self, channel: int) -> float:
+    def measure_current(self, channel: int) -> float:
         return self.fetch(channel, "CURR")
 
-    def fetch_rms_current(self, channel: int) -> float:
+    def measure_rms_current(self, channel: int) -> float:
         return self.fetch(channel, "CURR:ACDC")
 
-    def fetch_max_current(self, channel: int) -> float:
+    def measure_max_current(self, channel: int) -> float:
         return self.fetch(channel, "CURR:MAX")
+
+    def measure_min_current(self, channel: int) -> float:
+        return self.fetch(channel, "CURR:MIN")

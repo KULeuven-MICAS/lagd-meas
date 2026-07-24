@@ -5,6 +5,7 @@
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
 import yaml
+import time
 from pathlib import Path
 
 from sw.lib.lab_instruments import instrument as inst
@@ -37,6 +38,15 @@ def main():
         # Get the voltage for channel 2.
         voltage = smu.get_voltage("CH2")
         print(f"Voltage on CH2: {voltage} V")
+
+        smu.set_current_meter("CH2", auto_curr_range = 1,
+            sample_int = 5.12e-06, sample_points = 524288)  # Set current meter for channel 2
+        for i in range(5):
+            current = smu.measure_current("CH2")  # Measure current on channel 2
+            print(f"{i}: Current on CH2: {current} A")
+            time.sleep(1)  # Wait for 1 second before the next measurement
+        current = smu.measure_current("CH2")  # Measure current on channel 2
+        print(f"Current on CH2: {current} A")
 
         # Close the instrument connection.
         smu.close()
