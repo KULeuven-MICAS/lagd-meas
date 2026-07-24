@@ -10,7 +10,7 @@ from typing import List, Union
 
 from sw.lib.lab_instruments import instrument as inst
 
-class KeysightPAN6700(inst.BasePowerSupply):
+class KeysightPAN6700(inst.BasePowerSupply, verbose=True):
     """
     Class for the Keysight N6700 series power analyzer.
     It implements the specific methods for this instrument.
@@ -18,7 +18,7 @@ class KeysightPAN6700(inst.BasePowerSupply):
     info.args: dict: Additional arguments for the instrument. Expects a list of channels
 
     """
-    def __init__(self, info: inst.BaseInstrumentData):
+    def __init__(self, info: inst.BaseInstrumentData, verbose: bool = False):
         self._num_channels = 4
         self._channel_names = ["CH1", "CH2", "CH3", "CH4"]
         self._lookup_channel = {

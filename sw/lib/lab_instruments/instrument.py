@@ -41,9 +41,9 @@ class BaseInstrument:
     It defines the common interface and methods that all instruments should implement.
     :data: BaseInstrumentData: The data class containing the instrument's information.
     """
-    def __init__(self, data: BaseInstrumentData):
+    def __init__(self, data: BaseInstrumentData, verbose: bool = False):
         self.info = data
-        self._verbose = False
+        self._verbose = verbose
         self.tool = self._open_resource()
         self._init_instrument()
 
@@ -123,8 +123,8 @@ class BasePowerSupply(BaseInstrument):
     It defines the common interface and methods that all power supplies should implement.
     :data: BasePowerSupplyData: The data class containing the instrument's information.
     """
-    def __init__(self, data: BasePowerSupplyData):
-        super().__init__(data)
+    def __init__(self, data: BasePowerSupplyData, verbose: bool = False):
+        super().__init__(data, verbose=verbose)
         if not hasattr(self, '_num_channels'):
             raise NotImplementedError(
                 "Channel count not set. Please set _num_channels in the subclass.")

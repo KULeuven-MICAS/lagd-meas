@@ -27,9 +27,7 @@ def main():
 
     with iclab_session(parser.get_credentials()):
         # Create an instance of the KeysightPAN6700 class with the loaded configuration.
-        smu = KeysightPAN6700(inst.BasePowerSupplyData.from_mapping(config["power_analyzer_chip"]))
-
-        smu.set_verbose(True)
+        smu = KeysightPAN6700(inst.BasePowerSupplyData.from_mapping(config["power_analyzer_chip"]), verbose=True)
         # Example usage: Set voltage and current limit for channel 2.
         smu.set_voltage("CH2", 0.75)
         smu.set_current_limit("CH2", 1.0)
