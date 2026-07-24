@@ -6,19 +6,18 @@ from __init__ import toppath, current_dir
 from ising.api import get_hamiltonian_energy
 from save_model import store_run
 from mppi_experiment import mppi_experiment
-from send_chip import compile_data, send_chip
+from chip_communication import compile_data, send_chip
 from ising.stages.simulation_stage import Ans
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "-config-file", help="directory to yaml file for experiment.", type=str, default="MIMO_experiment/model_0"
+    "-config-file", help="directory to yaml file for experiment.", type=str, default="Maxcut_experiment/model_0"
 )
 parser.add_argument("--logging-level", help="level of logging. Defaults to INFO", default=logging.INFO)
 parser.add_argument(
-    "-simulate",
+    "--simulate",
     help="whether to simulate the data and compile or not simulate and send to chip",
-    default=True,
-    type=bool,
+    action=argparse.BooleanOptionalAction
 )
 parser.add_argument("--nb-cores", help="The amount of cores to use on chip", type=int, default=1)
 parser.add_argument("--interface", help="The interface to send the data with", type=str, default="uart")

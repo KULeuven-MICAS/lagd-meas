@@ -87,13 +87,14 @@ def store_results_logfile(logfile: Path, data_name: str, save_folder: Path, file
     save_path = save_folder / file_name
 
     if data_name == "energy" or data_name == "energy_best":
+        data = data[1:]
         new_data = np.zeros_like(data, dtype="<U32")
         for i in range(data.shape[0]):
             if data[i] != np.inf:
                 new_data[i] = np.binary_repr(round(data[i]), width=32)
-        if data.shape[0] < 513:
-            padding = np.full((513 - data.shape[0],), new_data[-1])
-            new_data = np.append(new_data, padding)
+        # if data.shape[0] < 513:
+        #     padding = np.full((513 - data.shape[0],), 0)
+        #     new_data = np.append(new_data, padding)
         with save_path.open("w") as f:
             np.savetxt(f, new_data, fmt="%32s", delimiter="")
         return
