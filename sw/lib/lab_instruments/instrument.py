@@ -72,23 +72,21 @@ class BaseInstrument:
         """Set the verbosity level for the instrument."""
         self._verbose = verbose
 
-    def write(self, command: str):
+    def write(self, command: str, check: bool = True):
         """ Write a command to the instrument."""
         if self._verbose:
             print(f"\t{self.info.name}: {command}")
         self.tool.write(command)
-        ret = self.tool.query("SYST:ERR?")
-        if "+0," not in ret:
-            raise ValueError(f'Instrument {self.info.name} error: {ret}')
+        if check:
+            ret = self.tool.query("SYST:ERR?")
+            if "+0," not in ret:
+                raise ValueError(f'Instrument {self.info.name} error: {ret}')
 
     def query(self, command: str):
         """ Query the instrument and return the response."""
         if self._verbose:
             print(f"\t{self.info.name}: {command}")
         val = self.tool.query(command)
-        ret = self.tool.query("SYST:ERR?")
-        if "+0," not in ret:
-            raise ValueError(f'Instrument {self.info.name} error: {ret}')
         return val
 
     def status(self):
