@@ -24,7 +24,7 @@ eigenvalue_start: False
 
 # Logging or not
 gen_logfile: True
-logfile_discrimination: None
+logfile_discrimination: "chip_experiment"
 
 #################################
 ## Solvers hyperparameters
