@@ -47,11 +47,24 @@ class KeysightPAN6700(inst.BasePowerSupply):
 
     def _init_instrument(self):
         print(f"Initializing {self.info.name}")
-        self.tool.write('*RST')  # Reset the instrument to default settings
+        self.write('*RST', check=False)  # Reset the instrument to default settings
         for ch in range(self._num_channels):
             self.write(f"SENS:FUNC:CURR OFF,(@{ch+1})")
             self.write(f"SENS:FUNC:VOLT OFF,(@{ch+1})")
         print(f"{self.info.name} initialized successfully.")
+
+    def _status_operating_condition(self, channel: int) -> int:
+        """
+        Get the operating condition status of the instrument.
+        Returns:
+            int: The operating condition status.
+        """
+        WTG = self._ret_to_int(self.query(f"STAT:OPER:COND? (@{channel})"))
+        # Check the 4th bit
+        if WTG & 0b1000:
+            return 1  # Instrument is ready
+        else:
+            return 0  # Instrument is not ready
 
     def close(self):
         for ch in range(self._num_channels):
@@ -105,9 +118,9 @@ class KeysightPAN6700(inst.BasePowerSupply):
                 "Auto current range is set to 0, no range selection supported.")
 
         self.write("SENS:SWE:TINT:RES RES20")  # Set the resolution to 20us
-        self.write(f"SENS:SWE:TINT {sample_int},(@{channel})")
-        self.write(f"SENS:SWE:POIN {sample_points},(@{channel})")
-        self.write(f"TRIG:ACQ:SOUR BUS,(@{channel})")
+        self.write(f"SENS:SWE:TINT {sample_int},(@{channel})")  # Set the integration time
+        self.write(f"SENS:SWE:POIN {sample_points},(@{channel})")  # Set the number of points
+        self.write(f"TRIG:ACQ:SOUR BUS,(@{channel})")  # Set the trigger source to bus
 
     def fetch(self, channel: int, what: str) -> Union[float, List[float]]:
         """
@@ -121,10 +134,10 @@ class KeysightPAN6700(inst.BasePowerSupply):
         channel = self._validate_channel(channel)
         # Set the channel to measure
         self.write(f"INIT:ACQ (@{channel})")  # Start the measurement
-        time.sleep(0.5)  # Wait for the measurement to complete
+        while self._status_operating_condition(channel) == 0:
+            time.sleep(0.1)  # Wait the instrument to be ready for measurement
         self.write("*TRG")  # Trigger the measurement
-        self.write("*WAI")  # Wait for the measurement to complete
-        time.sleep(2)  # Wait for the measurement to complete. This is TINT and POIN dependent.
+        self.query("*OPC?")  # Wait for the operation to complete
         samples = self.query(f"FETC:{what}? (@{channel})")  # Fetch the measurement data
         return samples  # Return the average of the measured samples
 
