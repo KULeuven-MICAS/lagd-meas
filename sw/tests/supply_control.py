@@ -4,6 +4,9 @@
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
+import logging
+import sys
+
 import yaml
 from pathlib import Path
 
@@ -11,14 +14,19 @@ from sw.lib.lab_instruments.drivers.keysight_psu_e36300 import KeysightPSUE36300
 from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 
+logger = logging.getLogger(__name__)
+
 PRJ_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTR_CFG_PATH = PRJ_ROOT/"sw"/"lib"/"lab_instruments"/"config"/"instruments.yaml"
 
 def main():
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
 
     parser = Parser()
     # Load the instrument configuration from a YAML file.
-    print(f"Loading instrument config from: {INSTR_CFG_PATH}")
+    logger.info(f"Loading instrument config from: {INSTR_CFG_PATH}")
 
     with INSTR_CFG_PATH.open(encoding="utf-8") as f:
         config = yaml.safe_load(f)
@@ -34,7 +42,7 @@ def main():
 
         # Get the voltage for channel 3.
         voltage = psu.get_voltage("CH3")
-        print(f"Voltage on CH3: {voltage} V")
+        logger.info(f"Voltage on CH3: {voltage} V")
 
         # Close the instrument connection.
         psu.close()

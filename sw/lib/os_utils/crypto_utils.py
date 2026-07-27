@@ -8,14 +8,18 @@
 #   using a master password.
 
 import os
-import yaml
+import logging
 import base64
+
+import yaml
 
 from pathlib import Path
 from getpass import getpass
 from dataclasses import dataclass
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+
+logger = logging.getLogger(__name__)
 
 # Parameters for scrypt
 SALT_SIZE = 16
@@ -102,6 +106,6 @@ def decrypt_keyfile(filename: str) -> Credentials:
     except ValueError as e:
         raise SystemExit("Incorrect master password.") from e
 
-    print("Successfully decrypted credentials.")
+    logger.info("Successfully decrypted credentials.")
     return Credentials(username=username, password=password)
 

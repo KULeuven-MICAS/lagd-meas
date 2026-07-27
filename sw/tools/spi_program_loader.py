@@ -29,9 +29,13 @@
 
 
 import argparse
+import logging
+import sys
 import time
 
 from sw.tools.elf_loader import parse_elf, bytes_to_words
+
+logger = logging.getLogger(__name__)
 
 # Cheshire register block base and SCRATCH offsets.
 # __base_regs = 0x0300_0000 (lagd-im sw/link/common.ldh); SCRATCH_n at +4*n
@@ -66,7 +70,7 @@ class SpiProgramLoader:
 
     def _log(self, msg):
         if self.verbose:
-            print("[spi-load] " + msg)
+            logger.info("[spi-load] %s", msg)
 
     def write_segment(self, addr, words):
         """Write a list of 32-bit words to consecutive addresses from `addr`.
@@ -172,6 +176,10 @@ def _first_mismatch(expected, got):
 
 def _main():
     """CLI: load (and optionally verify/run) an ELF onto the chip over SPI."""
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
+
     ap = argparse.ArgumentParser(description="Load an ELF onto the LAGD chip over SPI")
     ap.add_argument("elf", help="path to the .elf to load")
     ap.add_argument("--write-dev", default="/dev/xillybus_write_32")

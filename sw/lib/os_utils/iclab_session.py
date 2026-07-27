@@ -4,12 +4,15 @@
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
+import logging
 import threading
 import requests
 from contextlib import contextmanager
 from getpass import getpass
 
 from .crypto_utils import Credentials, decrypt_keyfile
+
+logger = logging.getLogger(__name__)
 
 ICLAB_BASE_URL = "https://securewww.esat.kuleuven.be/iclab"
 ICLAB_LANDING_URL = f"{ICLAB_BASE_URL}/"
@@ -107,6 +110,6 @@ def get_credentials_from_keyfile(keyfile_path: str) -> Credentials:
         try:
             credentials = decrypt_keyfile(keyfile_path)
         except Exception as e:
-            print(f"Error loading credentials: {e}")
+            logger.error(f"Error loading credentials: {e}")
             raise SystemExit("Failed to load credentials from keyfile.")
     return credentials
