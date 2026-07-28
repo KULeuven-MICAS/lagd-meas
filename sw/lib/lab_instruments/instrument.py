@@ -89,7 +89,7 @@ class BaseInstrument:
     def write(self, command: str, check: bool = True):
         """ Write a command to the instrument."""
         if self._verbose:
-            print(f"\t{self.info.name}: {command}")
+            logger.info(f"\t{self.info.name}: {command}")
         self.tool.write(command)
         if check:
             ret = self.tool.query("SYST:ERR?")
@@ -99,7 +99,7 @@ class BaseInstrument:
     def query(self, command: str):
         """ Query the instrument and return the response."""
         if self._verbose:
-            print(f"\t{self.info.name}: {command}")
+            logger.info(f"\t{self.info.name}: {command}")
         val = self.tool.query(command)
         return val
 
