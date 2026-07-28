@@ -4,6 +4,7 @@
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
+import re
 from dataclasses import dataclass, field
 from typing import List, Union
 
@@ -70,19 +71,13 @@ class BaseInstrument:
 
     @staticmethod
     def _ret_to_int(ret: str) -> int:
-        """Convert the instrument return value to an integer. + followed by an integer."""
-        plus_pos = ret.find("+")
-        if plus_pos != -1:
-            # Scan until digits are found after the plus sign
-            digit = ""
-            for i in range(plus_pos + 1, len(ret)):
-                if ret[i].isdigit():
-                    digit += ret[i]
-                else:
-                    break  # Stop if a non-digit character is found after the digits
-            if digit:
-                return int(digit)
-        raise ValueError(f"_ret_to_int failed: {ret}")
+        """Convert a response like '+12' or '-3' into an integer."""
+        # match requires string at the beginning, might change with search
+        match = re.match(r"[+-]?\d+", ret)
+        if match is None:
+            raise ValueError(f"_ret_to_int failed: {ret}")
+
+        return int(match.group(0)) #group(0) returns the entire match
 
     def set_verbose(self, verbose: bool):
         """Set the verbosity level for the instrument."""
