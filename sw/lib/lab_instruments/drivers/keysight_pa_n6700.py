@@ -6,9 +6,12 @@
 
 import pyvisa
 import time
+import logging
 from typing import List, Union
 
 from sw.lib.lab_instruments import instrument as inst
+
+logger = logging.getLogger(__name__)
 
 class KeysightPAN6700(inst.BasePowerSupply):
     """
@@ -42,16 +45,16 @@ class KeysightPAN6700(inst.BasePowerSupply):
         Open the resource for the Keysight N6700 series power analyzer.
         """
         rm = pyvisa.ResourceManager()
-        print(f"Reaching {self.info.name} at: TCPIP::{self.info.IP}::inst0::INSTR")
+        logger.info(f"Reaching {self.info.name} at: TCPIP::{self.info.IP}::inst0::INSTR")
         return rm.open_resource(f"TCPIP::{self.info.IP}::inst0::INSTR")
 
     def _init_instrument(self):
-        print(f"Initializing {self.info.name}")
+        logger.info(f"Initializing {self.info.name}")
         self.write('*RST', check=False)  # Reset the instrument to default settings
         for ch in range(self._num_channels):
             self.write(f"SENS:FUNC:CURR OFF,(@{ch+1})")
             self.write(f"SENS:FUNC:VOLT OFF,(@{ch+1})")
-        print(f"{self.info.name} initialized successfully.")
+        logger.info(f"{self.info.name} initialized successfully.")
 
     def _status_operating_condition(self, channel: int) -> int:
         """
@@ -69,6 +72,7 @@ class KeysightPAN6700(inst.BasePowerSupply):
     def close(self):
         for ch in range(self._num_channels):
             if self._channel_state[ch]:
+                logger.info(f"Turning off channel {ch+1}")
                 self.write(f'OUTP OFF,(@{ch+1})')  # Turn off the output,
 
     def get_voltage(self, channel: Union[str, int]) -> float:
@@ -114,7 +118,7 @@ class KeysightPAN6700(inst.BasePowerSupply):
         # Setting the current range improves the measurement accuracy.
         # Automatic range should be good enough.
         if not auto_curr_range:
-            raise Warning(
+            logger.warning(
                 "Auto current range is set to 0, no range selection supported.")
 
         self.write("SENS:SWE:TINT:RES RES20")  # Set the resolution to 20us
