@@ -94,13 +94,13 @@ class KeysightPAN6700(inst.BasePowerSupply):
             self.write(f"OUTP ON,(@{channel})")
             self._channel_state[channel - 1] = True
 
-    def set_current_meter(self, channel: int, auto_curr_range: int = 0,
+    def set_current_meter(self, channel: int, auto_curr_range: bool = True,
         sample_int: float = 1.0, sample_points: int = 100) :
         """
         Integrate the current over a specified duration for a given channel.
         Args:
             channel (int): The channel number to measure.
-            auto_curr_range (int): The auto current range to use.
+            auto_curr_range (bool): Whether to use auto current range.
             sample_int (float): The sampling interval. Default is 1.0.
             sample_points (int): The number of sample points. Default is 100.
         Returns:
@@ -113,7 +113,7 @@ class KeysightPAN6700(inst.BasePowerSupply):
 
         # Setting the current range improves the measurement accuracy.
         # Automatic range should be good enough.
-        if auto_curr_range == 0:
+        if not auto_curr_range:
             raise Warning(
                 "Auto current range is set to 0, no range selection supported.")
 

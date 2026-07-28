@@ -190,9 +190,9 @@ class BasePowerSupply(BaseInstrument):
 
     def turn_on_channels(self, channels: Union[int, str, List[Union[int, str]]]):
         """
-        Turn on the specified channel of the Keysight N6700 series power analyzer.
-        channel: str: The channel to turn on (e.g., '1', '2', '3', '4').
-        If a list is provided, it will turn on all specified channels.
+        Turn on one or more output channels.
+        Args:
+             channels: A single channel (int or name) or a list of channels to enable.
         """
         if isinstance(channels, (int, str)):
             channels = [channels]

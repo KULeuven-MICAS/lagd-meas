@@ -27,7 +27,8 @@ def main():
 
     with iclab_session(parser.get_credentials()):
         # Create an instance of the KeysightPAN6700 class with the loaded configuration.
-        smu = KeysightPAN6700(inst.BasePowerSupplyData.from_mapping(config["power_analyzer_chip"]), verbose=True)
+        smu = KeysightPAN6700(
+            inst.BasePowerSupplyData.from_mapping(config["power_analyzer_chip"]), verbose=True)
         # Example usage: Set voltage and current limit for channel 2.
         smu.set_voltage("CH2", 0.75)
         smu.set_current_limit("CH2", 1.0)
@@ -37,8 +38,8 @@ def main():
         voltage = smu.get_voltage("CH2")
         print(f"Voltage on CH2: {voltage} V")
 
-        smu.set_current_meter("CH2", auto_curr_range = 1,
-            sample_int = 5.12e-06, sample_points = 524288)  # Set current meter for channel 2
+        smu.set_current_meter("CH2", auto_curr_range=1,
+            sample_int=5.12e-06, sample_points=524288)  # Set current meter for channel 2
         # Repeat some times to validate consistency of the measurement.
         for i in range(5):
             current = smu.measure_current("CH2")  # Measure current on channel 2

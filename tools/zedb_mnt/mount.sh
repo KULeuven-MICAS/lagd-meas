@@ -18,15 +18,12 @@ for i in "$@"; do
     case $i in
         --user=*)
             UNAME="${i#*=}"
-            shift
             ;;
         --unmount)
             UNMNT=1
-            shift
             ;;
         *)
             echo "Unknown option: $i"
-            exit 1
             ;;
     esac
 done
@@ -46,15 +43,4 @@ fi
 
 mkdir -p ${mnt_pnt[$UNAME]}
 
-sshfs ${UNAME}-${server[$UNAME]}:${mnt_path[$UNAME]} ${mnt_pnt[$UNAME]} -o IdentityFile=${key[$UNAME]} -o StrictHostKeyChecking=no 
-
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✅ Success! Your files are linked successfully."
-    echo "📍 Local Target Folder: ~/$LOCAL_DIR"
-    echo "=================================================="
-else
-    echo ""
-    echo "❌ Mounting failed. Please verify your password or reset the folder."
-    echo "=================================================="
-fi
+sshfs ${UNAME}-${server[$UNAME]}:${mnt_path[$UNAME]} ${mnt_pnt[$UNAME]} -o IdentityFile=${key[$UNAME]} -o StrictHostKeyChecking=no
