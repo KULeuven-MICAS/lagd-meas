@@ -181,24 +181,24 @@ set_property -dict "PACKAGE_PIN AB2 IOSTANDARD LVCMOS33" [get_ports "audio_mclk"
 ##      FMC pin    / LA32_N  (A22)  # dac_csb_o
 ##      FMC pin    / LA30_N  (B15)  # dac_shdn_o
 ##      FMC pin    / LA31_N  (B17)  # dac_rstn_o
-##      FMC pin H7  / LA02_P  (P17) # pad_spi_sck_i
-##      FMC pin H8  / LA02_N  (P18) # pad_spi_cs_i
-##      FMC pin H10 / LA04_P  (M21) # pad_spi_sd_0_io
-##      FMC pin H11 / LA04_N  (M22) # pad_spi_sd_1_io
-##      FMC pin H13 / LA07_P  (T16) # pad_spi_sd_2_io
-##      FMC pin H14 / LA07_N  (T17) # pad_spi_sd_3_io
-##      FMC pin    / LA27_P  (E21)  # pad_clk_i
-##      FMC pin    / LA25_P  (D22)  # pad_rst_ni
-##      FMC pin C14 / LA10_P    (R19) # pad_rtc_i (forwarded clock out; regular pin OK)
-## PLL serial configuration (driven by pll_controller; see pll_controller.sv) (pcb <- fpga)
-##      FMC pin D11 / LA05_P    (J18) # pad_clk_sel_i          <- pll_clk_sel_o
-##      FMC pin D12 / LA05_N    (K18) # pad_pll_strb_i         <- pll_data_strb_o
-##      FMC pin C10 / LA06_P    (L21) # pad_pll_data_i         <- pll_data_o
-##      FMC pin C11 / LA06_N    (L22) # pad_pll_data_o <= pll_data_i
-##      FMC pin G12 / LA08_P    (J21) # pad_pll_cfg_vld_strb_i <- pll_cfg_vld_strb_o
+##      FMC pin H7  / LA02_P  (P17) # chip_sck_o     (chip pad: pad_spi_sck_i)
+##      FMC pin H8  / LA02_N  (P18) # chip_csb_o     (chip pad: pad_spi_cs_i)
+##      FMC pin H10 / LA04_P  (M21) # chip_sd_io[0]  (chip pad: pad_spi_sd_0_io)
+##      FMC pin H11 / LA04_N  (M22) # chip_sd_io[1]  (chip pad: pad_spi_sd_1_io)
+##      FMC pin H13 / LA07_P  (T16) # chip_sd_io[2]  (chip pad: pad_spi_sd_2_io)
+##      FMC pin H14 / LA07_N  (T17) # chip_sd_io[3]  (chip pad: pad_spi_sd_3_io)
+##      FMC pin    / LA27_P  (E21)  # clk_chip_o     (chip pad: pad_clk_i)
+##      FMC pin    / LA25_P  (D22)  # chip_arst_no   (chip pad: pad_rst_ni)
+##      FMC pin C14 / LA10_P    (R19) # chip_rtc_o   (chip pad: pad_rtc_i) (forwarded clock out; regular pin OK)
+## PLL serial configuration (driven by pll_controller; see pll_controller.sv)
+##      FMC pin D11 / LA05_P    (J18) # pll_clk_sel_o (chip pad: pad_clk_sel_i)
+##      FMC pin D12 / LA05_N    (K18) # pll_data_strb_o (chip pad: pad_pll_strb_i)
+##      FMC pin C10 / LA06_P    (L21) # pll_data_o (chip pad: pad_pll_data_i)
+##      FMC pin C11 / LA06_N    (L22) # pll_data_i (chip pad: pad_pll_data_o)
+##      FMC pin G12 / LA08_P    (J21) # pll_cfg_vld_strb_o (chip pad: pad_pll_cfg_vld_strb_i)
 ## BOOT MODE
-##      FMC pin D14 / LA09_P    (R20) # pad_boot_mode_0_i
-##      FMC pin D15 / LA09_N    (R21) # pad_boot_mode_1_i
+##      FMC pin D14 / LA09_P    (R20) # chip_bootmode_o[0]  (chip pad: pad_boot_mode_0_i)
+##      FMC pin D15 / LA09_N    (R21) # chip_bootmode_o[1]  (chip pad: pad_boot_mode_1_i)
 ## HV9308 32-channel serial-to-parallel converter (current-mirror bias resistors)
 ## Driven by perip_controller; LVCMOS18 inherited from the bank-34 blanket rule.
 ##      FMC LA11_P (N17) # s2p_din_o
@@ -207,7 +207,7 @@ set_property -dict "PACKAGE_PIN AB2 IOSTANDARD LVCMOS33" [get_ports "audio_mclk"
 ##      FMC LA12_N (P21) # s2p_oe_o
 ##      FMC LA13_P (L17) # s2p_dout_i (HV9308 cascade Data Out -> FPGA, for readback)
 ## PLL lock pin
-##      FMC LA10_N (T19) # pad_pll_lock_i
+##      FMC LA10_N (T19) # pll_lock_i  (chip pad: pad_pll_lock_o)
 ## DAC
 set_property PACKAGE_PIN B22 [get_ports dac_sclk_o]
 set_property PACKAGE_PIN A21 [get_ports dac_sdin_o]

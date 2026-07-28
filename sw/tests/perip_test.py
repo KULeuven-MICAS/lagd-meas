@@ -29,8 +29,7 @@ import time
 from sw.lib.perip_driver import PeripDriver
 from sw.lib.perip_command_api import OP_WRITEBACK, make_command, cmd_dac_write_loopback
 
-# Configure logging: include timestamp and level
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
 
 # Device files for the periphery (DAC) write/read ports.
 WRITE_DEV = '/dev/xillybus_write_32_2'
@@ -60,15 +59,15 @@ def test_writeback(payload=0xADBEE):
     command = make_command(OP_WRITEBACK, payload)
     received = perip.writeback(payload)
     if received is None:
-        logging.error('FAIL: Data sent: 0x%08X, Data received: None', command)
+        logger.error('FAIL: Data sent: 0x%08X, Data received: None', command)
         return False
 
     if received == command:
-        logging.info('PASS: Data sent: 0x%08X, Data received: 0x%08X', command, received)
-        logging.info('The DAC controller is alive. Proceeding with the next ...')
+        logger.info('PASS: Data sent: 0x%08X, Data received: 0x%08X', command, received)
+        logger.info('The DAC controller is alive. Proceeding with the next ...')
         return True
     else:
-        logging.error('FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', command, received)
+        logger.error('FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', command, received)
         return False
 
 
@@ -83,14 +82,14 @@ def test_verify_dac_write(addr=3, data=0x5A, rstn=1, shdn=1):
     expected = cmd_dac_write_loopback(addr, data, rstn, shdn)[0]
     received = perip.verify_dac_write(addr, data, rstn, shdn)
     if received is None:
-        logging.error('FAIL: Data sent: 0x%08X, Data received: None', expected)
+        logger.error('FAIL: Data sent: 0x%08X, Data received: None', expected)
         return False
 
     if received == expected:
-        logging.info('PASS: verify_dac_write addr=%d data=0x%02X echoed 0x%08X', addr, data, received)
+        logger.info('PASS: verify_dac_write addr=%d data=0x%02X echoed 0x%08X', addr, data, received)
         return True
     else:
-        logging.error('FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', expected, received)
+        logger.error('FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', expected, received)
         return False
 
 
@@ -103,10 +102,10 @@ def test_s2p(value=0xDEADBEEF):
     """
     perip.s2p_output_enable(True)
     if perip.s2p_verify(value):
-        logging.info('PASS: s2p_verify 0x%08X (HV9308 captured it)', value)
+        logger.info('PASS: s2p_verify 0x%08X (HV9308 captured it)', value)
         return True
     rb = perip.s2p_readback()
-    logging.error('FAIL: s2p wrote 0x%08X, read back %s',
+    logger.error('FAIL: s2p wrote 0x%08X, read back %s',
                   value, f'0x{rb:08X}' if rb is not None else 'None')
     return False
 
@@ -119,12 +118,15 @@ def example_with_driver():
         # Set channel 1 to 0.6 V; set channel 2 by raw code.
         code = perip.set_voltage(channel=1, volts=0.6, vref=VREF)
         perip.set_code(channel=2, code=0x40)
-        logging.info(f'ch1 -> code 0x{code:02X} ({perip.get_voltage(1, VREF):.3f} V), '
+        logger.info(f'ch1 -> code 0x{code:02X} ({perip.get_voltage(1, VREF):.3f} V), '
                  f'ch2 -> 0x{perip.get_code(2):02X} ({perip.get_voltage(2, VREF):.3f} V)')
     # The ports are closed automatically on exiting the `with` block above.
 
 
 def main():
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
     open_ports()
     ##################################
     ## DAC configuration
@@ -136,7 +138,7 @@ def main():
     # loopback-write check: a real DAC write whose command is echoed back
     for i in range(10000):
         test_verify_dac_write(addr=3, data=0x5A)
-        print(i)
+        logger.info("iteration %d", i)
     ##################################
     ## Serial2Parallel configuration
     ##################################

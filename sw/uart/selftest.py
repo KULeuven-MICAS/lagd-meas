@@ -17,9 +17,10 @@
 #   - EXEC carried the correct entry point,
 #   - the driver exited 0 on EOC return code 0.
 #
-# Usage:  source ../../env.sh                  # repo root on PYTHONPATH; once per shell
-#         python3 selftest.py [path/to/file.elf]
+# Usage:  source env.sh                  # repo root on PYTHONPATH; once per shell
+#         python3 sw/uart/selftest.py [path/to/file.elf]
 
+import logging
 import os
 import pty
 import struct
@@ -30,6 +31,8 @@ import tty
 from pathlib import Path
 
 from sw.uart.send_uart import parse_elf
+
+logger = logging.getLogger(__name__)
 
 ACK, EOT, EOC = 0x06, 0x04, 0x14
 CMD_READ, CMD_WRITE, CMD_EXEC = 0x11, 0x12, 0x13
@@ -87,6 +90,10 @@ def mock_chip(fd, mem, result):
 
 
 def main():
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
+
     elf = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_ELF
     entry, segs = parse_elf(elf)
 
@@ -99,7 +106,7 @@ def main():
     t = threading.Thread(target=mock_chip, args=(master, mem, result), daemon=True)
     t.start()
 
-    print(f"=== self-test: running send_uart.py against mock chip on {dev} ===")
+    logger.info("=== self-test: running send_uart.py against mock chip on %s ===", dev)
     try:
         proc = subprocess.run(
             [sys.executable, str(HERE / "send_uart.py"), str(elf),
@@ -107,7 +114,7 @@ def main():
             timeout=30)
         rc = proc.returncode
     except subprocess.TimeoutExpired:
-        print("FAIL: driver timed out")
+        logger.error("FAIL: driver timed out")
         return 1
     finally:
         t.join(timeout=5)
@@ -128,16 +135,16 @@ def main():
                 break
         nbytes += len(blob)
 
-    print("--- checks ---")
-    print(f"  driver exit code : {rc}")
-    print(f"  bytes received   : {len(mem)} / {nbytes}")
-    print(f"  exec entry       : 0x{result.get('entry', 0):016x}")
+    logger.info("--- checks ---")
+    logger.info(f"  driver exit code : {rc}")
+    logger.info(f"  bytes received   : {len(mem)} / {nbytes}")
+    logger.info(f"  exec entry       : 0x{result.get('entry', 0):016x}")
     if fails:
-        print("RESULT: FAIL")
+        logger.error("RESULT: FAIL")
         for f in fails:
-            print("  - " + f)
+            logger.error("  - %s", f)
         return 1
-    print("RESULT: PASS  (handshake, WRITE, READ-back verify, EXEC all OK)")
+    logger.info("RESULT: PASS  (handshake, WRITE, READ-back verify, EXEC all OK)")
     return 0
 
 

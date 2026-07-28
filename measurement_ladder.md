@@ -21,7 +21,7 @@ The measurement consists of the functional test and the performance measurement.
 
 ### **Lab-Instrument Test**
 
-- 🔳 Power source (the voltage can be configured remotely)
+- ✅ Power source (the voltage can be configured remotely)
 
 ### **On-PCB Test**
 
@@ -51,13 +51,19 @@ python sw/tests/pll_test.py
 
 ##### UART (FT4232H UART channel, /dev/ttyUSB2)
 
-- 🔳 FT4232H' UART channel and Chip UART (slave) interface work
+- 🔳 (optional) FT4232H' UART channel and host serial path work — no chip involved
 
 ```[bash]
-python sw/testcases/uart/01_loopback/loopback.py --device /dev/ttyUSB2
+python sw/testcases/uart/00_loopback/loopback.py --device /dev/ttyUSB2
 ```
 
-- 🔳 Chip is clocked and the bootrom works
+- 🔳 Find the chip's UART and confirm the bootrom answers the 0x06 handshake
+
+```[bash]
+./sw/testcases/uart/01_portsweep/portsweep.py --scan
+```
+
+- 🔳 Chip is clocked and the bootrom works (via the real loader)
 
 ```[bash]
 ./sw/testcases/uart/02_handshake/run.sh

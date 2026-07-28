@@ -3,10 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import logging
 from pathlib import Path
 
 from .iclab_session import prompt_for_credentials, get_credentials_from_keyfile
 from .crypto_utils import Credentials
+
+logger = logging.getLogger(__name__)
 
 class BaseParser:
     def __init__(self, args=None):
@@ -48,7 +51,7 @@ class Parser(BaseParser):
     def check_args(self):
         # Check if the keyfile argument is provided and if the file exists
         if self.args.keyfile is not None and not Path.is_file(self.args.keyfile):
-            print(f'File {self.args.keyfile} not found')
+            logger.error(f'File {self.args.keyfile} not found')
             raise FileNotFoundError
 
     def reduce_args(self):

@@ -90,6 +90,7 @@ Same end goal as `testcases/jtag/03_load_run` (`sw/jtag/run_elf.sh`), different 
 
 ## Where this sits in the UART ladder
 
-1. `lagd-meas/testcases/uart/01_loopback/loopback.py` → host serial path OK. *(no chip)*
-2. `lagd-meas/testcases/uart/02_handshake/run.sh` → bootrom reachable (ACK↔ACK). *(chip powered, clocked, passive boot)*
+0. `lagd-meas/testcases/uart/00_loopback/loopback.py` → host serial path OK. *(optional, no chip)*
+1. `lagd-meas/testcases/uart/01_portsweep/portsweep.py` → chip's UART found, bootrom answers. *(chip powered, clocked, passive boot)*
+2. `lagd-meas/testcases/uart/02_handshake/run.sh` → bootrom reachable via the real loader (ACK↔ACK).
 3. **`lagd-meas/testcases/uart/03_load_run/run.sh`** (this test) → load & run helloworld; also `--no-exec --verify` for a memory check. *(full UART data path)*

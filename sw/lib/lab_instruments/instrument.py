@@ -4,9 +4,12 @@
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import List, Union
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class BaseInstrumentData:
@@ -103,7 +106,7 @@ class BaseInstrument:
     def status(self):
         """ Get the status of the instrument."""
         idn = self.tool.query('*IDN?').strip()
-        print(f"Instrument {self.info.name} ID: {idn}")
+        logger.info(f"Instrument {self.info.name} ID: {idn}")
         return idn
 
     def close(self):

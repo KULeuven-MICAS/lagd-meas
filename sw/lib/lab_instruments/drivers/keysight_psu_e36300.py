@@ -4,10 +4,14 @@
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
+import logging
+
 import pyvisa
 from sw.lib.lab_instruments import instrument as inst
 
-class KeysightPSUE36300(inst.BasePowerSupply):
+logger = logging.getLogger(__name__)
+
+class KeysightPSUE36300(inst.BaseInstrument):
     """
     Class for the Keysight E36300 series power supply.
     It implements the specific methods for this instrument.
@@ -32,7 +36,7 @@ class KeysightPSUE36300(inst.BasePowerSupply):
         Open the resource for the Keysight E36300 series power supply.
         """
         rm = pyvisa.ResourceManager()
-        print(f"Reaching {self.info.name} at: TCPIP::{self.info.IP}::inst0::INSTR")
+        logger.info(f"Reaching {self.info.name} at: TCPIP::{self.info.IP}::inst0::INSTR")
         return rm.open_resource(f"TCPIP::{self.info.IP}::inst0::INSTR")
 
     def _init_instrument(self):
