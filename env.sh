@@ -27,3 +27,5 @@ esac
 
 echo "repo root on PYTHONPATH -> $_repo_root"
 unset _repo_root
+
+source /opt/pyvisa-env/bin/activate
