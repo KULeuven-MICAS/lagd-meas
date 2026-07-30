@@ -100,7 +100,7 @@ def store_results_logfile(logfile: Path, data_name: str, save_folder: Path, file
         with save_path.open("w") as f:
             np.savetxt(f, new_data, fmt="%32s", delimiter="")
         return
-    elif data_name == "state_in":
+    elif data_name in ["state_in", "state_out"]:
         new_data = np.where(data <= 0, 0, 1)
     else:
         new_data = data
