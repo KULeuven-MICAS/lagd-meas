@@ -71,11 +71,11 @@ sshfs -o ro,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,port=${PORT} 
 # 6. Verify success
 if [ $? -eq 0 ]; then
     echo ""
-    echo "✅ Success! Your files are linked successfully (read-only)."
-    echo "📍 Local Target Folder: $LOCAL_DIR"
+    echo "<E2><9C><85> Success! Your files are linked successfully (read-only)."
+    echo "<F0><9F><93><8D> Local Target Folder: $LOCAL_DIR"
     echo "=================================================="
 else
     echo ""
-    echo "❌ Mounting failed. Please verify your password or reset the folder."
+    echo "<E2><9D><8C> Mounting failed. Please verify your password or reset the folder."
     echo "=================================================="
 fi
