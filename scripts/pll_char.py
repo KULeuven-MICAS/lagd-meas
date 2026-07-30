@@ -35,15 +35,23 @@ def main():
 
     with iclab_session(parser.get_credentials()):
         try:
+            # Connecting to the instrument
             psu = KeysightPSUE36300(
                 instrument.BasePowerSupplyData.from_mapping(configs["power_supply_pcb"]),
                 verbose=parser.get_verbose())
-            # Settings should be specified in the YAML config file
-            psu.set_channels(["CH1", "CH2", "CH3"]) # DEBT - function doesn't exist
 
             pll = PllDriver(ZEDB_CFGS["WRITE_DEV"], ZEDB_CFGS["READ_DEV"])
 
+            # Automatically set all channels based on the instrument info in YML cofig file.
+            # This is equivalent to:
+            #    psu.set_channels(["CH1", "CH2", "CH3"])
+            psu.autoset()
+
+            # Turn on the channels with a delay of 0.5 seconds between each channel.
+            # Order matters! This is equivalent to:
+            #    psu.turn_on(delay=0.5) if priority is set in the YML config file.
             psu.turn_on_channels(["CH1", "CH2", "CH3"], delay=0.5)
+
             # Operations
             if parser.interactive:
                 logging.info("Interactive mode: waiting for user input to proceed...")
@@ -52,12 +60,11 @@ def main():
                 logging.info("Non-interactive mode: proceeding with operations...")
                 pll.reset()  # Reset the PLL to default configuration
                 pll.load_readback(CFGS["pll_config"])  # Load the PLL configuration
+                _ = input("Setup complete. Press Enter to shut down...")  # Wait for user input before proceeding
 
-
-            # Order is important
-            psu.turn_off()  # DEBT - function doesn't exist
+            psu.close()  # Close the PSU connection
         except Exception as e:
             # Ensure all secutity actions are taken in case of an error
 
-            psu.turn_off()  # Ensure PSU is turned off in case of error
+            psu.close()  # Ensure PSU is turned off in case of error
             logging.error(f"Error occurred: {e}")

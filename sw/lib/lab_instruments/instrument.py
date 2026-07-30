@@ -200,6 +200,11 @@ class BasePowerSupply(BaseInstrument):
             else:
                 self.set_channel(channel)
 
+    def autoset(self):
+        """Automatically set all channels based on the instrument info."""
+        for i, channel_info in enumerate(self.info.channels):
+            self.set_channel(i + 1, channel_info)  # Channels are 1-indexed
+
     def get_voltage(self, channel: Union[int, str]):
         channel = self._validate_channel(channel)
         self._select_channel(channel)
@@ -209,6 +214,37 @@ class BasePowerSupply(BaseInstrument):
         channel = self._validate_channel(channel)
         self._select_channel(channel)
         return float(self.query('MEAS:CURR?'))
+
+    def _turn_channel(self, channel: Union[int, str], state: bool, delay: float = 0.0):
+        channel = self._validate_channel(channel)
+        self._select_channel(channel)
+        self.write(f'OUTP {"ON" if state else "OFF"}')
+        self._channel_state[channel - 1] = state  # Update the channel state
+        if delay > 0:
+            time.sleep(delay)
+
+    def _turn(self, state: bool, delay: float = 0.0):
+        """
+        Turn on or off all channels.
+        Args:
+             state: True to turn on, False to turn off.
+             delay: The delay (in seconds) between turning on each channel.
+        """
+        # Sort channels indexes based on their priority if available
+        sorted_channels = sorted(
+            self.info.channels,
+            key=lambda ch: ch.get('priority', float('inf'))  # Default to inf if no priority
+        )
+        for ch in sorted_channels:
+            self._turn_channel(ch['name'], state, delay)
+
+    def turn_on(self, delay: float = 0.0):
+        """Turn on all channels."""
+        self._turn(True, delay)
+
+    def turn_off(self):
+        """Turn off all channels."""
+        self._turn(False)
 
     def turn_on_channels(self, channels: Union[int, str, List[Union[int, str]]], delay: float = 0.0):
         """
@@ -223,19 +259,11 @@ class BasePowerSupply(BaseInstrument):
             raise TypeError(f"Unsupported channels container type: {type(channels).__name__}")
 
         for channel in channels:
-            channel = self._validate_channel(channel)
-            self._select_channel(channel)
-            self.write('OUTP ON')  # Turn on the output for the selected channel
-            if delay > 0:
-                time.sleep(delay)
-            self._channel_state[channel-1] = True  # Mark the channel as on
+            self._turn_channel(channel, True, delay)
 
     def _close(self):
         """
         Close the resource for the instrument.
         This method should be implemented by the specific instrument class.
         """
-        for ch in range(self._num_channels):
-            if self._channel_state[ch]:
-                self._select_channel(ch+1)
-                self.write('OUTP OFF')  # Turn off the output
+        self.turn_off()  # Ensure all channels are turned off before closing
