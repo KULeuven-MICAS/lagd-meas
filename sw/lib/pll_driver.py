@@ -22,7 +22,7 @@
 # bring_up() does 1-3 (waiting for lock, only switching once locked).
 
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from sw.lib.port_driver import PortDriver
 from sw.lib.pll_command_api import (
@@ -122,6 +122,16 @@ class PllDriver(PortDriver):
         cfg.update(overrides)
         return self.load_cfg(**cfg)
 
+    def load_readback(self, configs: Union[int, Dict[str, int]]) -> Dict[str, int]:
+        """ Loads new a new configuration while reading the previouos one."""
+        word = self.readback(check=True)
+        if isinstance(configs, int):
+            self.load(configs)
+        else:
+            self.load_cfg(**configs)
+        self.set_cfg(configs)
+        return unpack_pll_cfg(word)
+
     def verify_load(self, word: int) -> Optional[int]:
         """LOAD_LOOPBACK: commit the config AND read the 6 echoed payload bytes.
 
@@ -145,7 +155,7 @@ class PllDriver(PortDriver):
         self._send_bytes(cmd_reset())
         self._cfg = rst_pll_cfg()
 
-    def readback(self) -> Optional[int]:
+    def readback(self, check: bool = False) -> Optional[int]:
         """READBACK: scan the shallow register out of the PLL's data_o and return it.
 
         The controller shifts the 47-bit shallow register out through data_o,
@@ -161,6 +171,10 @@ class PllDriver(PortDriver):
         self._flush_read()
         self._send_bytes(cmd_readback())
         payload = self.read_bytes(CFG_BYTES)
+        if check:
+            read_cfg = unpack_pll_cfg(join_le(payload))
+            if self._cfg != read_cfg:
+                raise RuntimeError(f"readback mismatch: expected {self._cfg:#x}, got {read_cfg:#x}")
         return None if payload is None else join_le(payload)
 
     def verify(self, word: int) -> bool:
@@ -242,6 +256,13 @@ class PllDriver(PortDriver):
         if switch and (locked or not require_lock):
             self.select_pll()
         return locked
+
+    def set_cfg(self, configs: Union[int, Dict[str, int]]) -> None:
+        """Update the host-side cache of the last config written (for readback checks)."""
+        if isinstance(configs, int):
+            self._cfg = configs & ((1 << 47) - 1)
+        else:
+            self._cfg = pack_pll_cfg(**configs)
 
     def get_cfg(self) -> Optional[int]:
         """Last config word written (host-side cache; None if never written)."""
