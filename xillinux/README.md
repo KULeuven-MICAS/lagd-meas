@@ -88,14 +88,9 @@ The FPGA bitstream `xillydemo.bit` should be placed under this mounted folder (`
 
 Mounts a remote server directory onto the local FPGA filesystem over `sshfs`, so that the FPGA can access files hosted on other servers. It first opens an SSH tunnel through the campus gateway and then mounts the remote path through that tunnel.
 
-Before running it, edit the configuration block at the top of the script to match your setup:
+Before running it, edit the configuration block at the top of the script to match your setup.
 
-- `PORT` — the local port used for the SSH tunnel.
-- `UNAME` — your username on the campus SSH gateway / remote server.
-- `REMOTE_PATH` — the directory on the remote server you want to access.
-- `LOCAL_DIR` — the local directory on the FPGA where the remote files are mounted.
-
-You will be prompted for your server password (once to open the tunnel, once to mount).
+To kill a mount, please run `fusermount -u /PATH/ON/LOCAL/FPGA/`.
 
 ### `report_ip.sh`
 
