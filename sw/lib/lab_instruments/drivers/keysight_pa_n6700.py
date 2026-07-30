@@ -23,8 +23,8 @@ class KeysightPAN6700(inst.BasePowerSupply):
     """
     def __init__(self, info: inst.BaseInstrumentData, verbose: bool = False):
         self._num_channels = 4
-        self._channel_names = ["CH1", "CH2", "CH3", "CH4"]
-        self._lookup_channel = {
+        self._channel_tags = ["CH1", "CH2", "CH3", "CH4"]
+        self._lookup_channel_tags = {
             "CH1": 1,
             "CH2": 2,
             "CH3": 3,

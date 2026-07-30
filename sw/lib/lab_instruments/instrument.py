@@ -130,14 +130,22 @@ class BasePowerSupply(BaseInstrument):
         self._selected_channel = None
         # Track the state of each channel (on/off)
         self._channel_state = [False] * self._num_channels
+        self._build_channel_lookup()  # Build the channel lookup dictionary
+
+    def _build_channel_lookup(self):
+        """Build a lookup dictionary for channel names to indices."""
+        self._lookup_channel_names = {ch['name']: idx + 1 for idx, ch in enumerate(self.info.channels)}
+        self._channel_names = list(self._lookup_channel_names.keys())
 
     def _validate_channel(self, channel: Union[int, str]) -> int:
         """Validate channel number against configured channel count."""
         if isinstance(channel, str):
-            if channel not in self._channel_names:
-                raise ValueError(
-                    f"Invalid channel name '{channel}'. Valid names are: {self._channel_names}.")
-            return self._lookup_channel[channel]  # Return the corresponding index
+            if channel in self._lookup_channel_names:
+                return self._lookup_channel_names[channel]  # Return the corresponding index
+            elif channel in self._channel_tags:
+                return self._lookup_channel_tags[channel]  # Return the corresponding index
+            else:
+                raise ValueError(f"Invalid channel name/tag '{channel}'. Valid names are: {self._channel_names + self._channel_tags}")
         elif isinstance(channel, int):
             if channel > self._num_channels + 1:
                 raise ValueError(
@@ -181,6 +189,13 @@ class BasePowerSupply(BaseInstrument):
         else:
             # Get the channel settings from the instrument info
             self._set_channel_from_dict(channel, self.info.channels[channel - 1])
+
+    def set_channels(self, channels: List[Union[int, str]], settings: List[dict] = None):
+        for i, channel in enumerate(channels):
+            if settings is not None:
+                self.set_channel(channel, settings[i])
+            else:
+                self.set_channel(channel)
 
     def get_voltage(self, channel: Union[int, str]):
         channel = self._validate_channel(channel)
