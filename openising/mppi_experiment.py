@@ -107,7 +107,6 @@ def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:
 
     # Iterate over reference points
     for point in np.arange(start=1, stop=x_ref.shape[0], step=benchmark.action_horizon):
-        # TODO: chip and sw model
         # Most recently visited state
         state_sw = executed_trajectory_sw[-1]
         state_hw = executed_trajectory_hw[-1]

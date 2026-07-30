@@ -59,7 +59,7 @@ def compile_data(data_folders: list[Path], nb_cores: int):
     ans.load(data_folders[0].parent / "ans.pkl")
     nb_flipping = ans.config.nb_flipping
     Reg_file = TOP_MEAS / "openising/lagd-im/sw/include/lagd_reg_params.h"
-    it_line = 72  # line 73 but start from 0
+    it_line = 74  # line 73 but start from 0
     with Reg_file.open("r") as f:
         data = f.readlines()
     data[it_line] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(nb_flipping+1)} // max: 0x0400 (1024)\n"
