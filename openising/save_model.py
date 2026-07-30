@@ -36,7 +36,7 @@ def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
         folder_run = save_folder / f"run_{int(i / 2)}"
         save_folders.append(folder_run)
         Path.mkdir(folder_run, exist_ok=True)
-        data_names = ["cluster", "state_in", "energy_best", "energy"]
+        data_names = ["cluster", "state_in", "state_out", "energy_best", "energy"]
         for num, logfile in enumerate([logfile_1, logfile_2]):
             for data_name in data_names:
                 store_results_logfile(
@@ -44,10 +44,12 @@ def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
                     data_name,
                     folder_run,
                     data_name + f"_{num + 1}"
-                    if data_name not in ["state_in", "cluster"]
+                    if data_name not in ["state_in", "cluster", "state_out"]
                     else "states_in" + f"_{num + 1}"
-                    if data_name != "cluster"
-                    else "clusters" + f"_{num + 1}",
+                    if data_name not in ["cluster", "state_out"]
+                    else "clusters" + f"_{num + 1}"
+                    if data_name != "state_out"
+                    else "states_out" + f"_{num+1}",
                 )
         if problem_type == "MIMO":
             quantized_model: IsingModel = ans.MIMO[int(i/2)].quantized_model
@@ -92,9 +94,9 @@ def store_results_logfile(logfile: Path, data_name: str, save_folder: Path, file
         for i in range(data.shape[0]):
             if data[i] != np.inf:
                 new_data[i] = np.binary_repr(round(data[i]), width=32)
-        # if data.shape[0] < 513:
-        #     padding = np.full((513 - data.shape[0],), 0)
-        #     new_data = np.append(new_data, padding)
+        if data.shape[0] < 513:
+            padding = np.full((513 - data.shape[0],), new_data[-1])
+            new_data = np.append(new_data, padding)
         with save_path.open("w") as f:
             np.savetxt(f, new_data, fmt="%32s", delimiter="")
         return

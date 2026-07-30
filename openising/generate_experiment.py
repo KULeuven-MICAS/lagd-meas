@@ -9,6 +9,8 @@ from mppi_experiment import mppi_experiment
 from chip_communication import compile_data, send_chip
 from ising.stages.simulation_stage import Ans
 
+DEFAULT_HOST = "root@10.88.18.26"
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "-config-file", help="directory to yaml file for experiment.", type=str, default="Maxcut_experiment/model_0"
@@ -22,7 +24,8 @@ parser.add_argument(
 parser.add_argument("--nb-cores", help="The amount of cores to use on chip", type=int, default=1)
 parser.add_argument("--interface", help="The interface to send the data with", type=str, default="uart")
 parser.add_argument("--send-to-chip", default=False, type=bool)
-
+parser.add_argument("-host", "--host", default=DEFAULT_HOST,
+        help=f"measurement host, user@ip (default: {DEFAULT_HOST})",)
 args = parser.parse_args()
 
 # Load base and experiment config files and store them in the correct folder in openising
@@ -60,6 +63,6 @@ if problem_type != "MPPI":
         # compile everything
         compile_data(data_folders, args.nb_cores)
     else:
-        send_chip(save_folder, args.nb_cores, args.interface, args.send_to_chip)
+        send_chip(save_folder, args.nb_cores, args.interface, args.send_to_chip, args.host)
 else:
-    mppi_experiment(config_path, save_folder)
+    mppi_experiment(config_path, save_folder, args.interface, args.send_to_chip, args.host)
