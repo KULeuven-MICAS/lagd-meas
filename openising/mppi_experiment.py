@@ -79,7 +79,7 @@ def build_ising(benchmark,
     Q = J + np.diag(h)
     return IsingModel.from_qubo(Q)
 
-def mppi_experiment(config_path, save_folder):
+def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:bool):
     with Path(TOP/config_path).open(encoding="utf-8") as file:
             config: dict = yaml.safe_load(file)
 
@@ -98,60 +98,80 @@ def mppi_experiment(config_path, save_folder):
     rr ,qq, ee = qubo.RR, qubo.QQ, qubo.EE
 
     scene, x_ref = parse_benchmark_trajectory(benchmark) # Reference benchmark trajectory
-    executed_trajectory = [x_ref[0, :]] # Initial state (Can be benchmark.x_init)
-    predicted_trajectory = [] # List of all rollouts
-    u_bar = None # Initial actions (Can be benchmark.u_init)
+    executed_trajectory_sw = [x_ref[0, :]] # Initial state (Can be benchmark.x_init)
+    predicted_trajectory_sw = [] # List of all rollouts
+    executed_trajectory_hw = [x_ref[0, :]]
+    predicted_trajectory_hw = []
+    u_bar_sw = None # Initial actions (Can be benchmark.u_init)
+    u_bar_hw = None
 
     # Iterate over reference points
     for point in np.arange(start=1, stop=x_ref.shape[0], step=benchmark.action_horizon):
         # TODO: chip and sw model
         # Most recently visited state
-        state = executed_trajectory[-1]
+        state_sw = executed_trajectory_sw[-1]
+        state_hw = executed_trajectory_hw[-1]
         # Get horizon view
         x_ref_view = get_trajectory_view(benchmark, x_ref[point:, :])
         # Set initial actions to zero
-        u_bar = reset_actions(benchmark, u_bar)
+        u_bar_sw = reset_actions(benchmark, u_bar_sw)
+        u_bar_hw = reset_actions(benchmark, u_bar_hw)
         # Amount of MPPI iterations is defined in benchmark config
         for _ in range(benchmark.n_mppi_iterations):
             # Empty variation holder for vjp
-            dx, du = state[None, ...], u_bar[None, ...]
+            dx_sw, du_sw = state_sw[None, ...], u_bar_sw[None, ...]
+            dx_hw, du_hw = state_hw[None, ...], u_bar_hw[None, ...]
             # Do model rollout
-            x_bar, _, A_seq, B_seq, _ = model.rollout(state, u_bar, dx, du)
+            x_bar_sw, _, A_seq_sw, B_seq_sw, _ = model.rollout(state_sw, u_bar_sw, dx_sw, du_sw)
+            x_bar_hw, _, A_seq_hw, B_seq_hw, _ = model.rollout(state_hw, u_bar_hw, dx_hw, du_hw)
             # Build ising model
-            ising_model = build_ising(benchmark,
-                x_bar, x_ref_view, A_seq, B_seq, rr, qq, ee
+            ising_model_sw = build_ising(benchmark,
+                x_bar_sw, x_ref_view, A_seq_sw, B_seq_sw, rr, qq, ee
             )
+            ising_model_hw = build_ising(benchmark,
+                            x_bar_hw, x_ref_view, A_seq_hw, B_seq_hw, rr, qq, ee
+                        )
             # Necessary kwargs for next stages
             kwargs = dict()
             kwargs["config"] = config
-            kwargs["ising_model"] = ising_model
+            kwargs["ising_model"] = ising_model_sw
             # Get sub stages --> See workflow
             list_of_callables = [CombineNodesStage, SimulationStage]
             sub_stage = QuantizationStage(list_of_callables, **kwargs)
             # Store answers
             ans, _ = next(sub_stage.run()) # This runs the ising model
             store_run(ans, save_folder, "MPPI")
-            compile_data(save_folder, 1, 1)
-            send_chip(save_folder, 1, "uart", False) # TODO: add argument
-        break
-            # actions = 0
-            # # Apply actions in continuous space
-            # u_bar = u_bar + (actions @ ee.T).reshape(-1, benchmark.action_dim)
+            compile_data(save_folder, 1)
+            send_chip(save_folder, 1, interface, use_chip, host)
+            actions_hw = np.loadtxt(save_folder / "run_0/hw_final_state_1")
+            actions_sw = (ans.states["Multiplicative"][0] + 1.0) / 2.0
+            # Apply actions in continuous space
+            u_bar_sw += (actions_sw @ ee.T).reshape(-1, benchmark.action_dim)
+            u_bar_hw += (actions_hw @ ee.T).reshape(-1, benchmark.action_dim)
 
         # Execute actions
         for a in range(benchmark.action_horizon):
-            new_u = u_bar[a, :]
-            state, force = model.discrete_step(state.squeeze(), new_u.squeeze())
+            new_u_sw = u_bar_sw[a, :]
+            state_sw, force = model.discrete_step(state_sw.squeeze(), new_u_sw.squeeze())
             # Add new state to list
-            executed_trajectory.append(state)
+            executed_trajectory_sw.append(state_sw)
+            new_u_hw = u_bar_hw[a, :]
+            state_hw, force = model.discrete_step(state_hw.squeeze(), new_u_hw.squeeze())
+            # Add new state to list
+            executed_trajectory_hw.append(state_hw)
 
         # Full predicted trajectory at point
-        predicted_trajectory.append(
-            x_bar.reshape(-1, benchmark.state_dim)
+        predicted_trajectory_sw.append(
+            x_bar_sw.reshape(-1, benchmark.state_dim)
+        )
+        predicted_trajectory_hw.append(
+            x_bar_hw.reshape(-1, benchmark.state_dim)
         )
     # Add final result to answer (and some stuff for result plotting)
-    ans.executed_trajectory = executed_trajectory
-    ans.predicted_trajectory = predicted_trajectory
+    ans.executed_trajectory_sw = executed_trajectory_sw
+    ans.predicted_trajectory_sw = predicted_trajectory_sw
+    ans.executed_trajectory_hw = executed_trajectory_hw
+    ans.predicted_trajectory_hw = predicted_trajectory_hw
     ans.reference_trajectory = x_ref
     ans.scene = scene
     ans.delta_t = benchmark.delta_t
