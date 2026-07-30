@@ -145,7 +145,10 @@ class BasePowerSupply(BaseInstrument):
             elif channel in self._channel_tags:
                 return self._lookup_channel_tags[channel]  # Return the corresponding index
             else:
-                raise ValueError(f"Invalid channel name/tag '{channel}'. Valid names are: {self._channel_names + self._channel_tags}")
+                raise ValueError(
+                    f"Invalid channel name/tag '{channel}'. Valid names are: "
+                    f"{self._channel_names + self._channel_tags}"
+                )
         elif isinstance(channel, int):
             if channel > self._num_channels + 1:
                 raise ValueError(
