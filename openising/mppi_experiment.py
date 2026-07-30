@@ -140,6 +140,7 @@ def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:
             sub_stage = QuantizationStage(list_of_callables, **kwargs)
             # Store answers
             ans, _ = next(sub_stage.run()) # This runs the ising model
+            ans.ising_model = ising_model_hw
             store_run(ans, save_folder, "MPPI")
             compile_data(save_folder, 1)
             send_chip(save_folder, 1, interface, use_chip, host)
