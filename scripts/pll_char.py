@@ -19,13 +19,13 @@ from sw.lib.pll_driver import PllDriver
 
 parser = Parser()
 ZEDB_CFGS = load_configs.load_zedb_lagd_configs()
-CFGS = load_configs.load_configs(parser.config_file)  # DEBT - function doesn't exist
+CFGS = load_configs.load_configs(parser.config_file)
 
 def main():
 
     logging.basicConfig(
-        level=parser.get_logging_level(),  # DEBT - function doesn't exist
-        format=parser.get_logging_format(),  # DEBT - function doesn't exist
+        level=parser.get_logging_level(),
+        format=parser.get_logging_format(),
         stream=sys.stdout)
     # TODO: Add file logging as:
     # https://chatgpt.com/share/6a68a9b0-2e74-83eb-850f-8a1e5c6bad34
@@ -37,7 +37,7 @@ def main():
         try:
             psu = KeysightPSUE36300(
                 instrument.BasePowerSupplyData.from_mapping(configs["power_supply_pcb"]),
-                verbose=parser.get_verbose())  # DEBT - function doesn't exist
+                verbose=parser.get_verbose())
             # Settings should be specified in the YAML config file
             psu.set_channels(["CH1", "CH2", "CH3"]) # DEBT - function doesn't exist
 
