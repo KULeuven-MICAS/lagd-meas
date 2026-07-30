@@ -6,6 +6,7 @@
 
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from typing import List, Union
 
@@ -191,11 +192,12 @@ class BasePowerSupply(BaseInstrument):
         self._select_channel(channel)
         return float(self.query('MEAS:CURR?'))
 
-    def turn_on_channels(self, channels: Union[int, str, List[Union[int, str]]]):
+    def turn_on_channels(self, channels: Union[int, str, List[Union[int, str]]], delay: float = 0.0):
         """
         Turn on one or more output channels.
         Args:
              channels: A single channel (int or name) or a list of channels to enable.
+             delay: The delay (in seconds) between turning on each channel.
         """
         if isinstance(channels, (int, str)):
             channels = [channels]
@@ -206,6 +208,8 @@ class BasePowerSupply(BaseInstrument):
             channel = self._validate_channel(channel)
             self._select_channel(channel)
             self.write('OUTP ON')  # Turn on the output for the selected channel
+            if delay > 0:
+                time.sleep(delay)
             self._channel_state[channel-1] = True  # Mark the channel as on
 
     def _close(self):
