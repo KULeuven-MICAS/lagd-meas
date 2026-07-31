@@ -7,7 +7,7 @@
 import logging
 import sys
 
-from sw.lib.utils.parser import Parser
+from sw.lib.utils.terminal.parser import Parser
 from sw.lib.lab_instruments import instrument
 from sw.lib.lab_instruments.drivers.keysight_psu_e36300 import KeysightPSUE36300
 from sw.lib.utils.iclab_session import iclab_session
@@ -21,7 +21,7 @@ from sw.lib.pll_driver import PllDriver
 
 parser = Parser()
 ZEDB_CFGS = load_configs.load_zedb_lagd_configs()
-CFGS = load_configs.load_configs(parser.config_file)
+configs = load_configs.load_configs(parser.args.config_file)
 
 def main():
 
@@ -31,9 +31,6 @@ def main():
         stream=sys.stdout)
     # TODO: Add file logging as:
     # https://chatgpt.com/share/6a68a9b0-2e74-83eb-850f-8a1e5c6bad34
-
-    with parser.config_file.open(encoding="utf-8") as f:
-        configs = parser.yaml.safe_load(f)
 
     with iclab_session(parser.get_credentials()):
         try:
@@ -75,7 +72,7 @@ def main():
                     channel=configs["pll_dac_channel"],
                     vref=configs["pll_igen_vref"])
                 pll.reset()  # Reset the PLL to default configuration
-                pll.load_readback(CFGS["pll_config"])  # Load the PLL configuration
+                pll.load_readback(configs["pll_config"])  # Load the PLL configuration
                 _ = input("Setup complete. Press Enter to shut down...")
 
             psu.close()  # Close the PSU connection
@@ -84,3 +81,6 @@ def main():
 
             psu.close()  # Ensure PSU is turned off in case of error
             logging.error(f"Error occurred: {e}")
+
+if __name__ == "__main__":
+    main()

@@ -6,8 +6,8 @@ import argparse
 import logging
 from pathlib import Path
 
-from .iclab_session import prompt_for_credentials, get_credentials_from_keyfile
-from .crypto_utils import Credentials
+from sw.lib.utils.iclab_session import prompt_for_credentials, get_credentials_from_keyfile
+from sw.lib.utils.crypto import Credentials
 
 logger = logging.getLogger(__name__)
 

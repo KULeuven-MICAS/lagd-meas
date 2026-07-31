@@ -5,7 +5,7 @@
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 import logging
 
 import scripts.common.load_configs as load_configs
@@ -38,18 +38,22 @@ class PllCharMenu(InteractiveMenu):
         initial_vref: float = 2.5,
         initial_avdd: float = 0.75,
         initial_pll_config: Dict[str, int] = pll_api.DEFAULT_CFG,
-
-        logger: logging.Logger | None = None,
+        logger: Optional[logging.Logger] = None,
     ) -> None:
+        self.pll_driver = pll_driver
+        self.pcb_driver = pcb_driver
+        self.psu_driver = psu_driver
+        self.bench_config = bench_config
+
         self.state = PllCharMenuState(
-            vref=initial_vref, avdd=initial_avdd, pll_config=initial_pll_config
+            vref=initial_vref, vdd=initial_avdd, pll_config=initial_pll_config
         )
         super().__init__(
             title="PLL Characterization Menu",
             actions=self._build_actions(),
         )
 
-    def _build_actions(self) -> list[MenuAction]:
+    def _build_actions(self) -> List[MenuAction]:
         """Build menu actions for the PLL characterization flow."""
         return [
             MenuAction("1",
@@ -68,6 +72,7 @@ class PllCharMenu(InteractiveMenu):
                 "Quit",
                 lambda: logging.info("Exiting interactive menu"), exits_menu=True),
         ]
+
     def _update_vdd(self) -> None:
         """Prompt for and apply a new vdd value."""
         new_vdd = Prompt.ask_float("Enter new vdd value: ")
@@ -80,7 +85,7 @@ class PllCharMenu(InteractiveMenu):
         new_vref = Prompt.ask_float("Enter new vref value: ")
         self.state.vref = new_vref
         self.pcb_driver.set_voltage(
-            channel=self.bench_config["pcb_vref_channel"], 
+            channel=self.bench_config["pcb_vref_channel"],
             voltage=self.state.vref)
         logging.info("Updated vref to %.6f", self.state.vref)
 
@@ -89,13 +94,11 @@ class PllCharMenu(InteractiveMenu):
         config_path = Prompt.ask_file("Enter path to YAML config file: ")
         pll_config = self._load_pll_config(config_path)
         self.pll_driver.load_readback(pll_config)
-        if pll_config is None:
-            return
 
         self.state.pll_config = pll_config
         logging.info("Updated pll_config from '%s'", config_path)
 
-    def _load_pll_config(self, path: str) -> Dict[str, int] | None:
+    def _load_pll_config(self, path: str) -> Optional[Dict[str, int]]:
         """Load PLL config from YAML file and validate it."""
 
         pll_config = load_configs.load_configs(path)
