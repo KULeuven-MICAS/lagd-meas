@@ -44,6 +44,8 @@ class Parser(BaseParser):
         self.parser.add_argument('-f', '--config-file', type=Path, help='Configuration file path')
         self.parser.add_argument('-v', '--verbose', action='count', default=0,
             help='Enable verbose output')
+        self.parser.add_argument('-i', '--interactive', action='store_true',
+            help='Enable interactive mode for user input during execution')
 
     def _check_file_arg(self, arg_name):
         arg_value = getattr(self.args, arg_name)
