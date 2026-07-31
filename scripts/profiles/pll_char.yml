@@ -1,0 +1,51 @@
+# Copyright 2026 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
+
+power_supply_pcb:
+  name: "E36312A PCB"
+  IP: "10.91.16.1"
+  channels:
+    -
+      name: "5V"
+      channel: "CH1"
+      voltage: 5.0
+      current: 1.0
+      priority: 1
+    -
+      name: "9V"
+      channel: "CH2"
+      voltage: 9.0
+      current: 0.5
+      priority: 2
+    -
+      name: "m3V"
+      channel: "CH3"
+      voltage: 3.0
+      current: 0.5
+      priority: 2
+
+power_supply_chip:
+  name: "E36312A Chip"
+  IP: "10.91.16.64"
+  channels:
+    -
+      name: "VDDIO"
+      channel: "CH1"
+      voltage: 1.8
+      current: 0.5
+      priority: 1
+    -
+      name: "VDDC"
+      channel: "CH2"
+      voltage: 0.75
+      current: 0.5
+      priority: 2
+    -
+      name: "VDD_PLL"
+      channel: "CH3"
+      voltage: 0.75
+      current: 0.5
+      priority: 3
