@@ -39,6 +39,15 @@ class BasePowerSupplyData(BaseInstrumentData):
     """
     channels: list = field(default_factory=list)
 
+@dataclass
+class BaseOscilloscopeData(BaseInstrumentData):
+    """
+    Data class for the base oscilloscope.
+    It contains the common information that all oscilloscopes should have.
+    :channels: list: The list of channels of the oscilloscope.
+    """
+    channels: list = field(default_factory=list)
+
 class BaseInstrument:
     """
     Base class for all instruments.
@@ -217,3 +226,136 @@ class BasePowerSupply(BaseInstrument):
             if self._channel_state[ch]:
                 self._select_channel(ch+1)
                 self.write('OUTP OFF')  # Turn off the output
+
+class BaseOscilloscope(BaseInstrument):
+    """
+    Base class for oscilloscopes.
+    It defines the common interface and methods that all oscilloscopes should implement.
+    :data: BaseOscilloscopeData: The data class containing the instrument's information.
+    """
+    def __init__(self, data: BaseOscilloscopeData, verbose: bool = False):
+        super().__init__(data, verbose=verbose)
+        if not hasattr(self, '_num_channels'):
+            raise NotImplementedError(
+                "Channel count not set. Please set _num_channels in the subclass.")
+        self._selected_channel = None
+        # Track the state of each channel (on/off)
+        self._channel_state = [False] * self._num_channels
+
+    def _validate_channel(self, channel: Union[int, str]) -> Union[int, str]:
+        """Validate a channel identifier for the oscilloscope."""
+        if isinstance(channel, int):
+            if channel < 1:
+                raise ValueError(f"Invalid channel {channel}. Valid range is 1..N.")
+            return channel
+        if isinstance(channel, str):
+            channel_name = channel.upper()
+            if not channel_name.startswith('CH'):
+                raise ValueError(f"Invalid channel '{channel}'. Expected names such as CH1 or CH2.")
+            return channel_name
+        raise TypeError(f"Unsupported channel type: {type(channel).__name__}")
+
+    def _set_channel_from_dict(self, channel: Union[int, str], settings: dict):
+        if 'scale' in settings:
+            self.set_vertical_scale(channel, settings['scale'])
+        if 'coupling' in settings:
+            self.set_coupling(channel, settings['coupling'])
+        if 'state' in settings:
+            self.set_channel_state(channel, settings['state'])
+        if 'position' in settings:
+            self.set_vertical_position(channel, settings['position'])
+        if 'probe_attenuation' in settings:
+            self.set_probe_attenuation(channel, settings['probe_attenuation'])
+
+    def reset(self):
+        """Reset the oscilloscope to its default state."""
+        self.write('*RST')
+
+    def autoscale(self):
+        """Perform an autoscale operation."""
+        self.write('AUToscale')
+
+    def set_vertical_scale(self, channel: Union[int, str], scale: float):
+        channel = self._validate_channel(channel)
+        self.write(f'CHAN{channel}:SCALe {scale}')
+
+    def set_coupling(self, channel: Union[int, str], coupling: str):
+        channel = self._validate_channel(channel)
+        self.write(f'CHAN{channel}:COUPling {coupling.upper()}')
+
+    def set_channel_state(self, channel: Union[int, str], state: Union[bool, str]):
+        channel = self._validate_channel(channel)
+        if isinstance(state, bool):
+            state_value = 'ON' if state else 'OFF'
+        else:
+            state_value = str(state).upper()
+        self.write(f'CHAN{channel}:STATe {state_value}')
+
+    def set_vertical_position(self, channel: Union[int, str], position: float):
+        channel = self._validate_channel(channel)
+        self.write(f'CHAN{channel}:POS {position}')
+
+    def set_probe_attenuation(self, channel: Union[int, str], attenuation: float):
+        channel = self._validate_channel(channel)
+        self.write(f'PROBe{channel}:SETup:ATT:MAN {attenuation}')
+
+    def set_channel(self, channel: Union[int, str], settings: dict = None):
+        channel = self._validate_channel(channel)
+        if settings is not None:
+            self._set_channel_from_dict(channel, settings)
+
+    def set_timebase_scale(self, scale: float):
+        self.write(f'TIM:SCAL {scale}')
+
+    def set_horizontal_position(self, position: float):
+        self.write(f'TIM:POS {position}')
+
+    def set_trigger(self, trigger_type: str = 'EDGE', source: str = 'CH1',
+                    mode: str = 'AUTO', slope: str = 'POS', level: float = 0.25):
+        self.write(f'TRIG:A:TYPE {trigger_type.upper()}')
+        self.write(f'TRIG:A:SOUR {source.upper()}')
+        self.write(f'TRIG:A:MODE {mode.upper()}')
+        self.write(f'TRIG:A:EDGE:SLOP {slope.upper()}')
+        self.write(f'TRIG:A:LEV1 {level}')
+
+    def set_measurement(self, measurement_id: int = 1, main: str = 'FREQ',
+                        source: str = 'CH1', enable: bool = True):
+        '''
+        Example measurements (main):
+        PEAK (Vpp), UPE (Vp+), LPE (Vp-), CYCR (RMS-Cyc), CYCM (MeanCyc), 
+        PER (T), FREQ (f), RTIM (tr), FTIM (tf)
+        '''
+        enable_value = 'ON' if enable else 'OFF'
+        self.write(f'MEAS{measurement_id}:MAIN {main.upper()}')
+        self.write(f'MEAS{measurement_id}:SOUR {source.upper()}')
+        self.write(f'MEAS{measurement_id}:ENAB {enable_value}')
+
+    def set_measurement_statistics(self, measurement_id: int = 1, main: str = 'PER',
+                        source: str = 'CH1', enable: bool = True):
+        '''
+        Example measurements (main):
+        PEAK (Vpp), UPE (Vp+), LPE (Vp-), CYCR (RMS-Cyc), CYCM (MeanCyc), 
+        PER (T), FREQ (f), RTIM (tr), FTIM (tf)
+        '''
+        enable_value = 'ON' if enable else 'OFF'
+        self.write(f'MEAS{measurement_id}:MAIN {main.upper()}')
+        self.write(f'MEAS{measurement_id}:SOUR {source.upper()}')
+        self.write(f'MEAS{measurement_id}:ENAB {enable_value}')
+        self.write(f'MEAS:STAT:ENAB {enable_value}')  # Enable statistics
+        self.write(f'MEAS:STAT:RES')
+
+    def get_measurement_result(self, measurement_id: int = 1):
+        return self.query(f'MEAS{measurement_id}:RES?').strip()
+
+    def get_measurement_mean(self, measurement_id: int = 1):
+        return self.query(f'MEAS{measurement_id}:STAT:MEAN?').strip()
+
+    def get_measurement_stddev(self, measurement_id: int = 1):
+        return self.query(f'MEAS{measurement_id}:STAT:STDD?').strip()
+
+    def get_timebase_scale(self):
+        return self.query('TIM:SCAL?').strip()
+
+    def _close(self):
+        """Close the oscilloscope resource if needed."""
+        pass

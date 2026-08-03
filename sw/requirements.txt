@@ -1,1 +1,18 @@
+# Versions are not that important. File dumped from the zedboard venv
+
+certifi
+cffi
+charset-normalizer
+cryptography
+dataclasses
+idna
+importlib-metadata
+pycparser
+PyVISA
+PyVISA-py
+PyYAML
+requests
+typing_extensions
+urllib3
+zipp
 numpy
