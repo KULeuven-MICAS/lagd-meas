@@ -44,3 +44,12 @@ power_analyzer_chip:
       name: "CH4" # VDD GALENA 2 + PLL
       voltage: 0.75
       current: 1.0
+
+scope_pll:
+  name: "Rohde & Schwarz RTB 2004 Oscilloscope"
+  IP: "10.91.16.39"
+  channels:
+    -
+      name: "CH1" # Output clock
+    -
+      name: "CH2" # Control voltage node

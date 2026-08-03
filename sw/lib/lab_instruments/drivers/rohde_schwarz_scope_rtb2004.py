@@ -87,3 +87,4 @@ class RohdeSchwarzScopeRTB2004(inst.BaseOscilloscope):
         source = f"CH{channel}" if isinstance(channel, int) else channel
         self.set_measurement(measurement_id=measurement_id, main='PER', source=source)
         return self.get_measurement_stddev(measurement_id=measurement_id)
+    

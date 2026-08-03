@@ -334,7 +334,7 @@ class BaseOscilloscope(BaseInstrument):
                         source: str = 'CH1', enable: bool = True):
         '''
         Example measurements (main):
-        PEAK (Vpp), UPE (Vp+), LPE (Vp-), CYCR (RMS-Cyc), CYCM (MeanCyc), 
+        PEAK (Vpp), UPE (Vp+), LPE (Vp-), CYCR (RMS-Cyc), CYCM (MeanCyc),
         PER (T), FREQ (f), RTIM (tr), FTIM (tf)
         '''
         enable_value = 'ON' if enable else 'OFF'
