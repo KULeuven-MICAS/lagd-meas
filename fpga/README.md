@@ -1,7 +1,5 @@
 # Vivado project for Xillybus/Zedboard control
 
-Author: Jiacong Sun <jiacong.sun@kuleuven.be>
-
 This repository contains the Vivado project for the LAGD chip.
 
 To generate the Vivado project, run `make` under `fpga/`.
