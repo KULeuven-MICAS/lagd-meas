@@ -1,10 +1,18 @@
 import os
 import subprocess
+import threading
 import numpy as np
+import shlex
 
 from pathlib import Path
 from __init__ import TOP_MEAS
 from ising.stages.simulation_stage import Ans
+from openising.postprocessing import load_ans
+from target.zcu102.zcu102_reload import reload_board
+from target.zcu102.top import run_elf, REMOTE_PYTHON, DEFAULT_REMOTE_DIR
+
+DEFAULT_UART_DEVICE = "/dev/ttyUSB2"
+DEFAULT_UART_BAUD = 115200
 
 
 def compile_data_convergence(data_folder: Path, interface: str, nb_iteration: int):
@@ -87,7 +95,47 @@ def compile_data(data_folders: list[Path], nb_cores: int):
             rename_move_file(lagd_folder / "sw/tests/lagd_scompute.spm.elf", folder_1, elf_file)
 
 
-def send_chip(data_folder: Path, nb_cores: int, interface: str, send_to_chip: bool = False) -> int:
+def _stream_uart_output(stdout, device: str, baud: int, timeout: float, remote_dir, host, rtscts: bool = False, ):
+    # ssh to xilinx first
+    tokens = [
+            REMOTE_PYTHON, "-m", "openising.uart_output",
+            "--device", device,
+            "--baud", str(baud),
+            "--timeout", str(timeout),
+            "--rtscts" if rtscts else ""
+        ]
+    remote_cmd = f"cd {shlex.quote(remote_dir)}/ && " + " ".join(shlex.quote(t) for t in tokens)
+    subprocess.run(["ssh", "-t", host, remote_cmd], stdout=stdout, check=True)
+
+
+def _start_uart_stream(
+    stdout: Path,
+    device: str,
+    baud: int,
+    timeout: float,
+    host: str,
+    remote_dir: str = DEFAULT_REMOTE_DIR,
+    rtscts: bool = False,
+) -> threading.Thread:
+    thread = threading.Thread(
+        target=_stream_uart_output,
+        args=(stdout, device, baud, timeout, remote_dir, host, rtscts),
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
+def send_chip(
+    data_folder: Path,
+    nb_cores: int,
+    interface: str,
+    host: str = "root@10.88.18.26",
+    uart_device: str = DEFAULT_UART_DEVICE,
+    uart_baud: int = DEFAULT_UART_BAUD,
+    uart_timeout: float = 3600.0,
+
+) -> int:
     """Send the data of the different software runs to the chip and wait untill the results from the chip are written\
        to a file.
 
@@ -102,41 +150,53 @@ def send_chip(data_folder: Path, nb_cores: int, interface: str, send_to_chip: bo
     @rtype: int
     @return: return message for whether everything has finished correctly.
     """
-    ans = Ans()
-    ans.load(data_folder/"ans.pkl")
+    ans = load_ans(data_folder)
     nb_flipping = ans.config.nb_flipping
+    top_log = TOP_MEAS / "top.log"
     if ans.config.problem_type == "MIMO":
         nb_variables = ans.MIMO[0].ising_model.num_variables
         nb_runs = min(ans.config.nb_trials, ans.config.dummy_case_num)
     else:
         nb_variables = ans.ising_model.num_variables
         nb_runs = int(ans.config.nb_runs/2)
+    # set up stream
+    reload_board()
+    # setup for jtag and spi: 1. reload board, 2. open uart port to wait, 3. run elf file, 4. read from uart port
     for run in range(0, nb_runs, nb_cores):
         run_folder = data_folder / f"run_{run}"
         elf_file = (run_folder / "lagd_commands.elf").relative_to(TOP_MEAS)
-
+        # reload chip
         # send to chip (send_uart)
         if interface == "uart":
-            if not send_to_chip:
-                send_uart_path = TOP_MEAS / "target/zcu102/top.py"
-            else:
-                pass
-            with (TOP_MEAS/"top.log").open("w") as f:
-                subprocess.run(
-                    [
-                        "python",
-                        f"{send_uart_path}",
-                        "--elf",
-                        f"{elf_file}",
-                        "--remote-dir",
-                        "Workspace/workspace_sofie",
-                    ],
-                    stdout=f
-                )
+            with top_log.open("w") as f:
+                run_elf(host, "Workspace/workspace_sofie", str(elf_file), uart_device, ["--no-rtscts"], f)
+
         elif interface == "jtag":
-            # TODO with and without chip
-            os.chdir(TOP_MEAS)
-            subprocess.run(["./sw/jtag/run_elf.sh", f"{elf_file}", "-c", "'set ADAPTER_KHZ 4000'"])
+            with top_log.open("w") as f:
+                uart_thread = _start_uart_stream(f, uart_device, uart_baud, uart_timeout, host)
+                subprocess.run(
+                    ["ssh", host, "Workspace/workspace_sofie/sw/jtag/run_elf.sh", f"{elf_file}", "-c", "set ADAPTER_KHZ 4000"],
+                    cwd=TOP_MEAS,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    check=True,
+                )
+            uart_thread.join(timeout=uart_timeout)
+            if uart_thread.is_alive():
+                raise TimeoutError("timed out waiting for UART output after JTAG launch")
+        elif interface == "spi":
+            with top_log.open("w") as f:
+                uart_thread = _start_uart_stream(f, uart_device, uart_baud, uart_timeout, host)
+                subprocess.run(
+                    ["ssh", host, "python", "Workspace/workspace_sofie/sw/tools/spi_program_loader.py", f"{elf_file}"],
+                    cwd=TOP_MEAS,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    check=True,
+                )
+            uart_thread.join(timeout=uart_timeout)
+            if uart_thread.is_alive():
+                raise TimeoutError("timed out waiting for UART output after SPI launch")
         else:
             raise ValueError(f"Interface {interface} is not yet supported")
         # move to correct folder and parse output
@@ -235,4 +295,4 @@ def rename_move_file(source: Path, destination: Path, newname: str):
     subprocess.run(["cp", source, destination / newname])
 
 if __name__ == "__main__":
-    send_chip(TOP_MEAS / "openising/Maxcut_experiment/model_0", 2, 2)
+    send_chip(TOP_MEAS / "openising/Maxcut_experiment/model_0", 2, "spi")
