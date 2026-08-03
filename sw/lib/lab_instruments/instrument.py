@@ -322,7 +322,7 @@ class BaseOscilloscope(BaseInstrument):
                         source: str = 'CH1', enable: bool = True):
         '''
         Example measurements (main):
-        PEAK (Vpp), UPE (Vp+), LPE (Vp-), CYCR (RMS-Cyc), CYCM (MeanCyc), 
+        PEAK (Vpp), UPE (Vp+), LPE (Vp-), CYCR (RMS-Cyc), CYCM (MeanCyc),
         PER (T), FREQ (f), RTIM (tr), FTIM (tf)
         '''
         enable_value = 'ON' if enable else 'OFF'
@@ -342,7 +342,7 @@ class BaseOscilloscope(BaseInstrument):
         self.write(f'MEAS{measurement_id}:SOUR {source.upper()}')
         self.write(f'MEAS{measurement_id}:ENAB {enable_value}')
         self.write(f'MEAS:STAT:ENAB {enable_value}')  # Enable statistics
-        self.write(f'MEAS:STAT:RES')
+        self.write('MEAS:STAT:RES')
 
     def get_measurement_result(self, measurement_id: int = 1):
         return self.query(f'MEAS{measurement_id}:RES?').strip()

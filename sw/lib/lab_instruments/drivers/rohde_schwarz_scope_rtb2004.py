@@ -6,7 +6,7 @@
 
 import pyvisa
 import logging
-from typing import List, Union
+from typing import Union
 
 from sw.lib.lab_instruments import instrument as inst
 
@@ -38,7 +38,7 @@ class RohdeSchwarzScopeRTB2004(inst.BaseOscilloscope):
         rm = pyvisa.ResourceManager()
         logger.info(f"Reaching {self.info.name} at: TCPIP::{self.info.IP}::inst0::INSTR")
         return rm.open_resource(f"TCPIP::{self.info.IP}::inst0::INSTR")
-    
+
     def _init_instrument(self):
         logger.info(f"Initializing {self.info.name}")
         self.write('*RST', check=False)  # Reset the instrument to default settings
@@ -87,6 +87,3 @@ class RohdeSchwarzScopeRTB2004(inst.BaseOscilloscope):
         source = f"CH{channel}" if isinstance(channel, int) else channel
         self.set_measurement(measurement_id=measurement_id, main='PER', source=source)
         return self.get_measurement_stddev(measurement_id=measurement_id)
-                
-                
-    
