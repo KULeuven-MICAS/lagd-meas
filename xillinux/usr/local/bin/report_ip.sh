@@ -24,5 +24,6 @@ BOARD_IP=$(/sbin/ip -4 addr show eth0 | /bin/grep -oP '(?<=inet\s)\d+(\.\d+){3}'
 
 # If an IP exists, email it to your inbox
 if [ ! -z "$BOARD_IP" ]; then
-    echo "The ZedBoard (lagdboard) booted successfully. Secure SSH target IP: $BOARD_IP" | mail -s "ZedBoard Status: Online ($BOARD_IP)" -a "From: jiacong.sun@kuleuven.be" jiacong.sun@kuleuven.be
+    echo "Please edit the email in file /usr/local/bin/report_ip.sh"
+    # echo "The ZedBoard (lagdboard) booted successfully. Secure SSH target IP: $BOARD_IP" | mail -s "ZedBoard Status: Online ($BOARD_IP)" -a "From: you@email" you@email
 fi
