@@ -1,8 +1,8 @@
-# TODO
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from ising.stages.model.MPPI.environment import create_environment, plot_environment
 from ising.stages.model import IsingModel
 from ising.stages.simulation_stage import Ans
 from ising.utils.HDF5Logger import return_data
@@ -194,7 +194,66 @@ def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxpl
     plt.close()
 
 
+def plot_mppi(data_folder, add_sw: bool = True, figname: str = "mppi_results"):
+    ans = load_ans(data_folder)
+    env, _, _ = create_environment(ans.scene)
+    x_ref = ans.reference_trajectory
+    predicted_traj_hw = ans.predicted_trajectory_hw
+    executed_traj_hw = ans.executed_trajectory_hw
+
+    # Plot environment
+    try:
+        fig, ax = plot_environment(env, figsize=(16, 10))
+    except Exception as _:
+        fig, ax = plt.subplots(figsize=(16, 10))
+        if getattr(env, "control_points", None):
+            cx = [c[0] for c in env.control_points]
+            cy = [c[1] for c in env.control_points]
+            ax.plot(cx, cy, "ko", markersize=6, alpha=0.6, label="control points")
+        if getattr(env, "start", None) is not None:
+            ax.plot([env.start[0]], [env.start[1]], "ro", label="start")
+        if getattr(env, "goal_region", None):
+            try:
+                gx = [g[0] for g in env.goal_region]
+                gy = [g[1] for g in env.goal_region]
+                ax.plot(gx + [gx[0]], gy + [gy[0]], "g--", alpha=0.6, label="goal")
+            except Exception:
+                pass
+    xs, ys = x_ref[:, 0], x_ref[:, 1]
+    ax.plot(xs, ys, "-o", alpha=0.8, markersize=3, color="blue")
+    plot_trajectory(ax, executed_traj_hw, predicted_traj_hw, "HW predicted trajectory", "r")
+    if add_sw:
+        plot_trajectory(
+            ax, ans.executed_trajectory_sw, ans.predicted_trajectory_sw, "Simulated predicted trajectory", "g"
+        )
+    plt.title("Optimized Trajectory vs Reference Path")
+    plt.xlabel("X Coordinate")
+    plt.ylabel("Y Coordinate")
+    plt.legend()
+    plt.savefig(data_folder / f"{figname}.pdf", dpi=300)
+
+
 # ==== UTIL FUNCTIONS ====
+
+
+def plot_trajectory(
+    ax: plt.axes, executed_traj: np.ndarray, predicted_traj: np.ndarray, label_name: str, linecolor: str
+):
+    ax.plot(
+        [x[0] for x in executed_traj],
+        [x[1] for x in executed_traj],
+        color=linecolor,
+        marker="s-",
+        alpha=0.5,
+        label=label_name,
+        markersize=3,
+        linewidth=0.7,
+    )
+    for coords in predicted_traj:
+        coords = coords[:, :2]
+        ax.plot([x[0] for x in coords], [x[1] for x in coords], color=linecolor, marker="-", alpha=0.2)
+
+
 def compute_difference(state: np.ndarray, T: np.ndarray, r: int, x_tilde: np.ndarray, M: int, N: int) -> float:
     if M == 2:
         # BPSK scheme
