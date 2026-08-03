@@ -3,10 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import logging
 from pathlib import Path
 
 from .iclab_session import prompt_for_credentials, get_credentials_from_keyfile
 from .crypto_utils import Credentials
+
+logger = logging.getLogger(__name__)
 
 class BaseParser:
     def __init__(self, args=None):
@@ -41,20 +44,24 @@ class Parser(BaseParser):
         self.parser.add_argument('-k', '--keyfile', type=Path, help='Key file path')
         self.parser.add_argument('-u', '--username', type=str, help='University username')
         self.parser.add_argument('-p', '--password', type=str, help='University password')
-        self.parser.add_argument('--credentials', type=Credentials, help='Credentials in the format username:password')
 
     def set_defaults(self):
         pass
 
     def check_args(self):
         # Check if the keyfile argument is provided and if the file exists
-        if self.args.keyfile is None:
-            self.credentials = prompt_for_credentials()
-        elif not Path.is_file(self.args.keyfile):
-            print(f'File {self.args.keyfile} not found')
+        if self.args.keyfile is not None and not Path.is_file(self.args.keyfile):
+            logger.error(f'File {self.args.keyfile} not found')
             raise FileNotFoundError
 
     def reduce_args(self):
         # Getting the credentials from the keyfile if provided
         if self.args.keyfile is not None:
-            self.credentials = get_credentials_from_keyfile(self.args.keyfile)
+            self._credentials = get_credentials_from_keyfile(self.args.keyfile)
+        elif self.args.username is not None and self.args.password is not None:
+            self._credentials = Credentials(self.args.username, self.args.password)
+        else:
+            self._credentials = prompt_for_credentials()
+
+    def get_credentials(self):
+        return self._credentials

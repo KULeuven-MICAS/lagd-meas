@@ -22,6 +22,7 @@
 # Implemented with the Python stdlib only (termios)
 
 import argparse
+import logging
 import os
 import select
 import struct
@@ -29,6 +30,8 @@ import sys
 import termios
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # --- Protocol opcodes (cheshire sw/lib/hal/uart_debug.c) ---------------------
 ACK = 0x06
@@ -228,7 +231,7 @@ def run_memtest(fd, base, size, timeout, seed=0xC0FFEE):
             i = next(k for k in range(size) if rb[k] != data[k])
             raise ProtoError(f"memtest '{name}' MISMATCH at 0x{base + i:x}: "
                              f"wrote 0x{data[i]:02x}, read 0x{rb[i]:02x}")
-        print(f"  [{name:<12}] OK  ({size} bytes)")
+        logger.info("  [%-12s] OK  (%d bytes)", name, size)
 
 
 # --- ELF parsing (ELF64 little-endian, stdlib only) --------------------------
@@ -307,49 +310,53 @@ def main():
                     help="seconds to wait for the initial ACK handshake (default: 10)")
     args = ap.parse_args()
 
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
+
     # --ping: only do the ACK handshake with the bootrom, then exit (no ELF).
     if args.ping:
-        print(f"Port     : {args.device} @ {args.baud} 8N1, "
-              f"RTS/CTS={'on' if args.rtscts else 'off'}")
+        logger.info("Port     : %s @ %d 8N1, RTS/CTS=%s",
+                    args.device, args.baud, "on" if args.rtscts else "off")
         try:
             fd = open_port(args.device, args.baud, args.rtscts)
         except OSError as e:
-            sys.stderr.write(f"ERROR: cannot open {args.device}: {e}\n")
+            logger.error("cannot open %s: %s", args.device, e)
             return 1
         try:
-            print("Handshake: sending ACK challenge ...")
+            logger.info("Handshake: sending ACK challenge ...")
             handshake(fd, args.connect_timeout)
         except ProtoError as e:
-            sys.stderr.write(f"ERROR: {e}\n")
+            logger.error("%s", e)
             return 1
         finally:
             os.close(fd)
-        print("Handshake: chip responded -- bootrom UART debug server is up.")
+        logger.info("Handshake: chip responded -- bootrom UART debug server is up.")
         return 0
 
     # --memtest: handshake, then write/read-back a memory region and exit (no ELF).
     if args.memtest:
         base, size = args.mem_base, args.mem_size
         op_to = max(args.timeout, size * 10.0 / args.baud * 2 + 5)  # cover the transfer
-        print(f"Port     : {args.device} @ {args.baud} 8N1, "
-              f"RTS/CTS={'on' if args.rtscts else 'off'}")
-        print(f"Memtest  : 0x{base:08x} .. 0x{base + size:08x}  ({size} bytes)")
+        logger.info("Port     : %s @ %d 8N1, RTS/CTS=%s",
+                    args.device, args.baud, "on" if args.rtscts else "off")
+        logger.info("Memtest  : 0x%08x .. 0x%08x  (%d bytes)", base, base + size, size)
         try:
             fd = open_port(args.device, args.baud, args.rtscts)
         except OSError as e:
-            sys.stderr.write(f"ERROR: cannot open {args.device}: {e}\n")
+            logger.error("cannot open %s: %s", args.device, e)
             return 1
         try:
-            print("Handshake: sending ACK challenge ...")
+            logger.info("Handshake: sending ACK challenge ...")
             handshake(fd, args.connect_timeout)
-            print("Handshake: chip responded, debug server is up.")
+            logger.info("Handshake: chip responded, debug server is up.")
             run_memtest(fd, base, size, op_to)
         except ProtoError as e:
-            sys.stderr.write(f"FAIL: {e}\n")
+            logger.error("FAIL: %s", e)
             return 1
         finally:
             os.close(fd)
-        print(f"PASS: memtest OK over {size} bytes at 0x{base:08x}.")
+        logger.info("PASS: memtest OK over %d bytes at 0x%08x.", size, base)
         return 0
 
     if args.elf is None:
@@ -357,53 +364,53 @@ def main():
 
     entry, segments = parse_elf(args.elf)
     total = sum(len(b) for _, b in segments)
-    print(f"ELF      : {args.elf}")
-    print(f"Entry    : 0x{entry:016x}")
-    print(f"Segments : {len(segments)}, {total} bytes total")
+    logger.info("ELF      : %s", args.elf)
+    logger.info("Entry    : 0x%016x", entry)
+    logger.info("Segments : %d, %d bytes total", len(segments), total)
     for paddr, blob in segments:
-        print(f"  0x{paddr:016x}  {len(blob)} bytes")
+        logger.info("  0x%016x  %d bytes", paddr, len(blob))
 
-    print(f"Port     : {args.device} @ {args.baud} 8N1, "
-          f"RTS/CTS={'on' if args.rtscts else 'off'}")
+    logger.info("Port     : %s @ %d 8N1, RTS/CTS=%s",
+                args.device, args.baud, "on" if args.rtscts else "off")
 
     try:
         fd = open_port(args.device, args.baud, args.rtscts)
     except OSError as e:
-        sys.stderr.write(f"ERROR: cannot open {args.device}: {e}\n")
+        logger.error("cannot open %s: %s", args.device, e)
         return 1
     try:
-        print("Handshake: sending ACK challenge ...")
+        logger.info("Handshake: sending ACK challenge ...")
         handshake(fd, args.connect_timeout)
-        print("Handshake: chip responded, debug server is up.")
+        logger.info("Handshake: chip responded, debug server is up.")
 
         for paddr, blob in segments:
             for i in range(0, len(blob), args.chunk):
                 chunk = blob[i:i + args.chunk]
                 cmd_write(fd, paddr + i, chunk, args.timeout)
-            print(f"Loaded   : 0x{paddr:016x} ({len(blob)} bytes)")
+            logger.info("Loaded   : 0x%016x (%d bytes)", paddr, len(blob))
             if args.verify:
                 rb = cmd_read(fd, paddr, len(blob), args.timeout)
                 if rb != blob:
                     raise ProtoError(f"verify FAILED at 0x{paddr:016x}")
-                print(f"Verified : 0x{paddr:016x} OK")
+                logger.info("Verified : 0x%016x OK", paddr)
 
         if not args.do_exec:
-            print("Done (load only, --no-exec).")
+            logger.info("Done (load only, --no-exec).")
             return 0
 
         cmd_exec(fd, entry, args.timeout)
-        print(f"Exec     : jumped to 0x{entry:016x}")
+        logger.info("Exec     : jumped to 0x%016x", entry)
 
         if not args.wait:
-            print("Done (--no-wait).")
+            logger.info("Done (--no-wait).")
             return 0
 
         rt = None if args.run_timeout == 0 else args.run_timeout
         ret = wait_for_eoc(fd, rt)
-        print(f"EOC      : return code {ret}")
+        logger.info("EOC      : return code %d", ret)
         return 0 if ret == 0 else 2
     except ProtoError as e:
-        sys.stderr.write(f"ERROR: {e}\n")
+        logger.error("%s", e)
         return 1
     finally:
         os.close(fd)

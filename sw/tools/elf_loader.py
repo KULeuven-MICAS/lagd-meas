@@ -22,9 +22,13 @@
 # import annotations`, no 3.10+ `X | Y` annotations -- uses the typing module.
 
 import argparse
+import logging
 import struct
+import sys
 from pathlib import Path
 from typing import List, NamedTuple
+
+logger = logging.getLogger(__name__)
 
 # ELF identification
 _ELF_MAGIC = b"\x7fELF"
@@ -144,16 +148,20 @@ def _main() -> int:
 
     Needs no hardware -- useful to sanity-check parsing against the .dump file.
     """
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
+
     ap = argparse.ArgumentParser(description="Inspect an ELF's loadable segments")
     ap.add_argument("elf", help="path to the .elf file")
     args = ap.parse_args()
 
     img = parse_elf(args.elf)
-    print(f"ELF{'64' if img.is_64bit else '32'}, entry = 0x{img.entry:08X}")
-    print(f"{'load_addr':<18} {'bytes':<12} words")
+    logger.info("ELF%s, entry = 0x%08X", "64" if img.is_64bit else "32", img.entry)
+    logger.info(f"{'load_addr':<18} {'bytes':<12} words")
     for seg in img.segments:
-        print(f"0x{seg.addr:016X} {len(seg.data):<12} {len(bytes_to_words(seg.data))}")
-    print(f"total: {img.total_bytes} bytes across {len(img.segments)} segment(s)")
+        logger.info(f"0x{seg.addr:016X} {len(seg.data):<12} {len(bytes_to_words(seg.data))}")
+    logger.info("total: %d bytes across %d segment(s)", img.total_bytes, len(img.segments))
     return 0
 
 

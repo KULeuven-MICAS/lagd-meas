@@ -1,0 +1,158 @@
+# Copyright 2026 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
+
+import pyvisa
+import time
+import logging
+from typing import List, Union
+
+from sw.lib.lab_instruments import instrument as inst
+
+logger = logging.getLogger(__name__)
+
+class KeysightPAN6700(inst.BasePowerSupply):
+    """
+    Class for the Keysight N6700 series power analyzer.
+    It implements the specific methods for this instrument.
+    info: inst.BaseInstrumentData: The data class containing the instrument's information.
+    info.args: dict: Additional arguments for the instrument. Expects a list of channels
+
+    """
+    def __init__(self, info: inst.BaseInstrumentData, verbose: bool = False):
+        self._num_channels = 4
+        self._channel_names = ["CH1", "CH2", "CH3", "CH4"]
+        self._lookup_channel = {
+            "CH1": 1,
+            "CH2": 2,
+            "CH3": 3,
+            "CH4": 4
+        }
+        self._TINT_MIN = {
+            "CH1": 1.024e-05,
+            "CH2": 5.12e-06,
+            "CH3": 5.12e-06,
+            "CH4": 1.024e-05
+        }  # Minimum integration time in seconds
+        self._TINT_MAX = 40000  # Maximum integration time in seconds
+        self._POIN_MAX = 524288  # Maximum number of points
+        super().__init__(info)
+
+    def _open_resource(self):
+        """
+        Open the resource for the Keysight N6700 series power analyzer.
+        """
+        rm = pyvisa.ResourceManager()
+        logger.info(f"Reaching {self.info.name} at: TCPIP::{self.info.IP}::inst0::INSTR")
+        return rm.open_resource(f"TCPIP::{self.info.IP}::inst0::INSTR")
+
+    def _init_instrument(self):
+        logger.info(f"Initializing {self.info.name}")
+        self.write('*RST', check=False)  # Reset the instrument to default settings
+        for ch in range(self._num_channels):
+            self.write(f"SENS:FUNC:CURR OFF,(@{ch+1})")
+            self.write(f"SENS:FUNC:VOLT OFF,(@{ch+1})")
+        logger.info(f"{self.info.name} initialized successfully.")
+
+    def _status_operating_condition(self, channel: int) -> int:
+        """
+        Get the operating condition status of the instrument.
+        Returns:
+            int: The operating condition status.
+        """
+        WTG = self._ret_to_int(self.query(f"STAT:OPER:COND? (@{channel})"))
+        # Check the 4th bit
+        if WTG & 0b1000:
+            return 1  # Instrument is ready
+        else:
+            return 0  # Instrument is not ready
+
+    def close(self):
+        for ch in range(self._num_channels):
+            if self._channel_state[ch]:
+                logger.info(f"Turning off channel {ch+1}")
+                self.write(f'OUTP OFF,(@{ch+1})')  # Turn off the output,
+
+    def get_voltage(self, channel: Union[str, int]) -> float:
+        channel = self._validate_channel(channel)
+        return float(self.query(f"MEAS:VOLT? (@{channel})"))
+
+    def set_voltage(self, channel: Union[str, int], voltage: float):
+        channel = self._validate_channel(channel)
+        self.write(f"VOLT {voltage},(@{channel})")
+
+    def set_current_limit(self, channel: Union[str, int], current_limit: float):
+        channel = self._validate_channel(channel)
+        self.write(f"CURR:LIM {current_limit},(@{channel})")
+
+    def turn_on_channels(self, channels: Union[int, str, List[Union[int, str]]]):
+        if isinstance(channels, (int, str)):
+            channels = [channels]
+        elif not isinstance(channels, list):
+            raise TypeError(f"Unsupported channels container type: {type(channels).__name__}")
+
+        for channel in channels:
+            channel = self._validate_channel(channel)
+            self.write(f"OUTP ON,(@{channel})")
+            self._channel_state[channel - 1] = True
+
+    def set_current_meter(self, channel: int, auto_curr_range: bool = True,
+        sample_int: float = 1.0, sample_points: int = 100) :
+        """
+        Integrate the current over a specified duration for a given channel.
+        Args:
+            channel (int): The channel number to measure.
+            auto_curr_range (bool): Whether to use auto current range.
+            sample_int (float): The sampling interval. Default is 1.0.
+            sample_points (int): The number of sample points. Default is 100.
+        Returns:
+            float: The integrated current value.
+        """
+        channel = self._validate_channel(channel)
+
+        self.write(f"SENS:FUNC:CURR ON,(@{channel})")
+        self.write(f"SENS:CURR:RANG:AUTO {auto_curr_range},(@{channel})")
+
+        # Setting the current range improves the measurement accuracy.
+        # Automatic range should be good enough.
+        if not auto_curr_range:
+            logger.warning(
+                "Auto current range is set to 0, no range selection supported.")
+
+        self.write("SENS:SWE:TINT:RES RES20")  # Set the resolution to 20us
+        self.write(f"SENS:SWE:TINT {sample_int},(@{channel})")  # Set the integration time
+        self.write(f"SENS:SWE:POIN {sample_points},(@{channel})")  # Set the number of points
+        self.write(f"TRIG:ACQ:SOUR BUS,(@{channel})")  # Set the trigger source to bus
+
+    def fetch(self, channel: int, what: str) -> Union[float, List[float]]:
+        """
+        Measure the current for a given channel.
+        Args:
+            channel (int): The channel number to measure.
+            what (str): The type of measurement to fetch.
+        Returns:
+            float: The measured current value.
+        """
+        channel = self._validate_channel(channel)
+        # Set the channel to measure
+        self.write(f"INIT:ACQ (@{channel})")  # Start the measurement
+        while self._status_operating_condition(channel) == 0:
+            time.sleep(0.1)  # Wait the instrument to be ready for measurement
+        self.write("*TRG")  # Trigger the measurement
+        self.query("*OPC?")  # Wait for the operation to complete
+        samples = self.query(f"FETC:{what}? (@{channel})")  # Fetch the measurement data
+        return samples  # Return the average of the measured samples
+
+    def measure_current(self, channel: int) -> float:
+        return self.fetch(channel, "CURR")
+
+    def measure_rms_current(self, channel: int) -> float:
+        return self.fetch(channel, "CURR:ACDC")
+
+    def measure_max_current(self, channel: int) -> float:
+        return self.fetch(channel, "CURR:MAX")
+
+    def measure_min_current(self, channel: int) -> float:
+        return self.fetch(channel, "CURR:MIN")

@@ -22,11 +22,14 @@
 #   ./top.py --baudrate 921600   # whatever send_uart accepts
 
 import argparse
+import logging
 import shlex
 import subprocess
 import sys
 
 import target.zcu102.zcu102_reload as zcu102_reload
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_ELF = "sw/inputs/helloworld.spm.elf"
 DEFAULT_HOST = "root@10.88.18.26"
@@ -85,6 +88,9 @@ def build_parser():
 
 
 def main(argv=None):
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
     parser = build_parser()
     args, extra = parser.parse_known_args(argv)
 
@@ -98,10 +104,10 @@ def main(argv=None):
         # Stage 2: load & run the ELF on the chip over UART.
         run_elf(args.host, args.remote_dir, args.elf, args.device, uart_args)
     except FileNotFoundError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        logger.error("%s", err)
         return 1
     except subprocess.CalledProcessError as err:
-        print(f"Error: command failed (exit {err.returncode}): {err.cmd}", file=sys.stderr)
+        logger.error("command failed (exit %s): %s", err.returncode, err.cmd)
         return err.returncode
     return 0
 

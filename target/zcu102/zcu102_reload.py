@@ -16,9 +16,12 @@
 #   ./zcu102_reload.py --host xilinx@1.2.3.4  # target a different board
 
 import argparse
+import logging
 import subprocess
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = "xilinx@10.91.16.121"
 DEFAULT_REMOTE_DIR = "jupyter_notebooks/lagd_v1_2026"
@@ -38,7 +41,7 @@ def reload_board(host=DEFAULT_HOST, remote_dir=DEFAULT_REMOTE_DIR, bit=None):
         if not local_bit.is_file():
             raise FileNotFoundError(f"bitstream file not found: {local_bit}")
         remote_bit = f"{remote_dir}/{REMOTE_BIT_NAME}"
-        print(f"Uploading {local_bit} -> {host}:{remote_bit}")
+        logger.info("Uploading %s -> %s:%s", local_bit, host, remote_bit)
         subprocess.run(["scp", str(local_bit), f"{host}:{remote_bit}"], check=True)
 
     remote_cmd = (
@@ -68,14 +71,17 @@ def build_parser():
 
 
 def main(argv=None):
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
     args = build_parser().parse_args(argv)
     try:
         reload_board(host=args.host, remote_dir=args.remote_dir, bit=args.bit)
     except FileNotFoundError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        logger.error("%s", err)
         return 1
     except subprocess.CalledProcessError as err:
-        print(f"Error: command failed (exit {err.returncode}): {err.cmd}", file=sys.stderr)
+        logger.error("command failed (exit %s): %s", err.returncode, err.cmd)
         return err.returncode
     return 0
 

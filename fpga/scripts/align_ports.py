@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
-"""
-align_ports.py — align port brackets in Verilog instantiations for better looking.
 
-Scans every `.v` and `.sv` file under `fpga/src/verilog/` for module
-instantiations that use named port connections of the form
-`.port_name(signal)` and reformats those connection lines so the
-`.port_name` and the right-hand expressions inside the parentheses are
-column-aligned. Preserves commas and end-of-line comments. Writes a
-file back if any formatting changes were made.
+# Copyright 2026 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
 
-Usage:
-    python3 fpga/scripts/align_ports.py
-"""
+# Author: Jiacong Sun <jiacong.sun@kuleuven.be>
+#
+# align_ports.py — align port brackets in Verilog instantiations for better looking.
+#
+# Scans every `.v` and `.sv` file under `fpga/src/verilog/` for module
+# instantiations that use named port connections of the form
+# `.port_name(signal)` and reformats those connection lines so the
+# `.port_name` and the right-hand expressions inside the parentheses are
+# column-aligned. Preserves commas and end-of-line comments. Writes a
+# file back if any formatting changes were made.
+# Usage:
+#     python3 fpga/scripts/align_ports.py
+
 from pathlib import Path
+import logging
 import re
+import sys
+
+logger = logging.getLogger(__name__)
 
 def align_file(p):
     s=p.read_text()
@@ -90,16 +99,20 @@ def align_file(p):
     new='\n'.join(out_lines)+"\n"
     if new!=s:
         p.write_text(new)
-        print('formatted', p)
+        logger.info("formatted %s", p)
     else:
-        print('no changes', p)
+        logger.info("no changes %s", p)
 
 
 def main():
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
+
     root=Path(__file__).resolve().parent.parent / 'src' / 'verilog'
     files=sorted(p for ext in ('*.v','*.sv') for p in root.rglob(ext))
     if not files:
-        print('no .v or .sv files found under', root)
+        logger.warning("no .v or .sv files found under %s", root)
         return
     for f in files:
         align_file(f)
