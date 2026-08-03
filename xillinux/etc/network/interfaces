@@ -10,7 +10,7 @@
 # Please note that this file is written to be used with dhcpcd
 # For static IP, consult /etc/dhcpcd.conf and 'man dhcpcd.conf'
 
-# JIacong: eth0 is changed from auto to allow-hotplug
+# eth0 is changed from the default "auto" to "allow-hotplug"
 # to let it not stall the OS boot sequence if authentication or DHCP fails.
 
 # Include files from /etc/network/interfaces.d:

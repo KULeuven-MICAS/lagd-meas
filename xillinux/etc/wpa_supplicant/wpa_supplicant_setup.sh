@@ -11,13 +11,15 @@
 cp wpa_supplicant.conf wpa_supplicant.conf.bak
 
 # query password
-echo "enter esat password (characters not shown):"
-read -s pass
+echo "Enter ESAT password (characters not shown):"
+read -r -s pass
+echo ""
 
-# function to hash your bloody password
-sed -i -e "s@password=.*@password=hash:$(echo -n $pass | iconv -t utf16le | openssl dgst -md4 -provider legacy -provider default | sed -e 's/.*= //')@" /etc/wpa_supplicant/wpa_supplicant.conf
+# Hash password for MSCHAPv2 (NT hash) and update wpa_supplicant.conf
+hash="$(printf '%s' "$pass" | iconv -t utf16le | openssl dgst -md4 -provider legacy -provider default | sed -e 's/.*= //')"
+sed -i -e "s@password=.*@password=hash:${hash}@" /etc/wpa_supplicant/wpa_supplicant.conf
 
 #query username
-echo "enter esat username:"
-read  user
+echo "Enter ESAT username:"
+read -r user
 sed -i -e "s/identity=.*/identity=\"$user@esat.kuleuven.be\"/" /etc/wpa_supplicant/wpa_supplicant.conf
