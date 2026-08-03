@@ -49,7 +49,7 @@ sudo hostnamectl set-hostname my-env
 
 - (Optional) Run the `fixboottime.sh`. This shortens the timeout for the network interface.
 
-- Run the `cd /etc/wpa_supplicant/ & source wpa_supplicant_setup.sh` and enter your ESAT password and username when prompted. If you are not KU Leuven/ESAT user, please check how to set up authorization for your network.
+- Run the `cd /etc/wpa_supplicant/ && source wpa_supplicant_setup.sh` and enter your ESAT password and username when prompted. If you are not KU Leuven/ESAT user, please check how to set up authorization for your network.
 
 - Check the date&time set in `/root/fixnetworking.sh` is more or less up to date, e.g., to a few hours before the current time. Then run `/root/fixnetworking.sh`.
 
