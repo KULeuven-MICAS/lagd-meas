@@ -34,6 +34,7 @@ import sys
 import time
 
 from sw.tools.elf_loader import parse_elf, bytes_to_words
+from sw.lib.chip_driver import ChipDriver
 
 logger = logging.getLogger(__name__)
 
@@ -193,11 +194,6 @@ def _main():
     ap.add_argument("--wait", action="store_true",
                     help="poll for end-of-computation and print the exit code")
     args = ap.parse_args()
-
-    # Imported lazily (not at module top) so importing this module -- e.g. from
-    # the hardware-free stub tests -- doesn't pull in chip_driver's hardware/port
-    # dependencies, unlike the pure-stdlib elf_loader.
-    from lib.chip_driver import ChipDriver  # noqa: PLC0415
 
     with ChipDriver(args.write_dev, args.read_dev) as chip:
         if not args.no_clk_rst:
