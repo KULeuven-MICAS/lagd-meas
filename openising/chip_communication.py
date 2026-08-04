@@ -6,7 +6,7 @@ import shlex
 
 from pathlib import Path
 from __init__ import TOP_MEAS, TOP_LAGD_IM
-from ising.stages.simulation_stage import Ans
+from submodules.openising.ising.stages.simulation_stage import Ans
 from openising.postprocessing import load_ans
 from target.zcu102.zcu102_reload import reload_board
 from target.zcu102.top import run_elf, REMOTE_PYTHON, DEFAULT_REMOTE_DIR

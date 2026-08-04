@@ -6,13 +6,18 @@ from argparse import Namespace
 from chip_communication import send_chip, compile_data
 from save_model import store_run
 from __init__ import TOP_ISING as TOP
-from ising.stages.model import IsingModel
-from ising.stages.model.MPPI.environment import generate_random_scene, create_environment, create_reference_trajectory
-from ising.stages.simulation_stage import SimulationStage, Ans
-from ising.stages.quantization_stage import QuantizationStage
-from ising.stages.combine_nodes_stage import CombineNodesStage
-from ising.benchmarks.MPPI import get_dynamics_model
-from ising.stages.model.MPPI.QUBOController import QUBOController
+from submodules.openising.ising.stages.model import IsingModel
+from submodules.openising.ising.stages.model.MPPI.environment import (
+    generate_random_scene,
+    create_environment,
+    create_reference_trajectory,
+)
+from submodules.openising.ising.stages.simulation_stage import SimulationStage, Ans
+from submodules.openising.ising.stages.quantization_stage import QuantizationStage
+from submodules.openising.ising.stages.combine_nodes_stage import CombineNodesStage
+from submodules.openising.ising.benchmarks.MPPI import get_dynamics_model
+from submodules.openising.ising.stages.model.MPPI.QUBOController import QUBOController
+
 
 def get_trajectory_view(benchmark, trajectory: np.ndarray) -> np.ndarray:
     # Get horizon
@@ -27,24 +32,27 @@ def get_trajectory_view(benchmark, trajectory: np.ndarray) -> np.ndarray:
     # Flatten and put T first
     return view.reshape(-1, 1)
 
-def reset_actions(benchmark, prev_actions: np.ndarray|None = None) -> np.ndarray:
+
+def reset_actions(benchmark, prev_actions: np.ndarray | None = None) -> np.ndarray:
     L = benchmark.HORIZON_LENGTH
     action_dim = benchmark.action_dim
     actions = np.zeros((L, action_dim))
     # Set non selected actions as initial state for next iteration
     if prev_actions is not None:
-        actions[:-benchmark.action_horizon, :] = prev_actions[benchmark.action_horizon:, :]
+        actions[: -benchmark.action_horizon, :] = prev_actions[benchmark.action_horizon :, :]
     return actions
 
-def build_ising(benchmark,
-                x_bar: np.ndarray,
-                x_ref: np.ndarray,
-                A_seq: np.ndarray,
-                B_seq: np.ndarray,
-                RR: np.ndarray,
-                QQ: np.ndarray,
-                EE: np.ndarray
-                ) -> IsingModel:
+
+def build_ising(
+    benchmark,
+    x_bar: np.ndarray,
+    x_ref: np.ndarray,
+    A_seq: np.ndarray,
+    B_seq: np.ndarray,
+    RR: np.ndarray,
+    QQ: np.ndarray,
+    EE: np.ndarray,
+) -> IsingModel:
     """Build Ising model.
 
     Args:
@@ -72,21 +80,23 @@ def build_ising(benchmark,
         x_bar,
         x_ref,
         B_flat,
-        QQ, RR,
+        QQ,
+        RR,
         E=EE,
     )
     Q = J + np.diag(h)
     return IsingModel.from_qubo(Q)
 
-def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:bool):
-    with Path(TOP/config_path).open(encoding="utf-8") as file:
-            config: dict = yaml.safe_load(file)
+
+def mppi_experiment(config_path, save_folder, interface: str, host: str, use_chip: bool):
+    with Path(TOP / config_path).open(encoding="utf-8") as file:
+        config: dict = yaml.safe_load(file)
 
     config = Namespace(**config)
     benchmark_path = config.benchmark
 
     with Path(benchmark_path).open(encoding="utf-8") as file:
-        benchmark:dict = yaml.safe_load(file)
+        benchmark: dict = yaml.safe_load(file)
     benchmark = Namespace(**benchmark)
 
     # Get dynamics model
@@ -94,14 +104,14 @@ def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:
     # Get QUBO parameters
     qubo = QUBOController(benchmark)
     # Unpack QUBO controller parameters
-    rr ,qq, ee = qubo.RR, qubo.QQ, qubo.EE
+    rr, qq, ee = qubo.RR, qubo.QQ, qubo.EE
 
-    scene, x_ref = parse_benchmark_trajectory(benchmark) # Reference benchmark trajectory
-    executed_trajectory_sw = [x_ref[0, :]] # Initial state (Can be benchmark.x_init)
-    predicted_trajectory_sw = [] # List of all rollouts
+    scene, x_ref = parse_benchmark_trajectory(benchmark)  # Reference benchmark trajectory
+    executed_trajectory_sw = [x_ref[0, :]]  # Initial state (Can be benchmark.x_init)
+    predicted_trajectory_sw = []  # List of all rollouts
     executed_trajectory_hw = [x_ref[0, :]]
     predicted_trajectory_hw = []
-    u_bar_sw = None # Initial actions (Can be benchmark.u_init)
+    u_bar_sw = None  # Initial actions (Can be benchmark.u_init)
     u_bar_hw = None
 
     # Iterate over reference points
@@ -123,12 +133,8 @@ def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:
             x_bar_sw, _, A_seq_sw, B_seq_sw, _ = model.rollout(state_sw, u_bar_sw, dx_sw, du_sw)
             x_bar_hw, _, A_seq_hw, B_seq_hw, _ = model.rollout(state_hw, u_bar_hw, dx_hw, du_hw)
             # Build ising model
-            ising_model_sw = build_ising(benchmark,
-                x_bar_sw, x_ref_view, A_seq_sw, B_seq_sw, rr, qq, ee
-            )
-            ising_model_hw = build_ising(benchmark,
-                            x_bar_hw, x_ref_view, A_seq_hw, B_seq_hw, rr, qq, ee
-                        )
+            ising_model_sw = build_ising(benchmark, x_bar_sw, x_ref_view, A_seq_sw, B_seq_sw, rr, qq, ee)
+            ising_model_hw = build_ising(benchmark, x_bar_hw, x_ref_view, A_seq_hw, B_seq_hw, rr, qq, ee)
             # Necessary kwargs for next stages
             kwargs = dict()
             kwargs["config"] = config
@@ -137,7 +143,7 @@ def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:
             list_of_callables = [CombineNodesStage, SimulationStage]
             sub_stage = QuantizationStage(list_of_callables, **kwargs)
             # Store answers
-            out: tuple[Ans] = next(sub_stage.run()) # This runs the ising model
+            out: tuple[Ans] = next(sub_stage.run())  # This runs the ising model
             ans: Ans = out[0]
             ans.ising_model = ising_model_hw
             ans.save(save_folder / "ans.pkl")
@@ -162,12 +168,8 @@ def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:
             executed_trajectory_hw.append(state_hw)
 
         # Full predicted trajectory at point
-        predicted_trajectory_sw.append(
-            x_bar_sw.reshape(-1, benchmark.state_dim)
-        )
-        predicted_trajectory_hw.append(
-            x_bar_hw.reshape(-1, benchmark.state_dim)
-        )
+        predicted_trajectory_sw.append(x_bar_sw.reshape(-1, benchmark.state_dim))
+        predicted_trajectory_hw.append(x_bar_hw.reshape(-1, benchmark.state_dim))
     # Add final result to answer (and some stuff for result plotting)
     ans.executed_trajectory_sw = executed_trajectory_sw
     ans.predicted_trajectory_sw = predicted_trajectory_sw
@@ -178,12 +180,13 @@ def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:
     ans.delta_t = benchmark.delta_t
     ans.save(save_folder / "ans.pkl")
 
+
 def parse_benchmark_trajectory(benchmark):
     scene = generate_random_scene(seed=benchmark.seed)
     env, control_pts, bc_headings = create_environment(scene)
-    x_ref = create_reference_trajectory(env, control_pts, bc_headings,
-                                        v=benchmark.velocity, dt=benchmark.delta_t)
+    x_ref = create_reference_trajectory(env, control_pts, bc_headings, v=benchmark.velocity, dt=benchmark.delta_t)
     return scene, x_ref.T
+
 
 def build_phi(A_seq, dt, n_approx_iter: int = 1):
     """
@@ -253,11 +256,11 @@ def build_B_mat(phi_fwd, phi_bwd, B_seq, dt):
     """
     # Step 1: phi_bwd[j] @ B_seq[j] * dt  for all j  →  (T, nx, nu)
     # This is the "B column for each time" pre-multiplied by the inverse STM
-    phi_bwd_B = np.einsum('jmk,jku->jmu', phi_bwd, B_seq) * dt  # (T, nx, nu)
+    phi_bwd_B = np.einsum("jmk,jku->jmu", phi_bwd, B_seq) * dt  # (T, nx, nu)
 
     # Step 2: outer product over (i,j) pairs
     # B[i,j,n,u] = phi_fwd[i,n,m] * phi_bwd_B[j,m,u]
-    B = np.einsum('inm,jmu->ijnu', phi_fwd, phi_bwd_B)  # (T, T, nx, nu)
+    B = np.einsum("inm,jmu->ijnu", phi_fwd, phi_bwd_B)  # (T, T, nx, nu)
 
     # Step 3: causal mask — action j can only affect state i if j <= i
     T = phi_fwd.shape[0]
@@ -266,16 +269,17 @@ def build_B_mat(phi_fwd, phi_bwd, B_seq, dt):
 
     # Reshape to (T*nx, T*nu): state dim is outer, action dim is inner
     # B[i,j,n,u] → B_flat[(i*nx + n), (j*nu + u)]
-    B_flat = B.transpose(0, 2, 1, 3).reshape(B.shape[0] * B.shape[2],
-                                             B.shape[1] * B.shape[3])
+    B_flat = B.transpose(0, 2, 1, 3).reshape(B.shape[0] * B.shape[2], B.shape[1] * B.shape[3])
     return B_flat, B  # return both for debugging
 
+
 def build_qubo(
-    x_bar,        # (T+1, nx)   nominal trajectory from rollout
-    x_ref,        # (T, nx)     reference trajectory (horizon window)
-    B_flat,       # (T*nx, T*nu) or (T*nx, n_bits) if pre-multiplied by E
-    Q, R,         # (T*nx, T*nx), (T*nu, T*nu) cost matrices
-    E=None,       # (T*nu, n_bits) encoding matrix, None for continuous
+    x_bar,  # (T+1, nx)   nominal trajectory from rollout
+    x_ref,  # (T, nx)     reference trajectory (horizon window)
+    B_flat,  # (T*nx, T*nu) or (T*nx, n_bits) if pre-multiplied by E
+    Q,
+    R,  # (T*nx, T*nx), (T*nu, T*nu) cost matrices
+    E=None,  # (T*nu, n_bits) encoding matrix, None for continuous
 ):
     # --- Residual terms ---
     r = x_bar[1:].reshape(-1) - x_ref.reshape(-1)  # (T*state_dim,)

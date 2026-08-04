@@ -3,11 +3,11 @@ import yaml
 import logging
 
 from __init__ import TOP_ISING, TOP_MEAS
-from ising.api import get_hamiltonian_energy
+from submodules.openising.ising.api import get_hamiltonian_energy
 from save_model import store_run
 from mppi_experiment import mppi_experiment
 from chip_communication import compile_data, send_chip
-from ising.stages.simulation_stage import Ans
+from submodules.openising.ising.stages.simulation_stage import Ans
 
 DEFAULT_HOST = "root@10.88.18.26"
 
