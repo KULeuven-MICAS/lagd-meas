@@ -1,7 +1,5 @@
 # Python scripts and libs for Xillybus/Zedboard control
 
-Author: Jiacong Sun <jiacong.sun@kuleuven.be>
-
 This folder holds python scripts and libraries for LAGD project for controlling Xillybus on Zedboard environment.
 
 Before running any script under sw/, please source the env.sh at the repo root (to ensure the import works correctly in python):
