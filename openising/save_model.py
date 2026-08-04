@@ -1,9 +1,9 @@
 from pathlib import Path
 import numpy as np
 
-from ising.utils.HDF5Logger import return_data
-from ising.stages.model import IsingModel
-from ising.stages.simulation_stage import Ans
+from submodules.openising.ising.utils.HDF5Logger import return_data
+from submodules.openising.ising.stages.model import IsingModel
+from submodules.openising.ising.stages.simulation_stage import Ans
 
 
 def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
