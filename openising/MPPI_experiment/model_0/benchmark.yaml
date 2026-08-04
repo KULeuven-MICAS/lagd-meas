@@ -32,5 +32,5 @@ action_horizon: 1       # Action execution horizon -> should be one for receding
 
 # MPPI parameters
 n_mppi_iterations: 1    # Number of MPPI iterations to do per tracking step
-n_approx_iter: 2        # Number of approximation terms in the calculation of 
-                        # inverses during forward rollout
+n_approx_iter: 2        # Number of approximation terms in the calculation of
+# inverses during forward rollout
