@@ -25,6 +25,10 @@ case ":${PYTHONPATH:-}:" in
   *) export PYTHONPATH="$_repo_root${PYTHONPATH:+:$PYTHONPATH}" ;;
 esac
 
+export TOP_MEAS=$(git rev-parse --show-toplevel)
+export TOP_ISING=$TOP_MEAS/submodules/openising
+export TOP_LAGD_IM=$TOP_MEAS/submodules/lagd-im
+
 echo "repo root on PYTHONPATH -> $_repo_root"
 unset _repo_root
 

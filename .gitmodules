@@ -1,6 +1,6 @@
 [submodule "openising/openising"]
-	path = openising/openising
+	path = submodules/openising
 	url = https://github.com/KULeuven-MICAS/openising.git
 [submodule "openising/lagd-im"]
-	path = openising/lagd-im
+	path = submodules/lagd-im
 	url = https://github.com/KULeuven-MICAS/lagd-im.git
