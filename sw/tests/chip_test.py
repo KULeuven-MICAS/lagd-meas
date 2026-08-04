@@ -25,7 +25,7 @@
 import sys
 import random
 import logging
-import time
+# import time
 
 from sw.lib.chip_driver import ChipDriver
 from sw.lib.chip_command_api import WRITEBACK_FIFO, make_command
