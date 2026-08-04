@@ -25,10 +25,10 @@ def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
             logfile_1 = ans.MIMO[int(i / 2)].logfiles[0]
             logfile_2 = ans.MIMO[int(i / 2)].logfiles[1]
             scale_factor = ans.MIMO[int(i / 2)].h_scale_factor
-        elif problem_type == "MPPI":
-            logfile_1 = ans.MPPI[0].logfiles[0]
-            logfile_2 = ans.MPPI[0].logfiles[0]
-            scale_factor = ans.h_scale_factor
+        # elif problem_type == "MPPI":
+        #     logfile_1 = ans.MPPI[0].logfiles[0]
+        #     logfile_2 = ans.MPPI[0].logfiles[0]
+        #     scale_factor = ans.h_scale_factor
         else:
             logfile_1 = ans.logfiles[i]
             logfile_2 = ans.logfiles[i + 1]

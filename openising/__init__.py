@@ -1,8 +1,6 @@
-from pathlib import Path
 import os
+from pathlib import Path
 
-current_dir = Path(os.path.realpath(__file__)).parent
-# Set the correct top path
-toppath = current_dir / "openising"
-os.environ["TOP"] = str(toppath)
-TOP_MEAS = current_dir.parent
+TOP_MEAS = Path(os.environ["TOP_MEAS"])
+TOP_ISING = Path(os.environ["TOP_ISING"])
+TOP_LAGD_IM = Path(os.environ["TOP_LAGD_IM"])
