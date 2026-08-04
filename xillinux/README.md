@@ -43,7 +43,7 @@ sudo hostnamectl set-hostname my-env
 
 **Configure the internet**: Since the FPGA is usually used within a campus network which has firewalls and requests authorization first, it is needed to set up the internet with proper campus authorization.
 
-- Check the Zedboard MAC address `cloned-mac-address` in [etc/NetworkManager/system-connections/eth0](etc/NetworkManager/system-connections/eth0) and verify its uniqueness in your local network (no local conflict). If the MAC is already in use, change it. This details can be found in the xillybus manual at [here](https://xillybus.com/downloads/doc/xillybus_getting_started_zynq.pdf).
+- Check the Zedboard MAC address `MACAddress` in [/etc/systemd/network/10-eth0.link](/etc/systemd/network/10-eth0.link) and verify its uniqueness in your local network (no local conflict). If the MAC is already in use, change it. This details can be found in the xillybus manual at [here](https://xillybus.com/downloads/doc/xillybus_getting_started_zynq.pdf).
 
 - Enable the `wpa_supplicant` service with `systemctl enable wpa_supplicant`.
 
@@ -63,6 +63,8 @@ sudo hostnamectl set-hostname my-env
 sudo systemctl disable NetworkManager-wait-online.service
 sudo systemctl mask NetworkManager-wait-online.service
 ```
+
+- Ensure if the MAC address is correct by running the command `ip link show eth0` and if you get an IPv4 address by the commmand `ip -4 addr show eth0`.
 
 **Update the IP email script**: Once you connect the FPGA to ethernet, it will send an email to notify its latest IP address. Please update the script so that it matches with your new own email address (a copy of the same script is put under current github folder):
 
