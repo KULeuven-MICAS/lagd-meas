@@ -10,4 +10,5 @@ seed: 100
 dummy_seed: 42
 nb_trials: 10000
 nb_runs: 2
-dummy_creator: True
+dummy_creator: true
+use_ZF: true

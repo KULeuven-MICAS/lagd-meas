@@ -5,4 +5,4 @@ seed: 100
 dummy_seed: 42
 dummy_precision: 4
 nb_runs: 10
-dummy_creator: True
+dummy_creator: true
