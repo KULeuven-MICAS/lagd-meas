@@ -5,15 +5,14 @@ from argparse import Namespace
 
 from chip_communication import send_chip, compile_data
 from save_model import store_run
-from ising.stages import TOP
+from __init__ import TOP_ISING as TOP
 from ising.stages.model import IsingModel
 from ising.stages.model.MPPI.environment import generate_random_scene, create_environment, create_reference_trajectory
-from ising.stages.simulation_stage import SimulationStage
+from ising.stages.simulation_stage import SimulationStage, Ans
 from ising.stages.quantization_stage import QuantizationStage
 from ising.stages.combine_nodes_stage import CombineNodesStage
 from ising.benchmarks.MPPI import get_dynamics_model
 from ising.stages.model.MPPI.QUBOController import QUBOController
-GITREPO = TOP.parent
 
 def get_trajectory_view(benchmark, trajectory: np.ndarray) -> np.ndarray:
     # Get horizon
@@ -84,7 +83,7 @@ def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:
             config: dict = yaml.safe_load(file)
 
     config = Namespace(**config)
-    benchmark_path = GITREPO / config.benchmark
+    benchmark_path = config.benchmark
 
     with Path(benchmark_path).open(encoding="utf-8") as file:
         benchmark:dict = yaml.safe_load(file)
@@ -138,10 +137,12 @@ def mppi_experiment(config_path, save_folder, interface:str, host:str, use_chip:
             list_of_callables = [CombineNodesStage, SimulationStage]
             sub_stage = QuantizationStage(list_of_callables, **kwargs)
             # Store answers
-            ans, _ = next(sub_stage.run()) # This runs the ising model
+            out: tuple[Ans] = next(sub_stage.run()) # This runs the ising model
+            ans: Ans = out[0]
             ans.ising_model = ising_model_hw
-            store_run(ans, save_folder, "MPPI")
-            compile_data(save_folder, 1)
+            ans.save(save_folder / "ans.pkl")
+            data_folders = store_run(ans, save_folder, "MPPI")
+            compile_data(data_folders, 1)
             send_chip(save_folder, 1, interface, use_chip, host)
             actions_hw = np.loadtxt(save_folder / "run_0/hw_final_state_1")
             actions_sw = (ans.states["Multiplicative"][0] + 1.0) / 2.0
