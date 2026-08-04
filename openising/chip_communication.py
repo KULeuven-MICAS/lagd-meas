@@ -5,7 +5,7 @@ import numpy as np
 import shlex
 
 from pathlib import Path
-from __init__ import TOP_MEAS
+from __init__ import TOP_MEAS, TOP_LAGD_IM
 from ising.stages.simulation_stage import Ans
 from openising.postprocessing import load_ans
 from target.zcu102.zcu102_reload import reload_board
@@ -26,8 +26,7 @@ def compile_data_convergence(data_folder: Path, interface: str, nb_iteration: in
     @param nb_iteration: the amount of flipping iterations
     """
     folder = data_folder / "run_0"
-    compile_folder = TOP_MEAS / "openising/lagd-im/sw/tests/data/default"
-    lagd_folder = TOP_MEAS / "openising/lagd-im"
+    compile_folder = TOP_LAGD_IM / "/sw/tests/data/default"
     rename_move_file(folder / "model", compile_folder, "model_1")
     move_to_datafolder(folder, compile_folder, 0)
 
@@ -36,13 +35,13 @@ def compile_data_convergence(data_folder: Path, interface: str, nb_iteration: in
     for it in range(nb_iteration):
         with Reg_file.open("r") as f:
             data = f.readlines()
-        data[it_line] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(it+1)} // max: 0x0400 (1024)"
+        data[it_line] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(it + 1)} // max: 0x0400 (1024)"
         with Reg_file.open("w") as f:
             f.writelines(data)
 
         elf_file = f"lagd_commands_iteration{it}"
         subprocess.run(["pixi", "run", "make -C ./sw clean all BENDER=bender"])
-        rename_move_file(lagd_folder / "sw/tests/lagd_scompute.spm.elf", folder, elf_file)
+        rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_scompute.spm.elf", folder, elf_file)
 
 
 def compile_data(data_folders: list[Path], nb_cores: int):
@@ -56,8 +55,7 @@ def compile_data(data_folders: list[Path], nb_cores: int):
     @param nb_cores: how many cores on the chip that will be used. The maximum is 2.
     """
     assert nb_cores <= 2
-    lagd_folder = TOP_MEAS / "openising/lagd-im"
-    os.chdir(lagd_folder)
+    os.chdir(TOP_LAGD_IM)
     # copy data to folder
     compile_folder = TOP_MEAS / "openising/lagd-im/sw/tests/data/default"
     nb_runs = len(data_folders)
@@ -70,7 +68,7 @@ def compile_data(data_folders: list[Path], nb_cores: int):
     it_line = 74  # line 73 but start from 0
     with Reg_file.open("r") as f:
         data = f.readlines()
-    data[it_line] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(nb_flipping+1)} // max: 0x0400 (1024)\n"
+    data[it_line] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(nb_flipping + 1)} // max: 0x0400 (1024)\n"
     with Reg_file.open("w") as f:
         f.writelines(data)
 
@@ -89,21 +87,34 @@ def compile_data(data_folders: list[Path], nb_cores: int):
         elf_file = "lagd_commands.elf"
         subprocess.run(["pixi", "run", "make -C ./sw clean all BENDER=bender"])
         if folder_2 is not None:
-            rename_move_file(lagd_folder / "sw/tests/lagd_dcompute.spm.elf", folder_1, elf_file)
-            rename_move_file(lagd_folder / "sw/tests/lagd_dcompute.spm.elf", folder_2, elf_file)
+            rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_dcompute.spm.elf", folder_1, elf_file)
+            rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_dcompute.spm.elf", folder_2, elf_file)
         else:
-            rename_move_file(lagd_folder / "sw/tests/lagd_scompute.spm.elf", folder_1, elf_file)
+            rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_scompute.spm.elf", folder_1, elf_file)
 
 
-def _stream_uart_output(stdout, device: str, baud: int, timeout: float, remote_dir, host, rtscts: bool = False, ):
+def _stream_uart_output(
+    stdout,
+    device: str,
+    baud: int,
+    timeout: float,
+    remote_dir,
+    host,
+    rtscts: bool = False,
+):
     # ssh to xilinx first
     tokens = [
-            REMOTE_PYTHON, "-m", "openising.uart_output",
-            "--device", device,
-            "--baud", str(baud),
-            "--timeout", str(timeout),
-            "--rtscts" if rtscts else ""
-        ]
+        REMOTE_PYTHON,
+        "-m",
+        "openising.uart_output",
+        "--device",
+        device,
+        "--baud",
+        str(baud),
+        "--timeout",
+        str(timeout),
+        "--rtscts" if rtscts else "",
+    ]
     remote_cmd = f"cd {shlex.quote(remote_dir)}/ && " + " ".join(shlex.quote(t) for t in tokens)
     subprocess.run(["ssh", "-t", host, remote_cmd], stdout=stdout, check=True)
 
@@ -134,7 +145,6 @@ def send_chip(
     uart_device: str = DEFAULT_UART_DEVICE,
     uart_baud: int = DEFAULT_UART_BAUD,
     uart_timeout: float = 3600.0,
-
 ) -> int:
     """Send the data of the different software runs to the chip and wait untill the results from the chip are written\
        to a file.
@@ -158,11 +168,13 @@ def send_chip(
         nb_runs = min(ans.config.nb_trials, ans.config.dummy_case_num)
     else:
         nb_variables = ans.ising_model.num_variables
-        nb_runs = int(ans.config.nb_runs/2)
+        nb_runs = int(ans.config.nb_runs / 2)
+    workspace = "Workspace/workspace_sofie"
+    setup_host = ["ssh", host, f"cd {workspace} &&", "source", "env.sh &&" ,]
     # set up stream
-    reload_board()
     # setup for jtag and spi: 1. reload board, 2. open uart port to wait, 3. run elf file, 4. read from uart port
     for run in range(0, nb_runs, nb_cores):
+        reload_board()
         run_folder = data_folder / f"run_{run}"
         elf_file = (run_folder / "lagd_commands.elf").relative_to(TOP_MEAS)
         # reload chip
@@ -175,7 +187,11 @@ def send_chip(
             with top_log.open("w") as f:
                 uart_thread = _start_uart_stream(f, uart_device, uart_baud, uart_timeout, host)
                 subprocess.run(
-                    ["ssh", host, "Workspace/workspace_sofie/sw/jtag/run_elf.sh", f"{elf_file}", "-c", "set ADAPTER_KHZ 4000"],
+                    setup_host + [ "sw/jtag/run_elf.sh",
+                        f"{elf_file}",
+                        "-c",
+                        "set ADAPTER_KHZ 4000",
+                    ],
                     cwd=TOP_MEAS,
                     stdout=f,
                     stderr=subprocess.STDOUT,
@@ -188,8 +204,8 @@ def send_chip(
             with top_log.open("w") as f:
                 uart_thread = _start_uart_stream(f, uart_device, uart_baud, uart_timeout, host)
                 subprocess.run(
-                    ["ssh", host, "python", "Workspace/workspace_sofie/sw/tools/spi_program_loader.py", f"{elf_file}"],
-                    cwd=TOP_MEAS,
+                    setup_host + ["python", "sw/tools/spi_program_loader.py", f"{elf_file}"],
+                    # cwd=TOP_MEAS,
                     stdout=f,
                     stderr=subprocess.STDOUT,
                     check=True,
@@ -201,13 +217,14 @@ def send_chip(
             raise ValueError(f"Interface {interface} is not yet supported")
         # move to correct folder and parse output
         if nb_cores == 2:
-            folders = [run_folder, data_folder / f"run_{run+1}"]
+            folders = [run_folder, data_folder / f"run_{run + 1}"]
         else:
             folders = [run_folder]
         retrieve_data_from_output(folders, nb_cores, nb_variables, nb_flipping)
     return 0
 
-def retrieve_data_from_output(data_folders: list[Path], nb_cores:int, nb_variables: int, nb_flipping: int):
+
+def retrieve_data_from_output(data_folders: list[Path], nb_cores: int, nb_variables: int, nb_flipping: int):
     """
     This function retrieves the output data of the chip and stores it in the correct folder.
 
@@ -221,9 +238,9 @@ def retrieve_data_from_output(data_folders: list[Path], nb_cores:int, nb_variabl
     @param nb_flipping: the amount of flipping iterations. This ensures only this amount of energy values are stored.
     """
     output_file = TOP_MEAS / "top.log"
-    energies = np.zeros((2*nb_cores, nb_flipping))
-    final_states = np.zeros((2*nb_cores, nb_variables), dtype=int)
-    current_it = np.zeros((2*nb_cores,), dtype=int)
+    energies = np.zeros((2 * nb_cores, nb_flipping))
+    final_states = np.zeros((2 * nb_cores, nb_variables), dtype=int)
+    current_it = np.zeros((2 * nb_cores,), dtype=int)
     with output_file.open("r") as f:
         for line in f.readlines():
             parts_line = line.split(" ")
@@ -231,10 +248,10 @@ def retrieve_data_from_output(data_folders: list[Path], nb_cores:int, nb_variabl
                 if "energy_fifo_data" in line:
                     # energy case
                     core = int(parts_line[4][0])
-                    run = (int(parts_line[-2])-1) % 2
-                    iteration = int((int(parts_line[-2])-1)/2)
+                    run = (int(parts_line[-2]) - 1) % 2
+                    iteration = int((int(parts_line[-2]) - 1) / 2)
                     energy = int.from_bytes(bytes.fromhex(parts_line[-1][2:]), signed=True)
-                    cur_run = 2*core + run
+                    cur_run = 2 * core + run
                     energies[cur_run, iteration] = energy
                     if iteration > current_it[cur_run]:
                         energies[cur_run, current_it[cur_run] : iteration] = energies[cur_run, current_it[cur_run]]
@@ -248,18 +265,18 @@ def retrieve_data_from_output(data_folders: list[Path], nb_cores:int, nb_variabl
                     core = int(parts_line[1][-3])
                     run = int(parts_line[1][-5])
                     for node in range(nb_variables):
-                        final_states[core*2 + run][node] = int(state[node])*2-1
+                        final_states[core * 2 + run][node] = int(state[node]) * 2 - 1
                 else:
-                    #final energy case
+                    # final energy case
                     energy = int.from_bytes(bytes.fromhex(parts_line[-1][2:]), signed=True)
                     core = int(parts_line[-2][0])
                     run = int(parts_line[4])
-                    cur_run = 2*core + run
-                    energies[cur_run, current_it[cur_run]+1:] = energy
+                    cur_run = 2 * core + run
+                    energies[cur_run, current_it[cur_run] + 1 :] = energy
     for core, folder in zip(range(nb_cores), data_folders):
         for run in range(2):
-            np.savetxt(folder/f"hw_best_energy_{run+1}", energies[2*core + run, :],fmt="%32s")
-            np.savetxt(folder/f"hw_final_state_{run+1}", final_states[2*core+run, :], fmt="%1u")
+            np.savetxt(folder / f"hw_best_energy_{run + 1}", energies[2 * core + run, :], fmt="%32s")
+            np.savetxt(folder / f"hw_final_state_{run + 1}", final_states[2 * core + run, :], fmt="%1u")
 
 
 def move_to_datafolder(source_folder: Path, data_folder: Path, core: int):
@@ -294,5 +311,6 @@ def rename_move_file(source: Path, destination: Path, newname: str):
     """
     subprocess.run(["cp", source, destination / newname])
 
+
 if __name__ == "__main__":
-    send_chip(TOP_MEAS / "openising/Maxcut_experiment/model_0", 2, "spi")
+    send_chip(TOP_MEAS / "openising/Maxcut_experiment/model_0", 2, "spi", uart_timeout=10)

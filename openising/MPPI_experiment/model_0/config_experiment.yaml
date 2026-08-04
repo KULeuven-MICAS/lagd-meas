@@ -1,4 +1,4 @@
-dummy_creator: False
+dummy_creator: false
 nb_runs: 2
 problem_type: MPPI
 initialization_seed: 42
