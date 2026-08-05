@@ -25,10 +25,12 @@
 import sys
 import random
 import logging
-import time
+# import time
 
 from sw.lib.chip_driver import ChipDriver
 from sw.lib.chip_command_api import WRITEBACK_FIFO, make_command
+
+logger = logging.getLogger(__name__)
 
 # Configure logging: include timestamp and level
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -109,14 +111,20 @@ def main():
     # init quad-spi
     chip.init_spi()
     # smoke test: test writeback loop
-    test_writeback()
+    # test_writeback()
     # write data
-    chip.write_mem(0x100, [random.randint(0, 0xFFFFFFFF) for _ in range(7000)])
+    # chip.write_mem(0x100, [random.randint(0, 0xFFFFFFFF) for _ in range(7000)])
     # loopback-write check: data is echoed back for verification
-    # test_verify_write_mem(0x200, [random.randint(0, 0xFFFFFFFF) for _ in range(10)])
+    SCRATCH_0 = random.randint(0x80000000, 0x80010000)
+    length = 1
+    data = [random.randint(0, 0xFFFFFFFF) for _ in range(length)]
+    logger.info(f"Writing data: {[hex(d) for d in data]}")
+    test_verify_write_mem(SCRATCH_0, data)
     # read back and check
-    # readback = chip.read_mem(0x100, length=2)
-    time.sleep(60)
+    readback = chip.read_mem(SCRATCH_0, length=length)
+    logger.info(f"Readback data: {[hex(d) for d in readback]}")
+    logger.info(f"Readback matches written data: {readback == data}")
+    # time.sleep(60)
 
 
 if __name__ == '__main__':
