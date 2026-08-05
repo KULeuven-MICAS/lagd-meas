@@ -57,14 +57,14 @@ def compile_data(data_folders: list[Path], nb_cores: int):
     assert nb_cores <= 2
     os.chdir(TOP_LAGD_IM)
     # copy data to folder
-    compile_folder = TOP_MEAS / "openising/lagd-im/sw/tests/data/default"
+    compile_folder = TOP_LAGD_IM / "sw/tests/data/default"
     nb_runs = len(data_folders)
 
     # make sure the amount of iterations is altered
     ans = Ans()
     ans.load(data_folders[0].parent / "ans.pkl")
     nb_flipping = ans.config.nb_flipping
-    Reg_file = TOP_MEAS / "openising/lagd-im/sw/include/lagd_reg_params.h"
+    Reg_file = TOP_LAGD_IM / "sw/include/lagd_reg_params.h"
     it_line = 74  # line 73 but start from 0
     with Reg_file.open("r") as f:
         data = f.readlines()
