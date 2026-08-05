@@ -11,7 +11,7 @@
 # For static IP, consult /etc/dhcpcd.conf and 'man dhcpcd.conf'
 
 # eth0 is changed from the default "auto" to "allow-hotplug"
-# to let it not stall the OS boot sequence if authentication or DHCP fails.
+# to let it not stall the OS boot sequence if authentication or dhclient (ISC) fails.
 
 # Include files from /etc/network/interfaces.d:
 source-directory /etc/network/interfaces.d
