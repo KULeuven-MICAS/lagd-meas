@@ -10,7 +10,7 @@ import requests
 from contextlib import contextmanager
 from getpass import getpass
 
-from .crypto_utils import Credentials, decrypt_keyfile
+from .crypto import Credentials, decrypt_keyfile
 
 logger = logging.getLogger(__name__)
 

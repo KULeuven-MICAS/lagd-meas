@@ -17,8 +17,6 @@ from sw.lib.os_utils.parser import Parser
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
 PRJ_ROOT = Path(__file__).resolve().parent.parent
 INSTR_CFG_PATH = PRJ_ROOT/"lib"/"lab_instruments"/"config"/"meas_setup.yaml"
 

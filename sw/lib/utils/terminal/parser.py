@@ -6,8 +6,8 @@ import argparse
 import logging
 from pathlib import Path
 
-from .iclab_session import prompt_for_credentials, get_credentials_from_keyfile
-from .crypto_utils import Credentials
+from sw.lib.utils.iclab_session import prompt_for_credentials, get_credentials_from_keyfile
+from sw.lib.utils.crypto import Credentials
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,6 @@ class BaseParser:
         self.reduce_args()
 
     def init_parser(self):
-        raise NotImplementedError
-
-    def set_defaults(self):
         raise NotImplementedError
 
     def check_args(self):
@@ -44,15 +41,22 @@ class Parser(BaseParser):
         self.parser.add_argument('-k', '--keyfile', type=Path, help='Key file path')
         self.parser.add_argument('-u', '--username', type=str, help='University username')
         self.parser.add_argument('-p', '--password', type=str, help='University password')
+        self.parser.add_argument('-f', '--config-file', type=Path, help='Configuration file path')
+        self.parser.add_argument('-v', '--verbose', action='count', default=0,
+            help='Enable verbose output')
+        self.parser.add_argument('-i', '--interactive', action='store_true',
+            help='Enable interactive mode for user input during execution')
 
-    def set_defaults(self):
-        pass
+    def _check_file_arg(self, arg_name):
+        arg_value = getattr(self.args, arg_name)
+        if arg_value is not None and not Path.is_file(arg_value):
+            logger.error(f'File {arg_value} not found')
+            raise FileNotFoundError
 
     def check_args(self):
         # Check if the keyfile argument is provided and if the file exists
-        if self.args.keyfile is not None and not Path.is_file(self.args.keyfile):
-            logger.error(f'File {self.args.keyfile} not found')
-            raise FileNotFoundError
+        self._check_file_arg('keyfile')
+        self._check_file_arg('config_file')
 
     def reduce_args(self):
         # Getting the credentials from the keyfile if provided
@@ -65,3 +69,32 @@ class Parser(BaseParser):
 
     def get_credentials(self):
         return self._credentials
+
+    # Logging related methods
+    # TODO DEBT: logging related building should be moved to a separate class
+    #    i.e. a separate logging wrapper
+    def get_logging_level(self):
+        if self.args.verbose == 0:
+            return logging.WARNING
+        elif self.args.verbose == 1:
+            return logging.INFO
+        else:
+            return logging.DEBUG
+
+    def get_logging_format(self):
+        if self.args.verbose == 0:
+            return '[%(levelname)s]: %(message)s'
+        elif self.args.verbose == 1:
+            return '[%(levelname)s]: %(message)s'
+        else:
+            return (
+                '[%(asctime)s] [%(filename)s - %(funcName)s +%(lineno)s]\n'
+                '\t[%(levelname)s]: %(message)s'
+            )
+
+    def get_verbose(self):
+
+        if self.args.verbose > 1:
+            return True
+        else:
+            return False

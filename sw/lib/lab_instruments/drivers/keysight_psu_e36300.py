@@ -21,11 +21,11 @@ class KeysightPSUE36300(inst.BaseInstrument):
     """
     def __init__(self, info: inst.BasePowerSupplyData):
         self._num_channels = 3 # It has 3 channels
-        self._channel_names = [
+        self._channel_tags = [
             "CH1", "P6V",  # Channel 1: 6V output
             "CH2", "P25V",  # Channel 2: 25V output
             "CH3", "N25V"]  # Channel 3: -25V output
-        self._lookup_channel = {
+        self._lookup_channel_tags = {
             "CH1": 1, "P6V": 1,
             "CH2": 2, "P25V": 2,
             "CH3": 3, "N25V": 3}

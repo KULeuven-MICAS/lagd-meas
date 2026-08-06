@@ -1,0 +1,2 @@
+WRITE_DEV: '/dev/xillybus_write_8'
+READ_DEV: '/dev/xillybus_read_8'
