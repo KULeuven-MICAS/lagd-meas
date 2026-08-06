@@ -67,6 +67,26 @@ class PeripDriver(PortDriver):
         # HV9308 S2P host-side cache: last value written, last OE state.
         self._s2p_value = None  # type: Optional[int]
         self._s2p_oe = False
+        self._load_states = {
+            'JD0_1k': 0, 'JD0_10k': 0, 'JD0_100k': 0, 'JD0_1M': 0,
+            'JD1_1k': 0, 'JD1_10k': 0, 'JD1_100k': 0, 'JD1_1M': 0,
+            'HD0_1k': 0, 'HD0_10k': 0, 'HD0_100k': 0, 'HD0_1M': 0,
+            'HD1_1k': 0, 'HD1_10k': 0, 'HD1_100k': 0, 'HD1_1M': 0,
+            'JU0_1k': 0, 'JU0_10k': 0, 'JU0_100k': 0, 'JU0_1M': 0,
+            'JU1_1k': 0, 'JU1_10k': 0, 'JU1_100k': 0, 'JU1_1M': 0,
+            'HU0_1k': 0, 'HU0_10k': 0, 'HU0_100k': 0, 'HU0_1M': 0,
+            'HU1_1k': 0, 'HU1_10k': 0, 'HU1_100k': 0, 'HU1_1M': 0
+        }
+        self._load_states_positions = {
+            'JD0_1k': 0, 'JD0_10k': 1, 'JD0_100k': 2, 'JD0_1M': 3,
+            'JU0_1k': 4, 'JU0_10k': 5, 'JU0_100k': 6, 'JU0_1M': 7,
+            'HD0_1k': 8, 'HD0_10k': 9, 'HD0_100k': 10, 'HD0_1M': 11,
+            'HU0_1k': 12, 'HU0_10k': 13, 'HU0_100k': 14, 'HU0_1M': 15,
+            'JD1_1k': 16, 'JD1_10k': 17, 'JD1_100k': 18, 'JD1_1M': 19,
+            'JU1_1k': 20, 'JU1_10k': 21, 'JU1_100k': 22, 'JU1_1M': 23,
+            'HD1_1k': 24, 'HD1_10k': 25, 'HD1_100k': 26, 'HD1_1M': 27,
+            'HU1_1k': 28, 'HU1_10k': 29, 'HU1_100k': 30, 'HU1_1M': 31
+        }
 
     # ---- raw command set (see perip_command_api.sv) ----
     def dac_write(self, addr: int, data: int, rstn: int = 1, shdn: int = 1) -> None:
@@ -156,6 +176,48 @@ class PeripDriver(PortDriver):
         self.s2p_output_enable(False)
         self.s2p_write(value)
         self.s2p_output_enable(True)
+
+    def _s2p_states_to_value(self) -> int:
+        """Convert the current load states to a 32-bit value for the HV9308."""
+        value = 0
+        for name, pos in self._load_states_positions.items():
+            value |= (self._load_states[name] << pos)
+        return value
+
+    def _s2p_update_load_state(self, load_name: str, state: int) -> None:
+        """Set the state of a load (0=off, 1=on) and update the HV9308 outputs.
+
+        The load_name must be one of the 32 load names in _load_states.
+        """
+        if load_name not in self._load_states:
+            raise ValueError(f"Invalid load name: {load_name}")
+        if state not in (0, 1):
+            raise ValueError(f"Invalid state: {state}, must be 0 or 1")
+        self._load_states[load_name] = state
+        # Construct the 32-bit value to send to the HV9308 based on the current states.
+        value = self._s2p_states_to_value()
+        self.s2p_reconfigure(value)
+
+    def s2p_set_load_state(self, load_name: str, state: int) -> None:
+        """Set the state of a load (0=off, 1=on) and update the HV9308 outputs.
+
+        The load_name must be one of the 32 load names in _load_states.
+        """
+        self._s2p_update_load_state(load_name, state)
+        # Construct the 32-bit value to send to the HV9308 based on the current states.
+        value = self._s2p_states_to_value()
+        self.s2p_reconfigure(value)
+
+    def s2p_set_load_states(self, states: dict) -> None:
+        """Set multiple load states at once and update the HV9308 outputs.
+
+        The states dict should map load names to their desired states (0 or 1).
+        """
+        for load_name, state in states.items():
+            self._s2p_update_load_state(load_name, state)
+        # Construct the 32-bit value to send to the HV9308 based on the current states.
+        value = self._s2p_states_to_value()
+        self.s2p_reconfigure(value)
 
     # ---- channel / voltage helpers (AD8802) ----
     def set_code(self, channel: int, code: int, shdn: int = 1) -> None:
