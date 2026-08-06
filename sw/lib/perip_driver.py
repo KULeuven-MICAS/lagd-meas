@@ -67,6 +67,12 @@ class PeripDriver(PortDriver):
         # HV9308 S2P host-side cache: last value written, last OE state.
         self._s2p_value = None  # type: Optional[int]
         self._s2p_oe = False
+
+        # DOC:
+        #   [J-H] J or H current bias
+        #   [D-U] D or U down or up
+        #   [0-1] 0 or 1 (first or second core)
+        #   [1k-1M] 1k, 10k, 100k, 1M load
         self._load_states = {
             'JD0_1k': 0, 'JD0_10k': 0, 'JD0_100k': 0, 'JD0_1M': 0,
             'JD1_1k': 0, 'JD1_10k': 0, 'JD1_100k': 0, 'JD1_1M': 0,
