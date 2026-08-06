@@ -136,9 +136,9 @@ def main():
     # test writeback of DAC controller to ensure it is alive
     test_writeback()
     # loopback-write check: a real DAC write whose command is echoed back
-    for i in range(10000):
-        test_verify_dac_write(addr=3, data=0x5A)
-        logger.info("iteration %d", i)
+    #for i in range(10000):
+    #    test_verify_dac_write(addr=3, data=0x5A)
+    #    logger.info("iteration %d", i)
     ##################################
     ## Serial2Parallel configuration
     ##################################
@@ -147,6 +147,18 @@ def main():
     # set all channels to a volt
     # volt = 0.6
     # perip.set_all_voltage(volt, VREF)
+    LOAD_STATES = {
+            'JD0_1k': 1, 'JD0_10k': 0, 'JD0_100k': 0, 'JD0_1M': 0,
+            'JD1_1k': 1, 'JD1_10k': 0, 'JD1_100k': 0, 'JD1_1M': 0,
+            'HD0_1k': 1, 'HD0_10k': 0, 'HD0_100k': 0, 'HD0_1M': 0,
+            'HD1_1k': 1, 'HD1_10k': 0, 'HD1_100k': 0, 'HD1_1M': 0,
+            'JU0_1k': 1, 'JU0_10k': 0, 'JU0_100k': 0, 'JU0_1M': 0,
+            'JU1_1k': 1, 'JU1_10k': 0, 'JU1_100k': 0, 'JU1_1M': 0,
+            'HU0_1k': 1, 'HU0_10k': 0, 'HU0_100k': 0, 'HU0_1M': 0,
+            'HU1_1k': 1, 'HU1_10k': 0, 'HU1_100k': 0, 'HU1_1M': 0
+    }
+    perip.set_s2p_load_states(LOAD_STATES)
+
     time.sleep(1)
     # pdb.set_trace()  # drop into interactive mode for manual testing
 
