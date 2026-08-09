@@ -32,7 +32,7 @@ import zcu102_reload
 logger = logging.getLogger(__name__)
 
 DEFAULT_ELF = "sw/inputs/helloworld.spm.elf"
-DEFAULT_HOST = "root@10.88.18.26"
+DEFAULT_HOST = "root@10.88.18.6"
 DEFAULT_REMOTE_DIR = "Workspace/workspace_jiacong"
 DEFAULT_DEVICE = "/dev/ttyUSB2"
 REMOTE_PYTHON = "/usr/local/localenv/python3.6/bin/python3"
