@@ -689,7 +689,8 @@ module xillydemo
   ////    CHIP and PERIP CONTROLLER MODULES    ////
   /////////////////////////////////////////////////
   parameter integer CLK_HZ = 100_000_000;       // 100 MHz bus clock
-  parameter integer CHIP_SCK_HZ = 1_000;   // 1 kHz chip Quad-SPI clock
+  parameter integer CHIP_SCK_HZ = 5_000_000;
+  parameter integer CHIP_SCK_MAX_HZ = 25_000_000;
   parameter integer PERIP_SCK_HZ = 1_000;   // 1 kHz DAC SPI + HV9308 S2P shift clock
   parameter integer PLL_STRB_HZ  = 1_000;   // 1 kHz PLL serial-config strobe
   parameter integer CSB_HOLD_CYCLES = 40 / (1000_000_000 / CLK_HZ); // 40 ns hold time for CSB signal (see DAC datasheet) converted to number of bus clock cycles
@@ -697,7 +698,8 @@ module xillydemo
   // Controller for on-chip Quad-SPI
   chip_controller #(
     .CLK_HZ            (CLK_HZ         ),
-    .SCK_HZ            (CHIP_SCK_HZ    )
+    .SCK_HZ            (CHIP_SCK_HZ    ),
+    .SCK_MAX_HZ        (CHIP_SCK_MAX_HZ)
   ) chip_controller_inst (
     .clk_i             (clk_chip_ctrl  ),
     .rst_i             (rst_chip_ctrl  ),
