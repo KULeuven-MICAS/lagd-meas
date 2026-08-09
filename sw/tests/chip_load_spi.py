@@ -56,6 +56,9 @@ READ_DEV = '/dev/xillybus_read_32'
 # (sw/tests/ -> sw/) so it works from any cwd.
 DEFAULT_ELF = str(Path(__file__).resolve().parent.parent / 'inputs' / 'helloworld.spm.elf')
 
+# Default SPI clock frequency (Hz) for the load: 5 MHz
+DEFAULT_SCK_HZ = 5_000_000
+
 # Smoke-test pattern: an arbitrary, easily-recognizable 32-bit value. A clean
 # round-trip of this word proves the path works and the byte order is correct.
 SMOKE_VALUE = 0xCAFEF00D
@@ -114,6 +117,8 @@ def parse_args(argv=None):
         description="Load a program ELF onto the chip over SPI and launch it.")
     ap.add_argument('elf', nargs='?', default=DEFAULT_ELF,
                     help='path to the ELF to load (default: %(default)s)')
+    ap.add_argument('--sck', type=float, default=DEFAULT_SCK_HZ, metavar='HZ',
+                    help='target SPI clock frequency in Hz (default: %(default)s)')
     args = ap.parse_args(argv)
     # Check the ELF here so a typo fails before the smoke test powers anything.
     if not Path(args.elf).is_file():
@@ -121,13 +126,16 @@ def parse_args(argv=None):
     return args
 
 
-def main(elf=DEFAULT_ELF):
+def main(elf=DEFAULT_ELF, sck_hz=None):
     # Open the ports (caller owns the lifecycle; the loader never opens/closes).
     chip = ChipDriver(WRITE_DEV, READ_DEV)
     with chip:
         # Release the core so the bootrom runs and polls SCRATCH_2 for the
         # launch signal. (boot_mode pins must already be strapped to 0.)
         chip.config_clk_rst(chip_clk_en=1, chip_rstn=1)
+
+        if sck_hz is not None:
+            chip.set_sck_hz(sck_hz) # takes effect on the next transaction
 
         loader = SpiProgramLoader(chip)
         # init_spi: enable Quad-SPI ; verify: read-back check ; wait: poll EOC.
@@ -143,4 +151,4 @@ if __name__ == '__main__':
     if not smoke_test():
         logging.error("aborting: smoke test did not pass, not loading the program")
         sys.exit(1)
-    sys.exit(main(args.elf))
+    sys.exit(main(args.elf, args.sck))
