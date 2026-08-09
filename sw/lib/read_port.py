@@ -71,12 +71,31 @@ class ReadPort:
         except Exception:
             return None
 
-    def readInt(self) -> Optional[int]:
-        try:
-            data = os.read(self.portId, 4)
-            return struct.unpack("I", data)[0]
-        except Exception:
-            return None
+    def readInt(self, partial_timeout: float = 0.5) -> Optional[int]:
+        """Read one 32-bit word, or None if no data is currently available.
+        """
+        buf = b""
+        deadline = time.time() + partial_timeout
+        while len(buf) < 4:
+            try:
+                chunk = os.read(self.portId, 4 - len(buf))
+            except Exception:
+                chunk = b""
+            if chunk:
+                buf += chunk
+                continue
+            # Nothing available right now.
+            if not buf:
+                return None  # clean "no data" - the common polling case
+            if time.time() > deadline:
+                logger.error(
+                    "readInt: discarding %d-byte partial word after %.1fs; "
+                    "the 32-bit stream may be desynchronised",
+                    len(buf), partial_timeout,
+                )
+                return None
+            time.sleep(0.001)
+        return struct.unpack("I", buf)[0]
 
     def readIntArray(self, length: int) -> np.ndarray:
         buffer = bytearray(length * 4)
