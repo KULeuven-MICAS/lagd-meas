@@ -22,6 +22,11 @@
 //  -------+------------------+--------------------------------------------------
 //  0x00   | CONFIG_CLK_RST     | (local only, no SPI transaction)
 //  0x01   | CONFIG_SPI_SLAVE   | SPI cmd 0x01 (write reg0, enable Quad-SPI)
+//  0x04   | CONFIG_SCK         | (local only) set SPI clock half-period in bus
+//         |                    |   clock cycles: SCK = CLK_HZ / (2*payload).
+//         |                    |   Takes effect on the NEXT transaction. Clamped
+//         |                    |   in hardware to <= SCK_MAX_HZ so it can never
+//         |                    |   exceed what the XDC timing-constrained.
 //  0x02   | DATA_WRITE         | SPI cmd 0x02 (write mem), burst_length words
 //  0x03   | DATA_WRITE_LOOPBACK| SPI cmd 0x02 (write mem) + echo each data word
 //         |                    |   into the readback FIFO (for SW verification)
@@ -43,6 +48,7 @@
 enum bit [7:0] {
     CONFIG_CLK_RST      = 8'h00,  // Configure chip_clk and chip_rstn (local)
     CONFIG_SPI_SLAVE    = 8'h01,  // Enable Quad-SPI on the slave (SPI cmd 0x01)
+    CONFIG_SCK          = 8'h04,  // Set the SPI clock divider (local, no SPI txn)
     DATA_WRITE          = 8'h02,  // Write burst_length words      (SPI cmd 0x02)
     DATA_WRITE_LOOPBACK = 8'h03,  // Like DATA_WRITE (SPI cmd 0x02) + echo each
                                   //   data word into the readback FIFO
@@ -67,6 +73,15 @@ typedef struct packed {
     bit        chip_rstn;    // [0]     direct control of chip_rstn
 } chip_config_t;
 
+// CONFIG_SCK payload: SPI clock half-period in bus-clock cycles.
+// SCK = CLK_HZ / (2 * sck_half). At CLK_HZ = 100 MHz: 50000 -> 1 kHz.
+// Hardware clamps to >= SCK_HALF_MIN.
+typedef struct packed {
+    bit [3:0]  marker;     // [31:28] = 0xF
+    bit [7:0]  opcode;     // [27:20]
+    bit [19:0] sck_half;   // [19:0]  half-period in clk_i cycles
+} chip_sck_t;
+
 // DATA_WRITE / DATA_READ payload
 typedef struct packed {
     bit [3:0]  marker;        // [31:28] = 0xF
@@ -80,5 +95,6 @@ typedef struct packed {
 typedef union packed {
     chip_config_t chip_config;
     chip_burst_t  chip_burst;
+    chip_sck_t    chip_sck;
     logic [31:0]  bitwise;
 } chip_command_t;

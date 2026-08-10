@@ -28,16 +28,19 @@
 //     register has rotated full circle and is preserved (it does NOT pulse LE, so
 //     the latched outputs are undisturbed). Returns the 32 bits on rdata_o.
 //
-//   Each clock half-period is SCK_HALF cycles of clk_i. At SCK_HZ=1 MHz / clk_i=
-//   100 MHz that is 50 cycles (500 ns), far above the HV9308's 8 MHz / 62 ns /
-//   25 ns setup limits, so the external setup/hold is met by construction.
+//   Each clock half-period is `sck_half_i` cycles of clk_i. The HV9308 tolerates
+//   up to 8 MHz (62 ns pulse width, 25 ns setup), so keep the requested rate
+//   below that; perip_controller's clamp only enforces the FPGA-side limit.
 
 module s2p_driver #(
-    parameter int CLK_HZ = 100_000_000,
-    parameter int SCK_HZ = 1_000_000
+    parameter int SCK_HALF_W = 23     // width of the runtime half-period input
 )(
     input  logic        clk_i,
     (* direct_reset = "yes" *) input logic rst_i,
+    // Shift-clock half-period in clk_i cycles: SCK = CLK_HZ / (2*sck_half_i).
+    // Latched at transfer start, so a change mid-transfer cannot skew the clock.
+    // Must be >= 1 (0 would hang the engine); perip_controller clamps it.
+    input  logic [SCK_HALF_W-1:0] sck_half_i,
     input  logic        load_i,       // start a write (shift 32 bits + latch)
     input  logic        readback_i,   // start a recirculating readback scan
     input  logic [31:0] wdata_i,      // data shifted out on a write
@@ -53,15 +56,10 @@ module s2p_driver #(
 );
 
     localparam int SHIFT_BITS = 32;
-    localparam int SCK_HALF   = (CLK_HZ / SCK_HZ / 2 < 1) ? 1 : CLK_HZ / SCK_HZ / 2;
-    // Width must hold SCK_HALF-1; size it from the parameter so it never
-    // overflows (a hard width would hang the shift if SCK_HZ is taken low
-    // enough, e.g. SCK_HALF = 50e6 at SCK_HZ = 1 Hz needs 26 bits).
-    localparam int SCK_CW     = (SCK_HALF <= 2) ? 1 : $clog2(SCK_HALF);
 
     // Two-FF synchronizer for the cascade data-out input (slow, PCB-delayed,
     // asynchronous to clk_i). Sampled at the start of each shift-low phase, long
-    // after the previous clock edge (>= SCK_HALF cycles) so it has settled.
+    // after the previous clock edge (>= sck_half_r cycles) so it has settled.
     (* async_reg = "true" *) logic [1:0] dout_sync;
     wire dout_synced = dout_sync[1];
     always_ff @(posedge clk_i or posedge rst_i) begin
@@ -82,7 +80,8 @@ module s2p_driver #(
     (* mark_debug = "true" *) logic [31:0] shift_reg_r;  // write data, shifting out
     (* mark_debug = "true" *) logic [31:0] rdata_r;      // readback accumulator
     logic [5:0]  bit_idx;     // 31 .. 0
-    logic [SCK_CW-1:0] half_cnt;    // cycle counter within a clock half-period
+    logic [SCK_HALF_W-1:0] half_cnt;    // cycle counter within a clock half-period
+    (* mark_debug = "true" *) logic [SCK_HALF_W-1:0] sck_half_r;  // latched at transfer start
 
     assign rdata_o = rdata_r;
 
@@ -94,6 +93,7 @@ module s2p_driver #(
             rdata_r       <= '0;
             bit_idx       <= '0;
             half_cnt      <= '0;
+            sck_half_r    <= SCK_HALF_W'(1);
             busy_o        <= 1'b0;
             done_o        <= 1'b0;
             s2p_din_o     <= 1'b0;
@@ -112,6 +112,7 @@ module s2p_driver #(
                         shift_reg_r   <= wdata_i;
                         bit_idx       <= 6'(SHIFT_BITS - 1);
                         half_cnt      <= '0;
+                        sck_half_r    <= sck_half_i;
                         busy_o        <= 1'b1;
                         state_current <= SHIFT_LOW;
                     end
@@ -129,7 +130,7 @@ module s2p_driver #(
                             s2p_din_o <= shift_reg_r[SHIFT_BITS-1];
                         end
                     end
-                    if (half_cnt == SCK_HALF - 1) begin
+                    if (half_cnt == sck_half_r - 1) begin
                         half_cnt      <= '0;
                         s2p_clk_o     <= 1'b1;   // rising edge: HV9308 samples DIN
                         state_current <= SHIFT_HIGH;
@@ -141,7 +142,7 @@ module s2p_driver #(
                 // clk high: hold, then advance to the next bit (or finish).
                 SHIFT_HIGH: begin
                     s2p_clk_o <= 1'b1;
-                    if (half_cnt == SCK_HALF - 1) begin
+                    if (half_cnt == sck_half_r - 1) begin
                         half_cnt  <= '0;
                         s2p_clk_o <= 1'b0;
                         if (bit_idx == 6'd0) begin
@@ -167,7 +168,7 @@ module s2p_driver #(
                 LE_GAP: begin
                     s2p_clk_o <= 1'b0;
                     s2p_le_o  <= 1'b0;
-                    if (half_cnt == SCK_HALF - 1) begin
+                    if (half_cnt == sck_half_r - 1) begin
                         half_cnt      <= '0;
                         s2p_le_o      <= 1'b1;   // rising edge into LE_HIGH
                         state_current <= LE_HIGH;
@@ -179,7 +180,7 @@ module s2p_driver #(
                 // LE high: the HV9308 transfers the shift register into the latches.
                 LE_HIGH: begin
                     s2p_le_o <= 1'b1;
-                    if (half_cnt == SCK_HALF - 1) begin
+                    if (half_cnt == sck_half_r - 1) begin
                         half_cnt      <= '0;
                         s2p_le_o      <= 1'b0;
                         done_o        <= 1'b1;

@@ -20,10 +20,14 @@ from sw.lib.port_driver import PortDriver
 from sw.lib.perip_command_api import (
     OP_WRITEBACK,
     OP_S2P_READBACK,
+    SCK_HZ,
     make_command,
+    sck_half_for,
     cmd_dac_write,
     cmd_dac_write_loopback,
     cmd_dac_reset,
+    cmd_config_dac_sck,
+    cmd_config_s2p_sck,
     cmd_s2p_write,
     cmd_s2p_oe,
 )
@@ -32,6 +36,21 @@ from sw.lib.perip_command_api import (
 DAC_NUM_CHANNELS = 12
 DAC_CODE_STEPS   = 256
 DAC_MIDSCALE     = 0x80
+
+# Serial bits per transfer, used to size read timeouts. The DAC takes a 12-bit
+# {addr,data} load; an S2P write/readback shifts 32 bits plus the LE pulse.
+DAC_XFER_BITS = 12
+S2P_XFER_BITS = 34
+
+
+def default_timeout(bits, sck_hz):
+    """Read timeout for a transfer of `bits` serial bits at `sck_hz`.
+
+    Both serial clocks are runtime-configurable down to 50 Hz, where a 32-bit S2P
+    scan takes most of a second -- a fixed timeout would report a phantom failure.
+    The 3x factor covers host-side poll overhead; the constant covers the rest.
+    """
+    return bits / float(sck_hz) * 3.0 + 0.1
 
 
 def volts_to_code(volts: float, vref: float) -> int:
@@ -67,6 +86,33 @@ class PeripDriver(PortDriver):
         # HV9308 S2P host-side cache: last value written, last OE state.
         self._s2p_value = None  # type: Optional[int]
         self._s2p_oe = False
+        # Serial clock each device is currently running at.
+        self.dac_sck_hz = float(SCK_HZ)
+        self.s2p_sck_hz = float(SCK_HZ)
+
+    # ---- runtime serial-clock configuration ----
+    def set_dac_sck_hz(self, sck_hz: float) -> float:
+        """Set the DAC SPI clock; return the rate actually achieved.
+
+        The divider is integer and the hardware clamps to SCK_MIN_HZ..SCK_MAX_HZ,
+        so the achieved rate can differ from the request. Applies to the next DAC
+        transfer.
+        """
+        half, actual = sck_half_for(sck_hz)
+        self._send_words(cmd_config_dac_sck(half))
+        self.dac_sck_hz = actual
+        return actual
+
+    def set_s2p_sck_hz(self, sck_hz: float) -> float:
+        """Set the HV9308 shift clock; return the rate actually achieved.
+
+        Same clamping as set_dac_sck_hz. Note the HV9308 is only rated to 8 MHz,
+        which the FPGA-side clamp does not enforce.
+        """
+        half, actual = sck_half_for(sck_hz)
+        self._send_words(cmd_config_s2p_sck(half))
+        self.s2p_sck_hz = actual
+        return actual
 
     # ---- raw command set (see perip_command_api.sv) ----
     def dac_write(self, addr: int, data: int, rstn: int = 1, shdn: int = 1) -> None:
@@ -93,7 +139,8 @@ class PeripDriver(PortDriver):
         the analog output. Returns None if no word came back within the timeout.
         """
         command_word = cmd_dac_write_loopback(addr, data, rstn, shdn)[0]
-        echoed = self._loopback(command_word)
+        echoed = self._loopback(command_word,
+                                default_timeout(DAC_XFER_BITS, self.dac_sck_hz))
         if 0 <= addr < DAC_NUM_CHANNELS:
             self._codes[addr] = data & 0xFF
         return echoed
@@ -132,7 +179,8 @@ class PeripDriver(PortDriver):
         destructive), or None on timeout. This reads what the HV9308 silicon
         actually holds -- the strongest digital check of the loaded value.
         """
-        return self._loopback(make_command(OP_S2P_READBACK))
+        return self._loopback(make_command(OP_S2P_READBACK),
+                              default_timeout(S2P_XFER_BITS, self.s2p_sck_hz))
 
     def s2p_verify(self, value: int) -> bool:
         """S2P_WRITE `value`, then READBACK and confirm the HV9308 captured it."""
