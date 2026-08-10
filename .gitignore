@@ -15,6 +15,6 @@ results/
 *.swp
 
 # data files
-openising/**/run_*/**
+openising/**/model_*/**
 **.pkl
 **.out
