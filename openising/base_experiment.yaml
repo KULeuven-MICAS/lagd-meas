@@ -24,7 +24,6 @@ eigenvalue_start: false
 
 # Logging or not
 gen_logfile: true
-logfile_discrimination: "chip_experiment"
 
 #################################
 ## Solvers hyperparameters
@@ -33,7 +32,6 @@ logfile_discrimination: "chip_experiment"
 
 # Parameters for Multiplicative
 num_iterations_Multiplicative: 50000
-nb_flipping: 5
 cluster_threshold: 0.3
 init_cluster_size: 0.8
 end_cluster_size: 0.0625

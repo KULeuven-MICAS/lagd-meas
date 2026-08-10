@@ -9,7 +9,7 @@ from mppi_experiment import mppi_experiment
 from chip_communication import compile_data, send_chip
 from submodules.openising.ising.stages.simulation_stage import Ans
 
-DEFAULT_HOST = "root@10.88.18.26"
+DEFAULT_HOST = "root@10.88.18.6"
 
 
 parser = argparse.ArgumentParser()
