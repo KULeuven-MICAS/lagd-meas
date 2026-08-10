@@ -10,7 +10,8 @@
 # Same handshake framing as chip_command_api: a 32-bit word is decoded as a
 # command only when its top nibble (the marker) equals 0xF. The DAC payload is
 # fully contained in the single word (the DAC takes only a 12-bit {addr,data}
-# load and returns nothing), so there are no follow-up words.
+# load and returns nothing), so there are no follow-up words. S2P_WRITE is the one
+# 2-word frame: a command word plus a raw 32-bit data word.
 #
 # Command word layout (only valid when marker == 0xF):
 #   [31:28] marker : 0xF   ("this word is a command"; any other value is ignored)
@@ -29,6 +30,8 @@ from typing import List
 CMD_MARKER       = 0xF
 OP_DAC           = 0x00  # any opcode other than the ones below performs a DAC transaction
 OP_DAC_LOOPBACK  = 0x03  # DAC transaction + echo the command word back into read FIFO
+OP_CONFIG_DAC_SCK = 0x04  # set the DAC SPI clock half-period (2-word frame)
+OP_CONFIG_S2P_SCK = 0x05  # set the HV9308 shift clock half-period (2-word frame)
 OP_S2P_WRITE     = 0x10  # shift a 32-bit value into the HV9308 S2P + latch (2-word frame)
 OP_S2P_READBACK  = 0x11  # scan the HV9308 shift register out of Data Out -> 1 word
 OP_S2P_OE        = 0x12  # set the HV9308 Output Enable level (bit0)
@@ -114,3 +117,47 @@ def cmd_s2p_readback() -> List[int]:
 def cmd_s2p_oe(on) -> List[int]:
     """Word list to set the HV9308 Output Enable (bit0): 1 = outputs on, 0 = blank."""
     return [make_command(OP_S2P_OE, 1 if on else 0)]
+
+
+# ---- runtime clock configuration ----
+# Keep the parameters below in sync with xillydemo.v
+BUS_CLK_HZ = 100_000_000   # xillydemo.v: CLK_HZ
+SCK_HZ     = 1_000         # power-on default for BOTH the DAC and S2P clocks
+SCK_MAX_HZ = 25_000_000    # hardware clamp: fastest selectable
+SCK_MIN_HZ = 50            # hardware clamp: slowest selectable
+
+SCK_HALF_MIN = BUS_CLK_HZ // SCK_MAX_HZ // 2
+SCK_HALF_MAX = BUS_CLK_HZ // SCK_MIN_HZ // 2
+assert SCK_HALF_MAX <= 0xFFFFF, "half-period must fit the 20-bit command payload"
+
+
+def sck_half_for(sck_hz, bus_clk_hz=BUS_CLK_HZ):
+    """Half-period in bus-clock cycles for a requested clock, and what you'll get.
+
+    Returns (half, actual_hz), clamped to the same window the hardware enforces.
+    The divider is integer, so the achieved rate is bus_clk_hz / (2*half) and
+    generally differs from the request.
+    """
+    if sck_hz <= 0:
+        raise ValueError("sck_hz must be positive")
+    half = int(round(bus_clk_hz / (2.0 * sck_hz)))
+    half = max(SCK_HALF_MIN, min(half, SCK_HALF_MAX))
+    return half, bus_clk_hz / (2.0 * half)
+
+
+def cmd_config_dac_sck(sck_half) -> List[int]:
+    """Word list to set the DAC SPI clock half-period (in bus-clock cycles).
+
+    Takes effect on the next DAC transfer. Out-of-range values are clamped by the
+    hardware, so the rate saturates rather than hanging the shift engine.
+    """
+    return [make_command(OP_CONFIG_DAC_SCK, sck_half)]
+
+
+def cmd_config_s2p_sck(sck_half) -> List[int]:
+    """Word list to set the HV9308 shift-clock half-period (in bus-clock cycles).
+
+    Takes effect on the next S2P write or readback. Note the HV9308 itself is only
+    rated to 8 MHz; the hardware clamp enforces the FPGA limit, not the device's.
+    """
+    return [make_command(OP_CONFIG_S2P_SCK, sck_half)]

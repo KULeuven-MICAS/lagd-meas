@@ -23,6 +23,7 @@
 #   0x3    | 0xF3   | RESET         | 0 bytes | pulse both strobes -> reset PLL regs
 #   0x4    | 0xF4   | READBACK      | 0 bytes | scan shallow reg out of data_o -> 6 bytes
 #   0x5    | 0xF5   | STATUS        | 0 bytes | return 1 status byte (bit0 = pll_lock)
+#   0x6    | 0xF6   | CONFIG_STRB   | 3 bytes | set the strobe half-period (LE)
 #   0xF    | 0xFF   | WRITEBACK     | 0 bytes | echo the 0xFF header back (liveness)
 #
 # READBACK returns the 47-bit shallow-register content (what the PLL silicon
@@ -49,10 +50,26 @@ OP_CLK_SEL        = 0x2  # set clk_sel from 1 payload byte
 OP_RESET          = 0x3  # pulse both strobes (reset registers)
 OP_READBACK       = 0x4  # scan shallow register out of data_o -> 6 bytes
 OP_STATUS         = 0x5  # return 1 status byte (bit0 = pll_lock)
+OP_CONFIG_STRB    = 0x6  # set the strobe half-period (3 little-endian bytes)
 OP_WRITEBACK      = 0xF  # echo header (no PLL action)
 
 CFG_BITS  = 47
 CFG_BYTES = 6
+
+# CONFIG_STRB payload: a 24-bit half-period, little-endian.
+STRB_BYTES = 3
+
+# The strobe rate is runtime-configurable. These mirror xillydemo.v
+# (PLL_STRB_HZ / PLL_STRB_MAX_HZ / PLL_STRB_MIN_HZ) and the clamp in
+# pll_controller.sv; keep them in sync.
+BUS_CLK_HZ  = 100_000_000   # xillydemo.v: CLK_HZ
+STRB_HZ     = 1_000         # power-on default
+STRB_MAX_HZ = 25_000_000    # hardware clamp: fastest selectable
+STRB_MIN_HZ = 50            # hardware clamp: slowest selectable
+
+STRB_HALF_MIN = BUS_CLK_HZ // STRB_MAX_HZ // 2
+STRB_HALF_MAX = BUS_CLK_HZ // STRB_MIN_HZ // 2
+assert STRB_HALF_MAX < (1 << (8 * STRB_BYTES)), "half-period must fit the payload bytes"
 
 # STATUS byte bit positions (mirror pll_command_api.sv).
 STATUS_LOCK_BIT = 0      # 1 = PLL locked
@@ -200,3 +217,27 @@ def cmd_status() -> List[int]:
 def cmd_writeback() -> List[int]:
     """Frame for WRITEBACK: header only (echoes 0xFF back; controller liveness)."""
     return [header(OP_WRITEBACK)]
+
+
+def strb_half_for(strb_hz, bus_clk_hz=BUS_CLK_HZ):
+    """Half-period in bus-clock cycles for a requested strobe rate, and what
+    you'll get.
+
+    Returns (half, actual_hz), clamped to the same window the hardware enforces.
+    The divider is integer, so the achieved rate is bus_clk_hz / (2*half) and
+    generally differs from the request.
+    """
+    if strb_hz <= 0:
+        raise ValueError("strb_hz must be positive")
+    half = int(round(bus_clk_hz / (2.0 * strb_hz)))
+    half = max(STRB_HALF_MIN, min(half, STRB_HALF_MAX))
+    return half, bus_clk_hz / (2.0 * half)
+
+
+def cmd_config_strb(strb_half: int) -> List[int]:
+    """Frame for CONFIG_STRB: header + 3 little-endian bytes of half-period.
+
+    Takes effect on the next command. Out-of-range values are clamped by the
+    hardware, so the rate saturates rather than hanging the strobe engine.
+    """
+    return [header(OP_CONFIG_STRB)] + [(strb_half >> (8 * k)) & 0xFF for k in range(STRB_BYTES)]
