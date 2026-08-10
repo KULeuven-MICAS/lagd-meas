@@ -1,3 +1,6 @@
+# Per-user lab settings (SSH targets, workspace dirs) -- see config.ini
+config.local.ini
+
 # Autotest results
 results/
 

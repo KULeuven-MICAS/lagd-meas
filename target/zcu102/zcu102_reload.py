@@ -10,6 +10,9 @@
 # Optionally uploads a local bitstream to <remote-dir>/lagd.zcu102.bit first, then
 # (re)runs the PYNQ notebook, which programs the PL and resets the chip.
 #
+# The board's SSH target and notebook directory live in config.ini /
+# config.local.ini (see lab_config.py).
+#
 # Usage:
 #   ./zcu102_reload.py                       # just reload & run the notebook
 #   ./zcu102_reload.py --bit path/to.bit     # upload a bitstream first, then reload & run
@@ -21,10 +24,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import lab_config
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_HOST = "xilinx@10.91.16.121"
-DEFAULT_REMOTE_DIR = "jupyter_notebooks/lagd_v1_2026"
+# Defaults come from config.ini / config.local.ini -- see lab_config.py.
+DEFAULT_HOST = lab_config.get("zcu102", "host")
+DEFAULT_REMOTE_DIR = lab_config.get("zcu102", "remote_dir")
 REMOTE_BIT_NAME = "lagd.zcu102.bit"
 NOTEBOOK = "lagd_v1_notebook.py"
 PYNQ_PYTHON = "/usr/local/share/pynq-venv/bin/python"
