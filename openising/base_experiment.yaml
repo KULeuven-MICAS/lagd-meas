@@ -1,0 +1,91 @@
+#################################
+## General parameters
+#################################
+
+# Benchmark file name
+benchmark: ./ising/benchmarks/MIMO/user5_ant5_M16.txt
+
+# Solver to use: [BRIM, SA, DSA, inSituSA, bSB, dSB, SCA, Multiplicative, CIM, all]
+solvers:
+  - Multiplicative
+
+
+# Use gurobi or not
+use_gurobi: false
+
+# Use multiprocessing or not
+use_multiprocessing: false
+
+nb_cores: 16
+
+# Initialization seed or use eigenvector of matrix
+
+eigenvalue_start: false
+
+# Logging or not
+gen_logfile: true
+logfile_discrimination: "chip_experiment"
+
+#################################
+## Solvers hyperparameters
+#################################
+
+
+# Parameters for Multiplicative
+num_iterations_Multiplicative: 50000
+nb_flipping: 5
+cluster_threshold: 0.3
+init_cluster_size: 0.8
+end_cluster_size: 0.0625
+exponent: 3.0
+cluster_choice: "random"
+current: 1.0
+capacitance: 1
+accumulation_delay: 0.
+broadcast_delay: 0.
+delay_offset: 0.0
+# sigma_J: -1.0
+stop_criterion: 1e-6  # 1uV
+
+
+#################################
+## Problems hyperparameters
+#################################
+
+# Parameters for TSP
+weight_constant: 0
+
+# Parameters for MIMO
+SNR: 10
+mimo_seed: 12
+use_ZF: false
+is_hamming_encoding: false
+
+#################################
+## Specific Stages hyperparameters
+#################################
+
+# Parameters for quantization stage
+quantization: true
+quantization_precision: 4
+scale_h: true
+scale_to_integer: true
+
+# Parameters for npmos stage
+offset_type: others
+offset_ratio: 0.3
+
+# Parameters for noise stage
+device_noise: false
+noise_level: 0.1
+
+# Parameters for mismatch stage
+mismatch_std: 0.0
+
+# Parameters for combine nodes stage
+combine_nodes: false
+nodes_scaling: 2
+
+#################################
+## Dummy creator hyperparameters
+#################################

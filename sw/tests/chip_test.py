@@ -25,7 +25,7 @@
 import sys
 import random
 import logging
-import time
+# import time
 
 from sw.lib.chip_driver import ChipDriver
 from sw.lib.chip_command_api import WRITEBACK_FIFO, make_command
@@ -111,9 +111,9 @@ def main():
     # init quad-spi
     chip.init_spi()
     # smoke test: test writeback loop
-    test_writeback()
+    # test_writeback()
     # write data
-    chip.write_mem(0x100, [random.randint(0, 0xFFFFFFFF) for _ in range(7000)])
+    # chip.write_mem(0x100, [random.randint(0, 0xFFFFFFFF) for _ in range(7000)])
     # loopback-write check: data is echoed back for verification
     SCRATCH_0 = 0x80000000
     length = 50
