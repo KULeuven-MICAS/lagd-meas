@@ -4,11 +4,13 @@ dummy_snr: 0
 dummy_spacing: 1.0
 dummy_user_num: 128
 dummy_ant_num: 256
-dummy_case_num: 10000
+dummy_case_num: 500
 initialization_seed: 42
 seed: 100
 dummy_seed: 42
-nb_trials: 10000
+nb_trials: 500
 nb_runs: 2
 dummy_creator: true
 use_ZF: true
+logfile_discrimination: "chip_experiment__model1_0"
+nb_flipping: 128
