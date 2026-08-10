@@ -21,7 +21,7 @@
 //     and drops the clock (leading edge), then shifts out a 12-bit word
 //     MSB-first formed as `{addr_i, data_i}`. Each bit is launched on the
 //     falling edge and the DAC samples it on the following rising edge.
-//   - Each clock half-period is SCK_HALF_CYCLES fabric cycles, so the very first
+//   - Each clock half-period is `sck_half_i` fabric cycles, so the very first
 //     low and high phases are full half-periods too (the first rising edge lands
 //     one full half-period after CS falls). This satisfies the AD8802 minimum
 //     clock pulse width (15 ns) and CS-to-clock setup.
@@ -31,12 +31,15 @@
 //     whole transfer. `dac_shdn_o` / `dac_rstn_o` reflect the input controls.
 
 module dac_spi_driver #(
-    parameter int CLK_HZ = 100_000_000,
-    parameter int SCK_HZ = 25_000_000,
-    parameter int CSB_HOLD_CYCLES = 4 // in terms of cycles under CLK_HZ
+    parameter int CSB_HOLD_CYCLES = 4, // in terms of cycles under CLK_HZ
+    parameter int SCK_HALF_W = 23      // width of the runtime half-period input
 )(
     input  logic       clk_i,
     (* direct_reset = "yes" *) input logic rst_i,
+    // SPI clock half-period in clk_i cycles: SCK = CLK_HZ / (2*sck_half_i).
+    // Latched at transfer start, so a change mid-transfer cannot skew the clock.
+    // Must be >= 1 (0 would hang the engine); perip_controller clamps it.
+    input  logic [SCK_HALF_W-1:0] sck_half_i,
     input  logic       load_i,
     input  logic       rstn_i,
     input  logic       shdn_i,
@@ -51,13 +54,8 @@ module dac_spi_driver #(
 );
 
     localparam int SHIFT_BITS = 12;
-    localparam int SCK_HALF_CYCLES = CLK_HZ / SCK_HZ / 2;
-    // Width must hold SCK_HALF_CYCLES-1 (e.g. 49999 at SCK_HZ=1 kHz). A fixed
-    // 4-bit counter silently overflows at low SCK_HZ and the engine never
-    // completes a half-period -> busy_o stuck high. Size it from the parameter.
-    localparam int HALF_CW = (SCK_HALF_CYCLES <= 2) ? 1 : $clog2(SCK_HALF_CYCLES);
     // hold_cnt_r counts CSB_HOLD_CYCLES-1 down to 0; size it from the parameter
-    // for the same reason (a hard-coded width hangs POST_HOLD if it overflows).
+    // (a hard-coded width hangs POST_HOLD if it overflows).
     localparam int HOLD_CW = (CSB_HOLD_CYCLES <= 2) ? 1 : $clog2(CSB_HOLD_CYCLES);
 
     typedef enum logic [1:0] {
@@ -69,7 +67,8 @@ module dac_spi_driver #(
 
     (* mark_debug = "true" *) dac_state_t state_current;
     (* mark_debug = "true" *) logic [SHIFT_BITS-1:0] shift_reg_r;
-    (* mark_debug = "true" *) logic [HALF_CW-1:0] half_cnt_r;
+    (* mark_debug = "true" *) logic [SCK_HALF_W-1:0] half_cnt_r;
+    (* mark_debug = "true" *) logic [SCK_HALF_W-1:0] sck_half_r;  // latched at transfer start
     (* mark_debug = "true" *) logic [HOLD_CW-1:0] hold_cnt_r;
     (* mark_debug = "true" *) logic [3:0] bit_idx_r;
 
@@ -80,6 +79,7 @@ module dac_spi_driver #(
             state_current <= IDLE;
             shift_reg_r   <= '0;
             half_cnt_r    <= '0;
+            sck_half_r    <= SCK_HALF_W'(1);
             hold_cnt_r    <= '0;
             bit_idx_r     <= '0;
             busy_o        <= 1'b0;
@@ -105,6 +105,7 @@ module dac_spi_driver #(
                             shift_reg_r   <= tx_word;
                             bit_idx_r     <= SHIFT_BITS - 1;
                             half_cnt_r    <= '0;
+                            sck_half_r    <= sck_half_i;
                             hold_cnt_r    <= '0;
                             busy_o        <= 1'b1;
                             dac_csb_o     <= 1'b0;
@@ -120,7 +121,7 @@ module dac_spi_driver #(
                     dac_csb_o <= 1'b0;
                     dac_clk_o <= 1'b0;
 
-                    if (half_cnt_r == SCK_HALF_CYCLES - 1) begin
+                    if (half_cnt_r == sck_half_r - 1) begin
                         half_cnt_r    <= '0;
                         dac_clk_o     <= 1'b1;   // rising edge: DAC samples sdi
                         state_current <= HIGH_WAIT;
@@ -134,7 +135,7 @@ module dac_spi_driver #(
                     dac_csb_o <= 1'b0;
                     dac_clk_o <= 1'b1;
 
-                    if (half_cnt_r == SCK_HALF_CYCLES - 1) begin
+                    if (half_cnt_r == sck_half_r - 1) begin
                         half_cnt_r <= '0;
                         if (bit_idx_r == 0) begin
                             // last bit sampled: keep clock high, hold CS low

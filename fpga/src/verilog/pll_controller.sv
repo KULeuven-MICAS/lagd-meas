@@ -36,15 +36,20 @@
 //
 //   Strobe timing: data_strb_i / cfg_vld_strb_i are used as gated *clocks* inside
 //   the PLL, so each is generated as a clean two-phase pulse - data_i is set up
-//   while the strobe is low for STRB_HALF cycles, then the strobe is held high for
-//   STRB_HALF cycles (data stable across the rising edge). STRB_HALF=50 at a
-//   100 MHz clk_i yields a 1 MHz strobe (500 ns setup/hold), comfortable over the
-//   FMC wiring. The FSM guarantees data_strb_i and cfg_vld_strb_i are never high
-//   together except in the deliberate RESET state.
+//   while the strobe is low for strb_half_r cycles, then the strobe is held high
+//   for strb_half_r cycles (data stable across the rising edge). The FSM
+//   guarantees data_strb_i and cfg_vld_strb_i are never high together except in
+//   the deliberate RESET state.
+//
+//   The half-period is runtime-configurable via CONFIG_STRB (0x6); STRB_HALF is
+//   only the power-on default, and STRB_HALF_MIN / STRB_HALF_MAX bound what
+//   software may select.
 
 module pll_controller #(
-    // clk_i cycles per strobe half-period. 50 -> 1 MHz data_strb at clk_i=100 MHz.
-    parameter int STRB_HALF = 50
+    // All three are clk_i cycles per strobe half-period; strobe = CLK_HZ/(2*half).
+    parameter int STRB_HALF     = 50,        // power-on default (50 -> 1 MHz at 100 MHz)
+    parameter int STRB_HALF_MIN = 2,         // fastest software may select
+    parameter int STRB_HALF_MAX = 1_000_000  // slowest software may select (50 Hz at 100 MHz)
 )(
     input  logic clk_i,
     (* direct_reset = "yes" *) input logic rst_i,
@@ -97,14 +102,21 @@ module pll_controller #(
     (* mark_debug = "true" *) logic        clk_sel_r;       // static clk_sel level
 
     // Shift / strobe engine.
-    // strb_cnt width is sized from STRB_HALF so it never overflows: a hard width
-    // would hang the strobe FSM if STRB_HALF is taken large (e.g. STRB_HALF = 50e6
-    // for a 1 Hz strobe at clk_i = 100 MHz needs 26 bits).
-    localparam int STRB_CW = (STRB_HALF <= 2) ? 1 : $clog2(STRB_HALF);
+    // Counter and register are sized from STRB_HALF_MAX so they never overflow.
+    localparam int STRB_CW = $clog2(STRB_HALF_MAX + 1);
     logic [5:0]  bit_idx;        // current bit being shifted (46 .. 0, MSB first)
     logic [STRB_CW-1:0] strb_cnt;  // cycle counter within a strobe half-period
+    (* mark_debug = "true" *) logic [STRB_CW-1:0] strb_half_r;  // set by CONFIG_STRB
     logic [2:0]  echo_idx;       // payload byte index during ECHO
     (* mark_debug = "true" *) logic [PLL_CFG_BITS-1:0] read_result_r; // bits captured from data_o
+
+    // Saturate a CONFIG_STRB request into the permitted window, so an out-of-range
+    // value slows/limits the strobe instead of hanging the engine.
+    function automatic logic [STRB_CW-1:0] clamp_half(input logic [PLL_STRB_BYTES*8-1:0] v);
+        if (v < (PLL_STRB_BYTES*8)'(STRB_HALF_MIN))      clamp_half = STRB_CW'(STRB_HALF_MIN);
+        else if (v > (PLL_STRB_BYTES*8)'(STRB_HALF_MAX)) clamp_half = STRB_CW'(STRB_HALF_MAX);
+        else                                             clamp_half = STRB_CW'(v);
+    endfunction
 
     // Two-FF synchronizer for pll_data_i (the PLL's data_o; slow, PCB-delayed,
     // asynchronous to clk_i). Sampled during the READ_LOW dwell, well after the
@@ -180,6 +192,7 @@ module pll_controller #(
             clk_sel_r          <= 1'b1;
             bit_idx            <= '0;
             strb_cnt           <= '0;
+            strb_half_r        <= clamp_half((PLL_STRB_BYTES*8)'(STRB_HALF));
             echo_idx           <= '0;
             read_result_r      <= '0;
             fifo_pll_wr_en_o   <= 1'b0;
@@ -221,6 +234,10 @@ module pll_controller #(
                                     read_result_r <= '0;
                                     state_current <= READ_LOW;
                                 end
+                                PLL_OP_CONFIG_STRB: begin
+                                    bytes_left    <= 4'(PLL_STRB_BYTES);
+                                    state_current <= COLLECT;
+                                end
                                 PLL_OP_STATUS: begin
                                     state_current <= STATUS_PUSH;
                                 end
@@ -244,6 +261,13 @@ module pll_controller #(
                                     clk_sel_r     <= fifo_rd_dout[0];
                                     state_current <= IDLE;
                                 end
+                                PLL_OP_CONFIG_STRB: begin
+                                    // Bytes 0..1 are already in cfg_raw_r; the last
+                                    // byte is still on the stream (the capture above
+                                    // is non-blocking, so cfg_raw_r has not seen it).
+                                    strb_half_r   <= clamp_half({fifo_rd_dout, cfg_raw_r[15:0]});
+                                    state_current <= IDLE;
+                                end
                                 default: begin // LOAD / LOAD_LOOPBACK
                                     bit_idx       <= 6'(PLL_CFG_BITS - 1); // 46, MSB first
                                     strb_cnt      <= '0;
@@ -262,7 +286,7 @@ module pll_controller #(
                 SHIFT_LOW: begin
                     pll_data_strb_o <= 1'b0;
                     pll_data_o      <= cfg_raw_r[bit_idx];
-                    if (strb_cnt == STRB_HALF - 1) begin
+                    if (strb_cnt == strb_half_r - 1) begin
                         strb_cnt        <= '0;
                         pll_data_strb_o <= 1'b1;  // rising edge into SHIFT_HIGH
                         state_current   <= SHIFT_HIGH;
@@ -275,7 +299,7 @@ module pll_controller #(
                 // drop the strobe and advance to the next bit (or commit).
                 SHIFT_HIGH: begin
                     pll_data_strb_o <= 1'b1;
-                    if (strb_cnt == STRB_HALF - 1) begin
+                    if (strb_cnt == strb_half_r - 1) begin
                         strb_cnt        <= '0;
                         pll_data_strb_o <= 1'b0;
                         if (bit_idx == 6'd0) begin
@@ -295,7 +319,7 @@ module pll_controller #(
                 COMMIT_GAP: begin
                     pll_data_strb_o    <= 1'b0;
                     pll_cfg_vld_strb_o <= 1'b0;
-                    if (strb_cnt == STRB_HALF - 1) begin
+                    if (strb_cnt == strb_half_r - 1) begin
                         strb_cnt           <= '0;
                         pll_cfg_vld_strb_o <= 1'b1;  // rising edge into COMMIT_HIGH
                         state_current      <= COMMIT_HIGH;
@@ -307,7 +331,7 @@ module pll_controller #(
                 // cfg_vld high: hidden register loaded on the entry rising edge.
                 COMMIT_HIGH: begin
                     pll_cfg_vld_strb_o <= 1'b1;
-                    if (strb_cnt == STRB_HALF - 1) begin
+                    if (strb_cnt == strb_half_r - 1) begin
                         strb_cnt           <= '0;
                         pll_cfg_vld_strb_o <= 1'b0;
                         echo_idx           <= 3'd0;
@@ -322,7 +346,7 @@ module pll_controller #(
                 RST_HIGH: begin
                     pll_data_strb_o    <= 1'b1;
                     pll_cfg_vld_strb_o <= 1'b1;
-                    if (strb_cnt == STRB_HALF - 1) begin
+                    if (strb_cnt == strb_half_r - 1) begin
                         strb_cnt           <= '0;
                         pll_data_strb_o    <= 1'b0;
                         pll_cfg_vld_strb_o <= 1'b0;
@@ -347,7 +371,7 @@ module pll_controller #(
                         read_result_r <= {read_result_r[PLL_CFG_BITS-2:0], pll_data_i_synced};
                         pll_data_o     <= pll_data_i_synced;  // recirculate
                     end
-                    if (strb_cnt == STRB_HALF - 1) begin
+                    if (strb_cnt == strb_half_r - 1) begin
                         strb_cnt        <= '0;
                         pll_data_strb_o <= 1'b1;   // rising edge into READ_HIGH
                         state_current   <= READ_HIGH;
@@ -361,7 +385,7 @@ module pll_controller #(
                 // circle; hand the captured 47 bits to ECHO as 6 LE bytes.
                 READ_HIGH: begin
                     pll_data_strb_o <= 1'b1;
-                    if (strb_cnt == STRB_HALF - 1) begin
+                    if (strb_cnt == strb_half_r - 1) begin
                         strb_cnt        <= '0;
                         pll_data_strb_o <= 1'b0;
                         if (bit_idx == 6'd0) begin

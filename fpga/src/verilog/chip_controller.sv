@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Author: Jiacong Sun <jiacong.sun@kuleuven.be>
-// Assisted by Copilot (2026)
 //
 //   Upstream FIFO read interface
 //             |
@@ -33,8 +32,10 @@
 //   output FIFO, and a full output FIFO pauses the SPI clock (no data loss).
 
 module chip_controller#(
-    parameter int CLK_HZ = 100_000_000,
-    parameter int SCK_HZ = 25_000_000
+    parameter int CLK_HZ     = 100_000_000,
+    parameter int SCK_HZ     = 5_000_000, // power-on default SCK
+    parameter int SCK_MAX_HZ = 25_000_000, // max SCK allowed for the SPI
+    parameter int SCK_HALF_W = 20
 )(
     input  logic clk_i,
     (* direct_reset = "yes" *) input  logic rst_i,
@@ -85,6 +86,10 @@ module chip_controller#(
     (* mark_debug = "true" *) logic chip_clk_en_r;
     (* mark_debug = "true" *) logic chip_rstn_r;
 
+    // Runtime SPI clock divider, set by CONFIG_SCK. Resets to the SCK_HZ
+    localparam int SCK_HALF_RESET = CLK_HZ / SCK_HZ / 2;
+    (* mark_debug = "true" *) logic [SCK_HALF_W-1:0] sck_half_r;
+
     // Registered SPI master control
     (* mark_debug = "true" *) logic spi_start_o;
     (* mark_debug = "true" *) logic spi_quad_mode_o;
@@ -121,10 +126,13 @@ module chip_controller#(
 
     quad_spi_master #(
         .CLK_HZ       (CLK_HZ          ),
-        .SCK_HZ       (SCK_HZ          )
+        .SCK_HZ       (SCK_HZ          ),
+        .SCK_MAX_HZ   (SCK_MAX_HZ      ),
+        .SCK_HALF_W   (SCK_HALF_W      )
     ) spi_master_inst (
         .clk_i        (clk_i           ),
         .rst_i        (rst_i           ),
+        .sck_half_i   (sck_half_r      ),
         .start_i      (spi_start_o     ),
         .quad_mode_i  (spi_quad_mode_o ),
         .read_i       (spi_read_dir_o  ),
@@ -233,6 +241,7 @@ module chip_controller#(
             spi_data_o      <= '0;
             chip_clk_en_r   <= 1'b0;
             chip_rstn_r     <= 1'b0;
+            sck_half_r      <= SCK_HALF_W'(SCK_HALF_RESET);
         end else begin
             spi_start_o <= 1'b0;
 
@@ -253,6 +262,10 @@ module chip_controller#(
                         CONFIG_CLK_RST: begin
                             chip_clk_en_r <= chip_command.chip_config.chip_clk_en;
                             chip_rstn_r   <= chip_command.chip_config.chip_rstn;
+                            state_current <= IDLE;
+                        end
+                        CONFIG_SCK: begin
+                            sck_half_r    <= chip_command.chip_sck.sck_half[SCK_HALF_W-1:0];
                             state_current <= IDLE;
                         end
 

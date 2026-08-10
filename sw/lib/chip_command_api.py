@@ -35,6 +35,7 @@ CMD_MARKER = 0xF
 # Available OPCODEs (8b)
 CONFIG_CLK_RST      = 0x00  # Configure chip_clk and chip_rstn (local)
 CONFIG_SPI_SLAVE    = 0x01  # Enable Quad-SPI on the slave (SPI cmd 0x01)
+CONFIG_SCK          = 0x04  # Set the SPI clock half-period (local, no SPI txn)
 DATA_WRITE          = 0x02  # Write burst_length words        (SPI cmd 0x02)
 DATA_WRITE_LOOPBACK = 0x03  # Like DATA_WRITE + echo each data word to read FIFO
 DATA_READ           = 0x0B  # Read  burst_length words        (SPI cmd 0x0B)
@@ -63,6 +64,36 @@ def cmd_config_clk_rst(chip_clk_en, chip_rstn):
     """Word list to set chip_clk_en (bit 1) and chip_rstn (bit 0)."""
     payload = ((chip_clk_en & 1) << 1) | (chip_rstn & 1)
     return [make_command(CONFIG_CLK_RST, payload)]
+
+
+# Bus clock feeding chip_controller (xillydemo.v: CLK_HZ)
+BUS_CLK_HZ = 100_000_000
+
+# The runtime half-period field is 20 bits (chip_sck_t.sck_half).
+MAX_SCK_HALF = 0xFFFFF
+
+
+def sck_half_for(sck_hz, bus_clk_hz=BUS_CLK_HZ):
+    """Half-period in bus-clock cycles for a requested SCK, and what you'll get.
+
+    Returns (sck_half, actual_hz). The divider is integer, so the achieved rate
+    is bus_clk_hz / (2*sck_half) and generally differs from the request.
+    """
+    if sck_hz <= 0:
+        raise ValueError("sck_hz must be positive")
+    half = int(round(bus_clk_hz / (2.0 * sck_hz)))
+    half = max(1, min(half, MAX_SCK_HALF))
+    return half, bus_clk_hz / (2.0 * half)
+
+
+def cmd_config_sck(sck_half):
+    """Word list to set the SPI clock half-period (in bus-clock cycles).
+    Takes effect on the NEXT SPI transaction.
+    Clamps to SCK_MAX_HZ defined in the hardware.
+    """
+    if not (1 <= sck_half <= MAX_SCK_HALF):
+        raise ValueError(f"sck_half {sck_half} out of range 1..{MAX_SCK_HALF}")
+    return [make_command(CONFIG_SCK, sck_half)]
 
 
 def cmd_config_spi_slave():

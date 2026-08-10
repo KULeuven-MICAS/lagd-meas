@@ -115,12 +115,11 @@ def main():
     # write data
     # chip.write_mem(0x100, [random.randint(0, 0xFFFFFFFF) for _ in range(7000)])
     # loopback-write check: data is echoed back for verification
-    SCRATCH_0 = random.randint(0x80000000, 0x80010000)
-    length = 1
+    SCRATCH_0 = 0x80000000
+    length = 50
     data = [random.randint(0, 0xFFFFFFFF) for _ in range(length)]
     logger.info(f"Writing data: {[hex(d) for d in data]}")
     test_verify_write_mem(SCRATCH_0, data)
-    # read back and check
     readback = chip.read_mem(SCRATCH_0, length=length)
     logger.info(f"Readback data: {[hex(d) for d in readback]}")
     logger.info(f"Readback matches written data: {readback == data}")
