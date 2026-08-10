@@ -6,8 +6,6 @@
 # Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 #
 # Per-user lab settings (SSH targets, remote workspace directories, UART device).
-# These differ from person to person and from bench to bench, so they must not be
-# hard-coded in the scripts.
 #
 # A setting is resolved in this order, first hit wins:
 #   1. the CLI flag of the script you are running (--host, --remote-dir, ...)
