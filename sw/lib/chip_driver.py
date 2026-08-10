@@ -243,10 +243,10 @@ class ChipDriver(PortDriver):
                     "(attempt %d/%d, %d words landed) - retrying",
                     piece_addr, len(piece), attempt + 1, retries, good)
             else:
-                raise IOError(
-                    "write_mem_verified: gave up on 0x%08X after %d attempts; "
-                    "the SPI link is too unreliable to write memory"
-                    % (piece_addr, retries))
+                raise OSError(
+                    f"write_mem_verified: gave up on 0x{piece_addr:08X} after "
+                    f"{retries} attempts; the SPI link is too unreliable to "
+                    "write memory")
 
         return total_retries
 

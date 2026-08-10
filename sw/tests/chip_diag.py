@@ -38,7 +38,7 @@ import logging
 import argparse
 import time
 
-from sw.lib.chip_driver import ChipDriver, SCK_HZ
+from sw.lib.chip_driver import ChipDriver
 from sw.lib.chip_command_api import WRITEBACK_FIFO, make_command
 
 logger = logging.getLogger(__name__)
@@ -64,8 +64,8 @@ def check_addr(addr, n_words, tag):
     end = addr + 4 * n_words
     if addr < SCRATCH_BASE or end > SCRATCH_BASE + SCRATCH_SIZE:
         raise ValueError(
-            "%s: 0x%08X..0x%08X is outside L2_MEM (0x%08X..0x%08X)"
-            % (tag, addr, end - 1, SCRATCH_BASE, SCRATCH_BASE + SCRATCH_SIZE - 1)
+            f"{tag}: 0x{addr:08X}..0x{end - 1:08X} is outside L2_MEM "
+            f"(0x{SCRATCH_BASE:08X}..0x{SCRATCH_BASE + SCRATCH_SIZE - 1:08X})"
         )
 
 def release_chip_reset(chip, hold=0.01, settle=0.20):
@@ -152,8 +152,8 @@ def detect_nibble_shift(got, exp, max_shift=16):
     """
     if not got or not exp:
         return None
-    e = "".join("%08x" % w for w in exp)
-    g = "".join("%08x" % w for w in got)
+    e = "".join(f"{w:08x}" for w in exp)
+    g = "".join(f"{w:08x}" for w in got)
     for shift in range(1, min(max_shift, len(e))):
         if len(g) > shift and g[: len(g) - shift] == e[shift:]:
             return shift
@@ -308,7 +308,7 @@ def test_d_burst_sweep(chip, lengths=(1, 2, 4, 8, 10, 16, 32, 64)):
         data = [random.randint(0, 0xFFFFFFFF) for _ in range(n)]
         chip.write_mem(addr, data)
         got = chip.read_mem(addr, length=n)
-        ok = summarise("  n=%-4d" % n, got, data)
+        ok = summarise(f"  n={n:<4d}", got, data)
         results[n] = (ok, good_prefix(got, data))
     logger.info("  --- summary ---")
     for n, (ok, pref) in results.items():
