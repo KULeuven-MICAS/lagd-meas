@@ -36,6 +36,7 @@ module tb_pll_controller;
     localparam int  STRB_HALF  = 4;
     localparam int  W          = PLL_CFG_BITS;   // 47
     localparam time CLK_PERIOD = 10ns;
+    localparam int  CLK_NS     = 10;             // bus period in ns (= CLK_PERIOD)
 
     // ---------------- clock / reset ----------------
     logic clk = 1'b0;
@@ -247,6 +248,37 @@ module tb_pll_controller;
         check_eq("readback leaves hidden",     cfg_hidden,  hid_before);
     endtask
 
+    // ---------------- CONFIG_STRB ----------------
+    // Time between consecutive data_strb rising edges, i.e. the period the divider
+    // actually produced. Each measurement zeroes `prev` first, so the idle gap
+    // between commands is never mistaken for a period.
+    realtime strb_prev_rise = 0.0, strb_period = 0.0;
+    always @(posedge pll_data_strb) begin
+        if (strb_prev_rise > 0.0) strb_period = $realtime - strb_prev_rise;
+        strb_prev_rise = $realtime;
+    end
+
+    // Frame: header + PLL_STRB_BYTES little-endian bytes of half-period. `half`
+    // may be out of range on purpose; `exp_half` is the value after the clamp.
+    task automatic do_config_strb(input logic [23:0] half, input logic [31:0] exp_half);
+        push_byte({PLL_CMD_MARKER, PLL_OP_CONFIG_STRB});
+        for (int k = 0; k < PLL_STRB_BYTES; k++)
+            push_byte(half[k*8 +: 8]);
+        wait_idle();
+        check_eq($sformatf("strb_half_r(req %0d)", half), {41'b0, dut.strb_half_r}, {32'b0, exp_half});
+    endtask
+
+    // Set the strobe rate, then run a real LOAD and confirm the wire period is
+    // 2*half bus cycles (the register alone does not prove the divider changed).
+    task automatic check_strb(input logic [23:0] half);
+        do_config_strb(half, half);
+        strb_prev_rise = 0.0;
+        strb_period    = 0.0;
+        do_load(47'h1234_5678_9ABC, 1'b0);
+        check_eq($sformatf("strb period @half=%0d [ns]", half),
+                 {32'b0, $rtoi(strb_period)}, {32'b0, 32'(2 * half * CLK_NS)});
+    endtask
+
     // ---------------- strobe interlock monitor ----------------
     // Outside an intended RESET, the two strobes must never be high together
     // (that combination is the PLL's register reset).
@@ -339,6 +371,27 @@ module tb_pll_controller;
         $display("=== Test 9: RESET after LOAD ===");
         do_load({W{1'b1}}, 1'b0);
         do_reset();
+
+        // ---- 10. runtime strobe reconfiguration (CONFIG_STRB) ----
+        // Nothing above sends a CONFIG_STRB, so the register still holds STRB_HALF.
+        $display("=== Test 10: runtime strobe reconfiguration ===");
+        check_eq("strb_half_r power-on", {41'b0, dut.strb_half_r}, {32'b0, 32'(STRB_HALF)});
+
+        check_strb(24'd20);   // 2.5 MHz at clk_i = 100 MHz
+        check_strb(24'd8);
+        check_strb(24'd2);    // the ceiling
+
+        // Out-of-range requests saturate rather than hang the strobe engine. The
+        // slow bound is checked on the register only: actually shifting 47 bits at
+        // half = 1e6 (50 Hz) would take seconds of simulated time.
+        do_config_strb(24'd0,      32'(dut.STRB_HALF_MIN));  // 0 would never terminate
+        do_config_strb(24'd1,      32'(dut.STRB_HALF_MIN));  // faster than the ceiling
+        do_config_strb(24'hFFFFFF, 32'(dut.STRB_HALF_MAX));  // slower than the floor
+
+        // Back to the bench default, and confirm the whole path still works.
+        do_config_strb(24'(STRB_HALF), 32'(STRB_HALF));
+        do_load(47'h2AAA_AAAA_AAAA, 1'b1);
+        do_readback(47'h2AAA_AAAA_AAAA);
 
         // ---- summary ----
         repeat (10) @(posedge clk);

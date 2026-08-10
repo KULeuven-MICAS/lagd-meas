@@ -29,6 +29,7 @@ module tb_perip_controller;
     localparam int  SCK_HZ     = 25_000_000;
     localparam int  CSB_HOLD   = 4;
     localparam time CLK_PERIOD = 10ns;
+    localparam int  CLK_NS     = 1_000_000_000 / CLK_HZ;   // bus period in ns
 
     // ---------------- clock / reset ----------------
     logic clk = 1'b0;
@@ -238,6 +239,58 @@ module tb_perip_controller;
         check_eq("s2p oe", {63'b0, s2p_oe}, {63'b0, on});
     endtask
 
+    // ---------------- serial-clock period monitors ----------------
+    // Time between consecutive rising edges of each device clock, i.e. the actual
+    // period the divider produced. Each measurement task zeroes `prev` first, so
+    // the idle gap between transfers is never mistaken for a period.
+    realtime dac_prev_rise = 0.0, dac_period = 0.0;
+    realtime s2p_prev_rise = 0.0, s2p_period = 0.0;
+
+    always @(posedge dac_clk) if (dac_csb === 1'b0) begin
+        if (dac_prev_rise > 0.0) dac_period = $realtime - dac_prev_rise;
+        dac_prev_rise = $realtime;
+    end
+    always @(posedge s2p_clk) begin
+        if (s2p_prev_rise > 0.0) s2p_period = $realtime - s2p_prev_rise;
+        s2p_prev_rise = $realtime;
+    end
+
+    // ---------------- CONFIG_*_SCK helpers ----------------
+    // Single command word carrying the half-period in its 20-bit payload. Checks
+    // the register landed with the expected (post-clamp) value; `half` may be out
+    // of range on purpose.
+    task automatic do_config_dac_sck(input logic [19:0] half, input logic [31:0] exp_half);
+        push_word(make_cmd(PERIP_OP_CONFIG_DAC_SCK, half));
+        wait_idle();
+        check_eq($sformatf("dac_half_r(req %0d)", half), 32'(dut.dac_half_r), exp_half);
+    endtask
+
+    task automatic do_config_s2p_sck(input logic [19:0] half, input logic [31:0] exp_half);
+        push_word(make_cmd(PERIP_OP_CONFIG_S2P_SCK, half));
+        wait_idle();
+        check_eq($sformatf("s2p_half_r(req %0d)", half), 32'(dut.s2p_half_r), exp_half);
+    endtask
+
+    // Set the DAC clock, then run a real write and confirm the wire period is
+    // 2*half bus cycles (the register alone does not prove the divider changed).
+    task automatic check_dac_sck(input logic [19:0] half);
+        do_config_dac_sck(half, half);
+        dac_prev_rise = 0.0;
+        dac_period    = 0.0;
+        do_dac_write(4'd1, 8'h5A);
+        check_eq($sformatf("dac period @half=%0d [ns]", half),
+                 $rtoi(dac_period), 32'(2 * half * CLK_NS));
+    endtask
+
+    task automatic check_s2p_sck(input logic [19:0] half);
+        do_config_s2p_sck(half, half);
+        s2p_prev_rise = 0.0;
+        s2p_period    = 0.0;
+        do_s2p_write(32'h1234_5678);
+        check_eq($sformatf("s2p period @half=%0d [ns]", half),
+                 $rtoi(s2p_period), 32'(2 * half * CLK_NS));
+    endtask
+
     // ---------------- AD8802 timing monitor ----------------
     realtime t_cs_fall, t_clk_edge, t_clk_rise, t_sdi_change;
     int      rise_idx;
@@ -389,6 +442,42 @@ module tb_perip_controller;
         // ---- 13. DAC still works after the S2P traffic (shared stream) ----
         $display("=== Test 13: DAC after S2P ===");
         do_dac_write(4'd6, 8'h3C);
+
+        // ---- 14. runtime serial-clock reconfiguration (CONFIG_*_SCK) ----
+        // Nothing above sends a CONFIG_*_SCK, so both registers still hold their
+        // power-on values here.
+        $display("=== Test 14: runtime SCK reconfiguration ===");
+        check_eq("dac_half_r power-on", 32'(dut.dac_half_r), 32'(CLK_HZ / SCK_HZ / 2));
+        check_eq("s2p_half_r power-on", 32'(dut.s2p_half_r), 32'(CLK_HZ / S2P_SCK_HZ / 2));
+
+        // Each device's clock is independently settable, and the wire period follows.
+        check_dac_sck(20'd50);    // 1 MHz
+        check_dac_sck(20'd5);     // 10 MHz
+        check_dac_sck(20'd2);     // 25 MHz (the ceiling)
+        check_s2p_sck(20'd50);    // 1 MHz
+        check_s2p_sck(20'd10);    // 5 MHz
+
+        // Setting one device must not disturb the other.
+        do_config_dac_sck(20'd25, 32'd25);
+        check_eq("s2p_half_r unchanged by DAC config", 32'(dut.s2p_half_r), 32'd10);
+        do_config_s2p_sck(20'd20, 32'd20);
+        check_eq("dac_half_r unchanged by S2P config", 32'(dut.dac_half_r), 32'd25);
+
+        // Out-of-range requests saturate rather than hang the shift engines. The
+        // slow bound is checked on the register only: actually running a transfer
+        // at half = 1e6 (50 Hz) would take seconds of simulated time.
+        do_config_dac_sck(20'd0,     32'(dut.SCK_HALF_MIN));  // 0 would never terminate
+        do_config_dac_sck(20'd1,     32'(dut.SCK_HALF_MIN));  // faster than SCK_MAX_HZ
+        do_config_dac_sck(20'hFFFFF, 32'(dut.SCK_HALF_MAX));  // slower than SCK_MIN_HZ
+        do_config_s2p_sck(20'd0,     32'(dut.SCK_HALF_MIN));
+        do_config_s2p_sck(20'hFFFFF, 32'(dut.SCK_HALF_MAX));
+
+        // Back to a fast setting, and confirm both paths still work end to end.
+        do_config_dac_sck(20'd2, 32'd2);
+        do_config_s2p_sck(20'd5, 32'd5);
+        do_dac_write(4'd4, 8'h7E);
+        do_s2p_write(32'hCAFE_F00D);
+        do_s2p_readback(32'hCAFE_F00D);
 
         // ---- summary ----
         repeat (10) @(posedge clk);

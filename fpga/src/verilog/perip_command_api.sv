@@ -26,11 +26,15 @@
 //  -------+----------------+------------------------------------+----------------
 //  0x00   | DAC write      | [cmd]                              | -
 //  0x03   | DAC loopback   | [cmd]                              | echo [cmd]
+//  0x04   | CONFIG_DAC_SCK | [cmd] (payload = half-period)      | -  (local only)
+//  0x05   | CONFIG_S2P_SCK | [cmd] (payload = half-period)      | -  (local only)
 //  0x10   | S2P_WRITE      | [cmd] [32-bit value]               | -  (shift+latch)
 //  0x11   | S2P_READBACK   | [cmd]                              | 1 word (32 bits)
 //  0x12   | S2P_OE         | [cmd] (bit0 = OE level)            | -
 //  0xFF   | WRITEBACK      | [cmd]                              | echo [cmd]
 //  other  | DAC transaction (no echo)
+//
+// CONFIG_DAC_SCK / CONFIG_S2P_SCK set the serial clock of one device at runtime.
 //
 // DAC command word fields (opcodes 0x00 / 0x03):
 //   [19:14] reserved   [13] rstn (active low)   [12] shdn (active low)
@@ -49,6 +53,8 @@
 // Handshake marker and opcodes (mirror chip_command_api values).
 localparam bit [3:0] PERIP_CMD_MARKER      = 4'hF;
 localparam bit [7:0] PERIP_OP_DAC_LOOPBACK = 8'h03;  // DAC write + echo command word
+localparam bit [7:0] PERIP_OP_CONFIG_DAC_SCK = 8'h04; // set DAC SPI clock half-period
+localparam bit [7:0] PERIP_OP_CONFIG_S2P_SCK = 8'h05; // set S2P shift clock half-period
 localparam bit [7:0] PERIP_OP_S2P_WRITE    = 8'h10;  // shift 32-bit value + latch
 localparam bit [7:0] PERIP_OP_S2P_READBACK = 8'h11;  // scan SR out of Data Out -> 1 word
 localparam bit [7:0] PERIP_OP_S2P_OE       = 8'h12;  // set Output Enable (bit0)
@@ -65,9 +71,19 @@ typedef struct packed {
     bit [7:0]  data;     // [7:0]  8b config data
 } dac_config_t;
 
+// CONFIG_DAC_SCK / CONFIG_S2P_SCK payload: serial clock half-period in bus-clock
+// cycles. SCK = CLK_HZ / (2*sck_half); at CLK_HZ = 100 MHz, 50000 -> 1 kHz.
+// Hardware clamps to [SCK_HALF_MIN, SCK_HALF_MAX].
+typedef struct packed {
+    bit [3:0]  marker;     // [31:28] = 0xF
+    bit [7:0]  opcode;     // [27:20]
+    bit [19:0] sck_half;   // [19:0]  half-period in clk_i cycles
+} perip_sck_t;
+
 // Create the perip_command typedef
 // union makes that a perip_command can be interpreted as any of the given 32b typedefs
 typedef union packed{
     dac_config_t      dac_config;
+    perip_sck_t       perip_sck;
     logic[31:0]       bitwise;
 } perip_command_t;

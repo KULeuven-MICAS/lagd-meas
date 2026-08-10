@@ -689,10 +689,17 @@ module xillydemo
   ////    CHIP and PERIP CONTROLLER MODULES    ////
   /////////////////////////////////////////////////
   parameter integer CLK_HZ = 100_000_000;       // 100 MHz bus clock
-  parameter integer CHIP_SCK_HZ = 5_000_000;
+  parameter integer CHIP_SCK_HZ = 5_000_000; // 5 MHz chip SPI clock (power-on default)
   parameter integer CHIP_SCK_MAX_HZ = 25_000_000;
-  parameter integer PERIP_SCK_HZ = 1_000;   // 1 kHz DAC SPI + HV9308 S2P shift clock
-  parameter integer PLL_STRB_HZ  = 1_000;   // 1 kHz PLL serial-config strobe
+  // Power-on defaults for the periphery / PLL serial clocks. Both are runtime-
+  // configurable (CONFIG_DAC_SCK / CONFIG_S2P_SCK / CONFIG_STRB); the *_MIN/_MAX
+  // bounds below are what software may select, enforced by a hardware clamp.
+  parameter integer PERIP_SCK_HZ     = 1_000;   // 1 kHz DAC SPI + HV9308 S2P shift clock (power-on default)
+  parameter integer PERIP_SCK_MAX_HZ = 25_000_000;
+  parameter integer PERIP_SCK_MIN_HZ = 50;
+  parameter integer PLL_STRB_HZ      = 1_000;   // 1 kHz PLL serial-config strobe (power-on default)
+  parameter integer PLL_STRB_MAX_HZ  = 25_000_000;
+  parameter integer PLL_STRB_MIN_HZ  = 50;
   parameter integer CSB_HOLD_CYCLES = 40 / (1000_000_000 / CLK_HZ); // 40 ns hold time for CSB signal (see DAC datasheet) converted to number of bus clock cycles
 
   // Controller for on-chip Quad-SPI
@@ -729,7 +736,9 @@ module xillydemo
     .CLK_HZ             (CLK_HZ            ),
     .SCK_HZ             (PERIP_SCK_HZ      ),
     .CSB_HOLD_CYCLES    (CSB_HOLD_CYCLES   ),
-    .S2P_SCK_HZ         (PERIP_SCK_HZ      )
+    .S2P_SCK_HZ         (PERIP_SCK_HZ      ),
+    .SCK_MAX_HZ         (PERIP_SCK_MAX_HZ  ),
+    .SCK_MIN_HZ         (PERIP_SCK_MIN_HZ  )
   ) perip_controller_inst (
     .clk_i              (clk_perip_ctrl    ),
     .rst_i              (rst_perip_ctrl    ),
@@ -756,7 +765,9 @@ module xillydemo
 
   // Controller for the Pomelo PLL serial configuration (8-bit FIFO stream)
   pll_controller #(
-    .STRB_HALF          (CLK_HZ / PLL_STRB_HZ / 2)
+    .STRB_HALF          (CLK_HZ / PLL_STRB_HZ / 2    ),
+    .STRB_HALF_MIN      (CLK_HZ / PLL_STRB_MAX_HZ / 2),
+    .STRB_HALF_MAX      (CLK_HZ / PLL_STRB_MIN_HZ / 2)
   ) pll_controller_inst (
     .clk_i              (clk_pll_ctrl      ),
     .rst_i              (rst_pll_ctrl      ),
