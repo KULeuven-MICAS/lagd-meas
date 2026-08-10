@@ -30,8 +30,8 @@ from typing import List
 CMD_MARKER       = 0xF
 OP_DAC           = 0x00  # any opcode other than the ones below performs a DAC transaction
 OP_DAC_LOOPBACK  = 0x03  # DAC transaction + echo the command word back into read FIFO
-OP_CONFIG_DAC_SCK = 0x04  # set the DAC SPI clock half-period (2-word frame)
-OP_CONFIG_S2P_SCK = 0x05  # set the HV9308 shift clock half-period (2-word frame)
+OP_CONFIG_DAC_SCK = 0x04  # set the DAC SPI clock half-period (payload = half)
+OP_CONFIG_S2P_SCK = 0x05  # set the HV9308 shift clock half-period (payload = half)
 OP_S2P_WRITE     = 0x10  # shift a 32-bit value into the HV9308 S2P + latch (2-word frame)
 OP_S2P_READBACK  = 0x11  # scan the HV9308 shift register out of Data Out -> 1 word
 OP_S2P_OE        = 0x12  # set the HV9308 Output Enable level (bit0)
