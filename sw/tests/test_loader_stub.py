@@ -101,8 +101,8 @@ class StubChip:
                 total_retries += 1
             else:
                 raise OSError(
-                    "write_mem_verified: gave up on 0x{:08X} after {} attempts".format(
-                        piece_addr, retries))
+                    f"write_mem_verified: gave up on 0x{piece_addr:08X} "
+                    f"after {retries} attempts")
         return total_retries
 
 

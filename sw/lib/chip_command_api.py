@@ -101,7 +101,7 @@ def cmd_config_sck(sck_half):
     return [make_command(CONFIG_SCK, sck_half)]
 
 
-# chip clock (CONFIG_CHIP_CLK) 
+# chip clock (CONFIG_CHIP_CLK)
 # The chip-clock half-period field is 20 bits (chip_clk_t.clk_half),
 # with 0 given a special meaning.
 MAX_CHIP_CLK_HALF = 0xFFFFF
