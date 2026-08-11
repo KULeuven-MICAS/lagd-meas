@@ -27,6 +27,10 @@
 //         |                    |   Takes effect on the NEXT transaction. Clamped
 //         |                    |   in hardware to <= SCK_MAX_HZ so it can never
 //         |                    |   exceed what the XDC timing-constrained.
+//  0x05   | CONFIG_CHIP_CLK    | (local only) set the clk_chip_o half-period in
+//         |                    |   bus clock cycles: f = CLK_HZ / (2*payload),
+//         |                    |   with payload 0 = bypass (forward CLK_HZ).
+//         |                    |   Takes effect immediately, glitch-free.
 //  0x02   | DATA_WRITE         | SPI cmd 0x02 (write mem), burst_length words
 //  0x03   | DATA_WRITE_LOOPBACK| SPI cmd 0x02 (write mem) + echo each data word
 //         |                    |   into the readback FIFO (for SW verification)
@@ -49,6 +53,7 @@ enum bit [7:0] {
     CONFIG_CLK_RST      = 8'h00,  // Configure chip_clk and chip_rstn (local)
     CONFIG_SPI_SLAVE    = 8'h01,  // Enable Quad-SPI on the slave (SPI cmd 0x01)
     CONFIG_SCK          = 8'h04,  // Set the SPI clock divider (local, no SPI txn)
+    CONFIG_CHIP_CLK     = 8'h05,  // Set the clk_chip_o divider (local, no SPI txn)
     DATA_WRITE          = 8'h02,  // Write burst_length words      (SPI cmd 0x02)
     DATA_WRITE_LOOPBACK = 8'h03,  // Like DATA_WRITE (SPI cmd 0x02) + echo each
                                   //   data word into the readback FIFO
@@ -82,6 +87,19 @@ typedef struct packed {
     bit [19:0] sck_half;   // [19:0]  half-period in clk_i cycles
 } chip_sck_t;
 
+// CONFIG_CHIP_CLK payload: clk_chip_o half-period in bus-clock cycles.
+//   clk_half == 0  -> BYPASS: clk_i is forwarded untouched, i.e. the full CLK_HZ
+//                     (100 MHz). This is the power-on default and the only way
+//                     to get divide-by-1; a toggle divider tops out at CLK_HZ/2.
+//   clk_half >= 1  -> f = CLK_HZ / (2 * clk_half), 50% duty.
+// The field is 20 bits, so at CLK_HZ = 100 MHz the divider spans
+//   1 -> 50 MHz ... 500_000 -> 100 Hz ... 0xFFFFF -> 47.68 Hz (the floor).
+typedef struct packed {
+    bit [3:0]  marker;     // [31:28] = 0xF
+    bit [7:0]  opcode;     // [27:20]
+    bit [19:0] clk_half;   // [19:0]  half-period in clk_i cycles, 0 = bypass
+} chip_clk_t;
+
 // DATA_WRITE / DATA_READ payload
 typedef struct packed {
     bit [3:0]  marker;        // [31:28] = 0xF
@@ -96,5 +114,6 @@ typedef union packed {
     chip_config_t chip_config;
     chip_burst_t  chip_burst;
     chip_sck_t    chip_sck;
+    chip_clk_t    chip_clk;
     logic [31:0]  bitwise;
 } chip_command_t;
