@@ -18,7 +18,7 @@ results/
 *.swp
 
 # data files
-openising/**/model_*/*.yaml
+**/config_experiment.yaml
 openising/**/run_*
 **.pkl
 **.out
