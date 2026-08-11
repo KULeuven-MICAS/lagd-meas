@@ -25,6 +25,12 @@ from sw.lib.chip_command_api import (
     cmd_read,
     cmd_config_sck,
     sck_half_for,
+    cmd_config_chip_clk,
+    chip_clk_half_for,
+    BUS_CLK_HZ,
+    MIN_CHIP_CLK_HZ,
+    MAX_CHIP_CLK_HZ,
+    MAX_DIVIDED_CHIP_CLK_HZ,
 )
 
 # Depth of the FPGA-to-xillinux readback FIFO (fifo_dualport_32x512). A loopback
@@ -99,6 +105,8 @@ class ChipDriver(PortDriver):
         super().__init__(*args, **kwargs)
         # Set SPI clock
         self.sck_hz = float(SCK_HZ)
+        # Chip clock: the controller powers on in bypass, i.e. the bus clock.
+        self.chip_clk_hz = float(BUS_CLK_HZ)
 
     # ---- chip command set (see chip_command_api.sv) ----
     def set_sck_hz(self, sck_hz: float) -> float:
@@ -113,6 +121,29 @@ class ChipDriver(PortDriver):
         self.sck_hz = actual
         logger.info("SCK set to %.3f kHz (half-period %d bus cycles; requested %.3f kHz)",
                     actual / 1e3, half, sck_hz / 1e3)
+        return actual
+
+    def set_chip_clk_hz(self, clk_hz: float) -> float:
+        """Retune clk_chip_o at runtime. Returns the frequency achieved.
+
+        The chip clock is an integer divide of the FPGA bus clock, so the
+        achieved rate is BUS_CLK_HZ/(2*N) (or BUS_CLK_HZ itself in bypass).
+        The range is ~47.7 Hz to 100 MHz.
+
+        Takes effect immediately and glitch-free.
+        """
+        half, actual = chip_clk_half_for(clk_hz)
+        self._send_words(cmd_config_chip_clk(half))
+        self.chip_clk_hz = actual
+        logger.info("chip clock set to %.6f MHz (half-period %s; requested %.6f MHz)",
+                    actual / 1e6, "bypass" if half == 0 else f"{half} bus cycles",
+                    clk_hz / 1e6)
+        if abs(actual - clk_hz) > 0.01 * clk_hz:
+            logger.warning("chip clock %.6f MHz is not reachable; running at %.6f MHz "
+                           "(range %.2f Hz .. %.1f MHz, nothing between %.1f and %.1f MHz)",
+                           clk_hz / 1e6, actual / 1e6, MIN_CHIP_CLK_HZ,
+                           MAX_CHIP_CLK_HZ / 1e6, MAX_DIVIDED_CHIP_CLK_HZ / 1e6,
+                           MAX_CHIP_CLK_HZ / 1e6)
         return actual
 
     def init_spi(self) -> None:
