@@ -4,13 +4,11 @@ import logging
 
 from __init__ import TOP_ISING, TOP_MEAS
 from submodules.openising.ising.api import get_hamiltonian_energy
-from save_model import store_run
-from mppi_experiment import mppi_experiment
+from openising.save_model import store_run
+from openising.mppi_experiment import mppi_experiment
 from chip_communication import compile_data, send_chip
 from submodules.openising.ising.stages.simulation_stage import Ans
-
-DEFAULT_HOST = "root@10.88.18.6"
-
+from openising import default_remote_dir, default_host, default_device, default_uart_baud, default_uart_timeout
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -27,12 +25,29 @@ parser.add_argument(
 )
 parser.add_argument("--nb-cores", help="The amount of cores to use on chip", type=int, default=1)
 parser.add_argument("--interface", help="The interface to send the data with", type=str, default="uart")
-parser.add_argument("--send-to-chip", default=False, type=bool)
 parser.add_argument(
     "-host",
     "--host",
-    default=DEFAULT_HOST,
-    help=f"measurement host, user@ip (default: {DEFAULT_HOST})",
+    default=default_host,
+    help=f"measurement host, user@ip (default: {default_host})",
+)
+parser.add_argument(
+    "-b",
+    "--baud",
+    help=f"baud rate to send/receive data. Must match the chip (default {default_uart_baud} baud)",
+    default=default_uart_baud,
+)
+parser.add_argument("-d", "--device", default=default_device, help=f"serial device (default: {default_device})")
+parser.add_argument(
+    "--remote-dir",
+    default=default_remote_dir,
+    help=f"repo directory on the measurement host (default: {default_remote_dir})",
+)
+parser.add_argument(
+    "--timeout",
+    type=float,
+    default=default_uart_timeout,
+    help=f"per-command response timeout in seconds (default: {default_uart_timeout})",
 )
 args = parser.parse_args()
 
@@ -71,6 +86,15 @@ if problem_type != "MPPI":
         # compile everything
         compile_data(data_folders, args.nb_cores)
     else:
-        send_chip(save_folder, args.nb_cores, args.interface, args.send_to_chip, args.host)
+        send_chip(
+            data_folder=save_folder,
+            nb_cores=args.nb_cores,
+            interface=args.interface,
+            host=args.host,
+            uart_device=args.device,
+            uart_baud=args.baud,
+            uart_timeout=args.timeout,
+            remote_dir=args.remote_dir,
+        )
 else:
-    mppi_experiment(config_path, save_folder, args.interface, args.send_to_chip, args.host)
+    mppi_experiment(config_path, save_folder, args.interface, args.host)
