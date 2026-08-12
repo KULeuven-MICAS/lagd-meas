@@ -16,7 +16,10 @@
 
 from typing import Optional
 
+import logging
+
 from sw.lib.port_driver import PortDriver
+from sw.lib.clock_api import DAC_SCK, S2P_SCK, set_clock
 from sw.lib.perip_command_api import (
     OP_WRITEBACK,
     OP_S2P_READBACK,
@@ -31,6 +34,8 @@ from sw.lib.perip_command_api import (
     cmd_s2p_write,
     cmd_s2p_oe,
 )
+
+logger = logging.getLogger(__name__)
 
 # AD8802: 12 channels, 8-bit, full code range over [0, V_REF).
 DAC_NUM_CHANNELS = 12
@@ -98,10 +103,10 @@ class PeripDriver(PortDriver):
         so the achieved rate can differ from the request. Applies to the next DAC
         transfer.
         """
-        half, actual = sck_half_for(sck_hz)
-        self._send_words(cmd_config_dac_sck(half))
-        self.dac_sck_hz = actual
-        return actual
+        self.dac_sck_hz = set_clock(
+            DAC_SCK, sck_hz,
+            lambda half: self._send_words(cmd_config_dac_sck(half)), logger)
+        return self.dac_sck_hz
 
     def set_s2p_sck_hz(self, sck_hz: float) -> float:
         """Set the HV9308 shift clock; return the rate actually achieved.
@@ -109,10 +114,10 @@ class PeripDriver(PortDriver):
         Same clamping as set_dac_sck_hz. Note the HV9308 is only rated to 8 MHz,
         which the FPGA-side clamp does not enforce.
         """
-        half, actual = sck_half_for(sck_hz)
-        self._send_words(cmd_config_s2p_sck(half))
-        self.s2p_sck_hz = actual
-        return actual
+        self.s2p_sck_hz = set_clock(
+            S2P_SCK, sck_hz,
+            lambda half: self._send_words(cmd_config_s2p_sck(half)), logger)
+        return self.s2p_sck_hz
 
     # ---- raw command set (see perip_command_api.sv) ----
     def dac_write(self, addr: int, data: int, rstn: int = 1, shdn: int = 1) -> None:
