@@ -26,12 +26,9 @@ from sw.lib.chip_command_api import (
     cmd_config_sck,
     sck_half_for,
     cmd_config_chip_clk,
-    chip_clk_half_for,
     BUS_CLK_HZ,
-    MIN_CHIP_CLK_HZ,
-    MAX_CHIP_CLK_HZ,
-    MAX_DIVIDED_CHIP_CLK_HZ,
 )
+from sw.lib.clock_api import CHIP_CLK, CHIP_SCK, set_clock
 
 # Depth of the FPGA-to-xillinux readback FIFO (fifo_dualport_32x512). A loopback
 # write echoes one word per data word; since verify_write_mem sends the whole
@@ -113,15 +110,13 @@ class ChipDriver(PortDriver):
         """Retune the SPI clock at runtime. Returns the frequency achieved.
 
         SCK is an integer divide of the FPGA bus clock, so the achieved rate is
-        BUS_CLK_HZ/(2*N). Takes effect on
-        the NEXT SPI transaction, and the hardware clamps to SCK_MAX_HZ.
+        BUS_CLK_HZ/(2*N). Takes effect on the NEXT SPI transaction, and the
+        hardware clamps the fast end to SCK_MAX_HZ.
         """
-        half, actual = sck_half_for(sck_hz)
-        self._send_words(cmd_config_sck(half))
-        self.sck_hz = actual
-        logger.info("SCK set to %.3f kHz (half-period %d bus cycles; requested %.3f kHz)",
-                    actual / 1e3, half, sck_hz / 1e3)
-        return actual
+        self.sck_hz = set_clock(
+            CHIP_SCK, sck_hz,
+            lambda half: self._send_words(cmd_config_sck(half)), logger)
+        return self.sck_hz
 
     def set_chip_clk_hz(self, clk_hz: float) -> float:
         """Retune clk_chip_o at runtime. Returns the frequency achieved.
@@ -132,19 +127,10 @@ class ChipDriver(PortDriver):
 
         Takes effect immediately and glitch-free.
         """
-        half, actual = chip_clk_half_for(clk_hz)
-        self._send_words(cmd_config_chip_clk(half))
-        self.chip_clk_hz = actual
-        logger.info("chip clock set to %.6f MHz (half-period %s; requested %.6f MHz)",
-                    actual / 1e6, "bypass" if half == 0 else f"{half} bus cycles",
-                    clk_hz / 1e6)
-        if abs(actual - clk_hz) > 0.01 * clk_hz:
-            logger.warning("chip clock %.6f MHz is not reachable; running at %.6f MHz "
-                           "(range %.2f Hz .. %.1f MHz, nothing between %.1f and %.1f MHz)",
-                           clk_hz / 1e6, actual / 1e6, MIN_CHIP_CLK_HZ,
-                           MAX_CHIP_CLK_HZ / 1e6, MAX_DIVIDED_CHIP_CLK_HZ / 1e6,
-                           MAX_CHIP_CLK_HZ / 1e6)
-        return actual
+        self.chip_clk_hz = set_clock(
+            CHIP_CLK, clk_hz,
+            lambda half: self._send_words(cmd_config_chip_clk(half)), logger)
+        return self.chip_clk_hz
 
     def init_spi(self) -> None:
         """Enable Quad-SPI mode on the chip's SPI slave (write reg0 = 0x01)."""

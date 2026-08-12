@@ -42,6 +42,9 @@
 from collections import namedtuple
 from typing import Dict, List
 
+from sw.lib import clock_api
+from sw.lib.clock_api import PLL_STRB
+
 # Handshake marker and opcodes (mirror pll_command_api.sv).
 CMD_MARKER        = 0xF
 OP_LOAD           = 0x0  # shift 47 bits + commit
@@ -59,17 +62,14 @@ CFG_BYTES = 6
 # CONFIG_STRB payload: a 24-bit half-period, little-endian.
 STRB_BYTES = 3
 
-# The strobe rate is runtime-configurable. These mirror xillydemo.v
-# (PLL_STRB_HZ / PLL_STRB_MAX_HZ / PLL_STRB_MIN_HZ) and the clamp in
-# pll_controller.sv; keep them in sync.
-BUS_CLK_HZ  = 100_000_000   # xillydemo.v: CLK_HZ
-STRB_HZ     = 1_000         # power-on default
-STRB_MAX_HZ = 25_000_000    # hardware clamp: fastest selectable
-STRB_MIN_HZ = 50            # hardware clamp: slowest selectable
+BUS_CLK_HZ  = clock_api.BUS_CLK_HZ   # xillydemo.v: CLK_HZ
+STRB_HZ     = PLL_STRB.default_hz    # power-on default
+STRB_MAX_HZ = PLL_STRB.max_hz        # hardware clamp: fastest selectable
+STRB_MIN_HZ = PLL_STRB.min_hz        # hardware clamp: slowest selectable
 
-STRB_HALF_MIN = BUS_CLK_HZ // STRB_MAX_HZ // 2
-STRB_HALF_MAX = BUS_CLK_HZ // STRB_MIN_HZ // 2
-assert STRB_HALF_MAX < (1 << (8 * STRB_BYTES)), "half-period must fit the payload bytes"
+STRB_HALF_MIN = PLL_STRB.half_min
+STRB_HALF_MAX = PLL_STRB.half_max
+assert PLL_STRB.field_bits == 8 * STRB_BYTES, "knob field width must match the payload bytes"
 
 # STATUS byte bit positions (mirror pll_command_api.sv).
 STATUS_LOCK_BIT = 0      # 1 = PLL locked
@@ -227,11 +227,9 @@ def strb_half_for(strb_hz, bus_clk_hz=BUS_CLK_HZ):
     The divider is integer, so the achieved rate is bus_clk_hz / (2*half) and
     generally differs from the request.
     """
-    if strb_hz <= 0:
-        raise ValueError("strb_hz must be positive")
-    half = int(round(bus_clk_hz / (2.0 * strb_hz)))
-    half = max(STRB_HALF_MIN, min(half, STRB_HALF_MAX))
-    return half, bus_clk_hz / (2.0 * half)
+    if bus_clk_hz != BUS_CLK_HZ:
+        raise ValueError("bus_clk_hz is fixed by the bitstream; see clock_api")
+    return PLL_STRB.half_for(strb_hz)
 
 
 def cmd_config_strb(strb_half: int) -> List[int]:
@@ -240,4 +238,5 @@ def cmd_config_strb(strb_half: int) -> List[int]:
     Takes effect on the next command. Out-of-range values are clamped by the
     hardware, so the rate saturates rather than hanging the strobe engine.
     """
+    PLL_STRB.check_half(strb_half)
     return [header(OP_CONFIG_STRB)] + [(strb_half >> (8 * k)) & 0xFF for k in range(STRB_BYTES)]
