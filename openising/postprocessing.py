@@ -1,6 +1,8 @@
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
 
 from submodules.openising.ising.stages.model.MPPI.environment import create_environment, plot_environment
 from submodules.openising.ising.stages.model import IsingModel
@@ -59,6 +61,8 @@ def plot_BER(data_folders: list[Path], figname: str = "ber_curve", add_sw: bool 
     snr_ber_points_sw = dict()
     for model_folder in data_folders:
         ans = load_ans(model_folder)
+        if snr_ber_points.get(ans.SNR) is None:
+            snr_ber_points[ans.SNR] = []
         N = np.shape(ans.x_tilde)[0]
         if ans.config.dummy_qam == 2:
             r = 1
@@ -87,8 +91,8 @@ def plot_BER(data_folders: list[Path], figname: str = "ber_curve", add_sw: bool 
         diff_real_half = differences[0:array_mid, :]
         diff_imag_half = differences[array_mid:, :]
         diff_of_users = np.hstack((diff_real_half, diff_imag_half))
-        snr_ber_points[ans.SNR] = np.mean(
-            np.sum(np.abs(diff_of_users) / 2, axis=1) / (np.log2(ans.config.dummy_qam) * nb_trials)
+        snr_ber_points[ans.SNR].append(
+            np.mean(np.sum(np.abs(diff_of_users) / 2, axis=1) / (np.log2(ans.config.dummy_qam) * nb_trials))
         )
         snr_ber_points_zf[ans.SNR] = ans.BER["ZF"]
         if add_sw:
@@ -164,7 +168,8 @@ def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxpl
         add_sw (bool, optional): _description_. Defaults to True.
         figname (str, optional): _description_. Defaults to "boxplot".
     """
-    final_energies = dict()
+    # TODO
+    final_energies = list()
 
     for model_folder in data_folders:
         ans = load_ans(model_folder)
@@ -173,24 +178,41 @@ def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxpl
             break
         model: IsingModel = ans.ising_model
         nb_runs = ans.config.nb_runs
-        final_energies[ans.benchmark_name] = list()
+        energies = []
         for run in range(int(nb_runs / 2)):
             run_folder = model_folder / f"run_{run}"
             for i in range(2):
                 final_state = np.loadtxt(run_folder / f"hw_final_state_{i}")
-                final_energies[ans.benchmark_name].append(
-                    relative_to_best_found(model.evaluate(final_state), ans.best_found)
-                )
+                energies.append(relative_to_best_found(model.evaluate(final_state), ans.best_found))
+        final_energies.append(
+            pd.DataFrame(
+                {
+                    "relative Hamiltonian energy": energies,
+                    "simulation type": "Hardware",
+                    "benchmark": ans.benchmark_name,
+                }
+            )
+        )
         if add_sw:
-            final_energies[ans.benchmark_name]
+            final_energies.append(
+                pd.DataFrame(
+                    {
+                        "relative Hamiltonian energy": relative_to_best_found(
+                            ans.energies["Multiplicative"], ans.best_found
+                        ),
+                        "simulation type": "software simulation",
+                        "benchmark": ans.benchmark_name,
+                    }
+                )
+            )
+    final_energies = pd.concat(final_energies)
 
     plt.figure()
-    plt.boxplot([np.array(en) for en in final_energies.values()])
+    sns.boxplot(data=final_energies, x="benchmark", y="relative Hamiltonian energy", hue="simulation type")
     plt.yscale("log")
-    plt.xticks(range(len(final_energies.keys())), list(final_energies.keys()), rotation=45)
     plt.xlabel("Benchmark")
     plt.ylabel("Relative Ising Energy")
-    plt.savefig(data_folders[0] / "boxplot")
+    plt.savefig(data_folders[0] / figname)
     plt.close()
 
 
@@ -243,7 +265,7 @@ def plot_trajectory(
         [x[0] for x in executed_traj],
         [x[1] for x in executed_traj],
         color=linecolor,
-        marker="s-",
+        marker="s",
         alpha=0.5,
         label=label_name,
         markersize=3,
@@ -251,7 +273,7 @@ def plot_trajectory(
     )
     for coords in predicted_traj:
         coords = coords[:, :2]
-        ax.plot([x[0] for x in coords], [x[1] for x in coords], color=linecolor, marker="-", alpha=0.2)
+        ax.plot([x[0] for x in coords], [x[1] for x in coords], color=linecolor, alpha=0.2)
 
 
 def compute_difference(state: np.ndarray, T: np.ndarray, r: int, x_tilde: np.ndarray, M: int, N: int) -> float:

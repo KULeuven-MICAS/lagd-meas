@@ -17,7 +17,7 @@ from submodules.openising.ising.stages.quantization_stage import QuantizationSta
 from submodules.openising.ising.stages.combine_nodes_stage import CombineNodesStage
 from submodules.openising.ising.benchmarks.MPPI import get_dynamics_model
 from submodules.openising.ising.stages.model.MPPI.QUBOController import QUBOController
-
+from openising.postprocessing import plot_mppi
 
 def get_trajectory_view(benchmark, trajectory: np.ndarray) -> np.ndarray:
     # Get horizon
@@ -88,7 +88,9 @@ def build_ising(
     return IsingModel.from_qubo(Q)
 
 
-def mppi_experiment(config_path, save_folder, interface: str, host: str, use_chip: bool):
+def mppi_experiment(
+    config_path, save_folder, interface: str, host: str, uart_device, uart_baud, uart_timeout, remote_dir, plot_sw:bool
+):
     with Path(TOP / config_path).open(encoding="utf-8") as file:
         config: dict = yaml.safe_load(file)
 
@@ -149,7 +151,7 @@ def mppi_experiment(config_path, save_folder, interface: str, host: str, use_chi
             ans.save(save_folder / "ans.pkl")
             data_folders = store_run(ans, save_folder, "MPPI")
             compile_data(data_folders, 1)
-            send_chip(save_folder, 1, interface, use_chip, host)
+            send_chip(save_folder, 1, interface, host, uart_device, uart_baud, uart_timeout, remote_dir)
             actions_hw = np.loadtxt(save_folder / "run_0/hw_final_state_1")
             actions_sw = (ans.states["Multiplicative"][0] + 1.0) / 2.0
             # Apply actions in continuous space
@@ -179,6 +181,8 @@ def mppi_experiment(config_path, save_folder, interface: str, host: str, use_chi
     ans.scene = scene
     ans.delta_t = benchmark.delta_t
     ans.save(save_folder / "ans.pkl")
+
+    plot_mppi(save_folder, plot_sw)
 
 
 def parse_benchmark_trajectory(benchmark):
