@@ -27,11 +27,13 @@ import re
 import unittest
 from pathlib import Path
 
-from sw.lib import clock_api
+from sw.lib.chip_command_api import chip_clk_half_for, sck_half_for as chip_sck_half_for
 from sw.lib.clock_api import (
     ClockKnob, CHIP_CLK, CHIP_SCK, DAC_SCK, S2P_SCK, PLL_STRB, ALL_KNOBS,
     BUS_CLK_HZ, set_clock,
 )
+from sw.lib.perip_command_api import sck_half_for as perip_sck_half_for
+from sw.lib.pll_command_api import strb_half_for
 
 _REPO = Path(__file__).resolve().parent.parent.parent      # sw/tests -> repo root
 _RTL = _REPO / "fpga" / "src" / "verilog"
@@ -43,7 +45,7 @@ def _sv_int(text, name):
                   r"(?:\s+(?:unsigned|signed))?\s+" + name +
                   r"\s*=\s*([0-9_]+)", text)
     if m is None:
-        raise AssertionError("could not find parameter {} in the RTL".format(name))
+        raise AssertionError(f"could not find parameter {name} in the RTL")
     return int(m.group(1).replace("_", ""))
 
 
@@ -51,7 +53,7 @@ def _sv_field_bits(text, struct_field):
     """Read the width of `bit [19:0] sck_half;`-style field declarations."""
     m = re.search(r"bit\s*\[\s*(\d+)\s*:\s*0\s*\]\s+" + struct_field + r"\s*;", text)
     if m is None:
-        raise AssertionError("could not find field {} in the RTL".format(struct_field))
+        raise AssertionError(f"could not find field {struct_field} in the RTL")
     return int(m.group(1)) + 1
 
 
@@ -65,7 +67,7 @@ class TestKnobBehaviour(unittest.TestCase):
                     continue
                 hz = knob.hz_for(half)
                 self.assertEqual(knob.half_for(hz)[0], half,
-                                 "{}: half {} did not round trip".format(knob.name, half))
+                                 f"{knob.name}: half {half} did not round trip")
 
     def test_frequency_formula(self):
         # f = bus/(2*half) -- the one equation the whole module exists to share.
@@ -202,26 +204,22 @@ class TestLegacyHelpersStillAgree(unittest.TestCase):
     from the knob they now delegate to."""
 
     def test_chip_helpers(self):
-        from sw.lib.chip_command_api import sck_half_for, chip_clk_half_for
         for hz in (1e3, 1e6, 5e6, 25e6):
-            self.assertEqual(sck_half_for(hz), CHIP_SCK.half_for(hz))
+            self.assertEqual(chip_sck_half_for(hz), CHIP_SCK.half_for(hz))
             self.assertEqual(chip_clk_half_for(hz), CHIP_CLK.half_for(hz))
 
     def test_perip_helper(self):
-        from sw.lib.perip_command_api import sck_half_for
         for hz in (50, 1e3, 1e6):
-            self.assertEqual(sck_half_for(hz), DAC_SCK.half_for(hz))
+            self.assertEqual(perip_sck_half_for(hz), DAC_SCK.half_for(hz))
 
     def test_pll_helper(self):
-        from sw.lib.pll_command_api import strb_half_for
         for hz in (50, 1e3, 1e6):
             self.assertEqual(strb_half_for(hz), PLL_STRB.half_for(hz))
 
     def test_a_foreign_bus_clock_is_refused(self):
         # These used to take a bus_clk_hz override that silently produced codes
         # for a bitstream that does not exist.
-        from sw.lib.chip_command_api import sck_half_for
-        self.assertRaises(ValueError, sck_half_for, 1e6, 50_000_000)
+        self.assertRaises(ValueError, chip_sck_half_for, 1e6, 50_000_000)
 
 
 if __name__ == "__main__":

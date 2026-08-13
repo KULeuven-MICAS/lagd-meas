@@ -25,7 +25,6 @@ from sw.lib.perip_command_api import (
     OP_S2P_READBACK,
     SCK_HZ,
     make_command,
-    sck_half_for,
     cmd_dac_write,
     cmd_dac_write_loopback,
     cmd_dac_reset,
