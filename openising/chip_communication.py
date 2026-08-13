@@ -16,33 +16,37 @@ from target.zcu102.top import (
     DEFAULT_REMOTE_DIR,
 )
 
-def compile_data_convergence(data_folder: Path, nb_iteration: int):
+
+def compile_data_convergence(data_folders: list[Path], nb_iteration: int):
     """Compiles data for every flipping iteration of one run.
 
-    @type data_folder: pathlib.Path
-    @param data_folder: folder where the data is stored
+    @type data_folders: list[pathlib.Path]
+    @param data_folders: list of folders where the data is stored
     @type interface: str
     @param interface: what interface to use to send the data
     @type nb_iteration: int
     @param nb_iteration: the amount of flipping iterations
     """
-    folder = data_folder / "run_0"
-    compile_folder = TOP_LAGD_IM / "/sw/tests/data/default"
-    rename_move_file(folder / "model", compile_folder, "model_1")
-    move_to_datafolder(folder, compile_folder, 0)
+    os.chdir(TOP_LAGD_IM)
+    compile_folder = TOP_LAGD_IM / "sw/tests/data/default"
+    Reg_file = TOP_LAGD_IM / "sw/include/lagd_reg_params.h"
+    with Reg_file.open("r") as f:
+        data = f.readlines()
+        for line in data:
+            if line.find("#define ICON_LAST_RADDR_PLUS_ONE") != -1:
+                index = data.index(line)
+    for folder in data_folders:
+        rename_move_file(folder / "model", compile_folder, "model_1")
+        move_to_datafolder(folder, compile_folder, 0)
 
-    Reg_file = TOP_MEAS / "openising/lagd-im/sw/include/lagd_reg_params.h"
-    it_line = 72  # line 73 but start from 0
-    for it in range(nb_iteration):
-        with Reg_file.open("r") as f:
-            data = f.readlines()
-        data[it_line] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(it + 1)} // max: 0x0400 (1024)"
-        with Reg_file.open("w") as f:
-            f.writelines(data)
+        for it in range(1, nb_iteration + 1):
+            data[index] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(it)} // max: 0x0400 (1024)\n"
+            with Reg_file.open("w") as f:
+                f.writelines(data)
 
-        elf_file = f"lagd_commands_iteration{it}"
-        subprocess.run(["pixi", "run", "make -C ./sw clean all BENDER=bender"])
-        rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_scompute.spm.elf", folder, elf_file)
+            elf_file = f"lagd_commands_iteration{it}.elf"
+            subprocess.run(["pixi", "run", "make -C ./sw clean all BENDER=bender VERIFICATION_TEST=0"])
+            rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_scompute.spm.elf", folder, elf_file)
 
 
 def compile_data(data_folders: list[Path], nb_cores: int):
@@ -66,10 +70,12 @@ def compile_data(data_folders: list[Path], nb_cores: int):
     ans.load(data_folders[0].parent / "ans.pkl")
     nb_flipping = ans.config.nb_flipping
     Reg_file = TOP_LAGD_IM / "sw/include/lagd_reg_params.h"
-    it_line = 74  # line 73 but start from 0
     with Reg_file.open("r") as f:
         data = f.readlines()
-    data[it_line] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(nb_flipping + 1)} // max: 0x0400 (1024)\n"
+        for line in data:
+            if line.find("#define ICON_LAST_RADDR_PLUS_ONE") != -1:
+                index = data.index(line)
+    data[index] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(nb_flipping + 1)} // max: 0x0400 (1024)\n"
     with Reg_file.open("w") as f:
         f.writelines(data)
 
@@ -193,7 +199,44 @@ def send_chip(
     return 0
 
 
-def retrieve_data_from_output(data_folders: list[Path], nb_cores: int, nb_variables: int, nb_flipping: int):
+def send_chip_convergence(
+    data_folder: Path,
+    interface: str,
+    host: str,
+    uart_device: str,
+    uart_baud: int,
+    uart_timeout: float,
+    remote_dir: str,
+):
+
+    ans: Ans = load_ans(data_folder)
+    nb_iterations = ans.config.nb_flipping
+    if ans.config.problem_type in ["Maxcut", "MPPI"]:
+        nb_runs = int(ans.config.nb_runs / 2)
+    elif ans.config.problem_type == "MIMO":
+        nb_runs = int(ans.config.nb_trials)
+    top_log = TOP_MEAS / "top.log"
+    for run in range(nb_runs):
+        run_folder = data_folder / f"run_{run}"
+        for it in range(1, nb_iterations + 1):
+            reload_board()
+            elf_file = str((run_folder / f"lagd_commands_iteration{it}.elf").relative_to(TOP_MEAS))
+            if interface == "uart":
+                with top_log.open("w") as f:
+                    run_elf(host, remote_dir, elf_file, uart_device, ["--no-rtscts"], f)
+
+            elif interface in ["spi", "jtag"]:
+                with top_log.open("w") as f:
+                    _stream_uart_output(f, uart_device, uart_baud, uart_timeout, remote_dir, host, interface, elf_file)
+            else:
+                raise ValueError(f"Interface {interface} is not yet supported")
+            # move to correct folder and parse output
+            retrieve_data_from_output([run_folder], 1, ans.ising_model.num_variables, it, True)
+
+
+def retrieve_data_from_output(
+    data_folders: list[Path], nb_cores: int, nb_variables: int, nb_flipping: int, convergence_mode: bool = False
+):
     """
     This function retrieves the output data of the chip and stores it in the correct folder.
 
@@ -205,6 +248,8 @@ def retrieve_data_from_output(data_folders: list[Path], nb_cores: int, nb_variab
     @param nb_variables: the amount of variables of the model
     @type nb_flipping: int
     @param nb_flipping: the amount of flipping iterations. This ensures only this amount of energy values are stored.
+    @type convergence_mode: bool
+    @param convergence_mode: whether to append to the energy
     """
     output_file = TOP_MEAS / "top.log"
     energies = np.zeros((2 * nb_cores, nb_flipping))
@@ -242,10 +287,30 @@ def retrieve_data_from_output(data_folders: list[Path], nb_cores: int, nb_variab
                     run = int(parts_line[4])
                     cur_run = 2 * core + run
                     energies[cur_run, current_it[cur_run] + 1 :] = energy
-    for core, folder in zip(range(nb_cores), data_folders):
-        for run in range(2):
-            np.savetxt(folder / f"hw_best_energy_{run + 1}", energies[2 * core + run, :], fmt="%32s")
-            np.savetxt(folder / f"hw_final_state_{run + 1}", final_states[2 * core + run, :], fmt="%1u")
+    if not convergence_mode:
+        for core, folder in zip(range(nb_cores), data_folders):
+            for run in range(2):
+                np.savetxt(folder / f"hw_best_energy_{run + 1}", energies[2 * core + run, :], fmt="%32s")
+                np.savetxt(folder / f"hw_final_state_{run + 1}", final_states[2 * core + run, :], fmt="%1u")
+    else:
+        if nb_flipping == 1:
+            for core, folder in zip(range(nb_cores), data_folders):
+                for run in range(2):
+                    np.savetxt(
+                        folder / f"hw_best_energy_{run + 1}_convergence", energies[2 * core + run, :], fmt="%32s"
+                    )
+                    np.savetxt(
+                        folder / f"hw_final_state_{run + 1}_convergence", final_states[2 * core + run, :], fmt="%1u"
+                    )
+        else:
+            for core, folder in zip(range(nb_cores), data_folders):
+                for run in range(2):
+                    np.savetxt(
+                        folder / f"hw_final_state_{run + 1}_convergence", final_states[2 * core + run, :], fmt="%1u"
+                    )
+                    best_energies = np.loadtxt(folder / f"hw_best_energy_{run + 1}_convergence")
+                    best_energies = np.append(best_energies, energies[2 * core + run, -1])
+                    np.savetxt(folder / f"hw_best_energy_{run + 1}", best_energies, fmt="%32s")
 
 
 def move_to_datafolder(source_folder: Path, data_folder: Path, core: int):
