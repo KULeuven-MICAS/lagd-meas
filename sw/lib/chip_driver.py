@@ -24,7 +24,6 @@ from sw.lib.chip_command_api import (
     cmd_write_loopback,
     cmd_read,
     cmd_config_sck,
-    sck_half_for,
     cmd_config_chip_clk,
     BUS_CLK_HZ,
 )

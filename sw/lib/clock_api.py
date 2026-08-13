@@ -40,13 +40,13 @@ BUS_CLK_HZ = 100_000_000
 def _fmt_hz(hz):
     """Render a rate in whichever unit keeps it readable (these span 47 Hz..100 MHz)."""
     if hz >= 1e6:
-        return "{:.6g} MHz".format(hz / 1e6)
+        return f"{hz / 1e6:.6g} MHz"
     if hz >= 1e3:
-        return "{:.6g} kHz".format(hz / 1e3)
-    return "{:.6g} Hz".format(hz)
+        return f"{hz / 1e3:.6g} kHz"
+    return f"{hz:.6g} Hz"
 
 
-class ClockKnob(object):
+class ClockKnob:
     """One runtime-configurable clock: Hz <-> half-period code, plus its limits.
 
     `max_hz` is the fastest rate the HARDWARE CLAMP permits (None = the clamp
@@ -79,7 +79,7 @@ class ClockKnob(object):
         self.half_max = field_max if self.min_hz is None else min(
             bus_hz // self.min_hz // 2, field_max)
         if self.half_max < self.half_min:
-            raise ValueError("{}: empty range".format(name))
+            raise ValueError(f"{name}: empty range")
 
     # ---- reachable range ----
     @property
@@ -108,8 +108,7 @@ class ClockKnob(object):
         the request -- always use the returned value rather than assuming.
         """
         if hz <= 0:
-            raise ValueError("{}: frequency must be positive, got {}".format(
-                self.name, hz))
+            raise ValueError(f"{self.name}: frequency must be positive, got {hz}")
         # A bypass reaches bus_hz while the counter tops out at bus_hz/2, so
         # requests in that gap snap to whichever end is nearer in the log domain
         # (bus_hz/sqrt(2), i.e. ~70.7 MHz on a 100 MHz bus).
@@ -124,7 +123,7 @@ class ClockKnob(object):
         if self.bypass_code is not None and half == self.bypass_code:
             return float(self.bus_hz)
         if half <= 0:
-            raise ValueError("{}: half must be >= 1".format(self.name))
+            raise ValueError(f"{self.name}: half must be >= 1")
         return self.bus_hz / (2.0 * half)
 
     def check_half(self, half):
@@ -132,8 +131,7 @@ class ClockKnob(object):
         lo = 0 if self.bypass_code is not None else 1
         hi = (1 << self.field_bits) - 1
         if not (lo <= half <= hi):
-            raise ValueError("{}: half {} out of range {}..{}".format(
-                self.name, half, lo, hi))
+            raise ValueError(f"{self.name}: half {half} out of range {lo}..{hi}")
         return half
 
     def is_clamped(self, requested_hz, actual_hz, tol=0.01):
@@ -149,11 +147,11 @@ class ClockKnob(object):
         """One-line human summary of what this knob can do."""
         gap = ""
         if self.bypass_code is not None:
-            gap = " (nothing between {} and {})".format(
-                _fmt_hz(self.fastest_divided_hz), _fmt_hz(self.fastest_hz))
-        return "{}: {} .. {}, default {}{}".format(
-            self.name, _fmt_hz(self.slowest_hz), _fmt_hz(self.fastest_hz),
-            _fmt_hz(self.default_hz), gap)
+            gap = f" (nothing between {_fmt_hz(self.fastest_divided_hz)} and {_fmt_hz(self.fastest_hz)})"
+        return (
+            f"{self.name}: {_fmt_hz(self.slowest_hz)} .. {_fmt_hz(self.fastest_hz)}, "
+            f"default {_fmt_hz(self.default_hz)}{gap}"
+        )
 
 
 # --- the five knobs -----------------------------------------------------------
@@ -198,7 +196,7 @@ def set_clock(knob, hz, emit, logger=None):
     half, actual = knob.half_for(hz)
     emit(half)
     if logger is not None:
-        code = "bypass" if half == knob.bypass_code else "{} bus cycles".format(half)
+        code = "bypass" if half == knob.bypass_code else f"{half} bus cycles"
         logger.info("%s set to %s (half-period %s; requested %s)",
                     knob.name, _fmt_hz(actual), code, _fmt_hz(hz))
         if knob.is_clamped(hz, actual):

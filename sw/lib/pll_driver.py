@@ -41,7 +41,6 @@ from sw.lib.pll_command_api import (
     cmd_status,
     cmd_writeback,
     cmd_config_strb,
-    strb_half_for,
     pack_pll_cfg,
     unpack_pll_cfg,
     rst_pll_cfg,
