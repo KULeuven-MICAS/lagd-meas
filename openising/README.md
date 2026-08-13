@@ -13,7 +13,7 @@ This folder holds all the scripts for generating and compiling the experiment da
 - `--remote-dir <remote/directory>`: the directory on the remote host that is linked to your directory here. The default directory is `Workspace/workspace_sofie`.
 - `--timeout <timeout>`: the allowed response time in seconds, needed for uart. Default set to 5 seconds.
 - `--plot-sw`: if this argument is added for an MPPI experiment the software simulation will also be plotted.
-
+- `--convergence-mode`: if this argument is added an elf file for every iteration is made. This allows for better reconstruction of the solver's convergence.
 # Postprocessing
 Currently the file `postprocessing.py` holds a few functions with which plots can be made. These function can be used with the retrieved data from the on-chip experiments. The plotting functions are:
 
