@@ -21,10 +21,12 @@
 #      with the core held in reset / quiesced.
 # bring_up() does 1-3 (waiting for lock, only switching once locked).
 
+import logging
 import time
 from typing import Dict, List, Optional
 
 from sw.lib.port_driver import PortDriver
+from sw.lib.clock_api import PLL_STRB, set_clock
 from sw.lib.pll_command_api import (
     CFG_BITS,
     CFG_BYTES,
@@ -39,12 +41,13 @@ from sw.lib.pll_command_api import (
     cmd_status,
     cmd_writeback,
     cmd_config_strb,
-    strb_half_for,
     pack_pll_cfg,
     unpack_pll_cfg,
     rst_pll_cfg,
     join_le,
 )
+
+logger = logging.getLogger(__name__)
 
 # clk_sel encodings (mirror the clk mux in lagd_clk_gen.sv).
 CLK_SEL_PLL       = 0   # I0 = pll_clk_o
@@ -92,10 +95,10 @@ class PllDriver(PortDriver):
         command. Both strobes are gated clocks into the PLL over FMC wiring, so
         raise this only as far as that path is known to be reliable.
         """
-        half, actual = strb_half_for(strb_hz)
-        self._send_bytes(cmd_config_strb(half))
-        self.strb_hz = actual
-        return actual
+        self.strb_hz = set_clock(
+            PLL_STRB, strb_hz,
+            lambda half: self._send_bytes(cmd_config_strb(half)), logger)
+        return self.strb_hz
 
     # ---- byte-level transport helpers ----
     def _send_bytes(self, data: List[int]) -> None:

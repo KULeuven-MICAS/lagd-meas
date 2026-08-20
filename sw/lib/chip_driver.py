@@ -24,8 +24,10 @@ from sw.lib.chip_command_api import (
     cmd_write_loopback,
     cmd_read,
     cmd_config_sck,
-    sck_half_for,
+    cmd_config_chip_clk,
+    BUS_CLK_HZ,
 )
+from sw.lib.clock_api import CHIP_CLK, CHIP_SCK, set_clock
 
 # Depth of the FPGA-to-xillinux readback FIFO (fifo_dualport_32x512). A loopback
 # write echoes one word per data word; since verify_write_mem sends the whole
@@ -99,21 +101,35 @@ class ChipDriver(PortDriver):
         super().__init__(*args, **kwargs)
         # Set SPI clock
         self.sck_hz = float(SCK_HZ)
+        # Chip clock: the controller powers on in bypass, i.e. the bus clock.
+        self.chip_clk_hz = float(BUS_CLK_HZ)
 
     # ---- chip command set (see chip_command_api.sv) ----
     def set_sck_hz(self, sck_hz: float) -> float:
         """Retune the SPI clock at runtime. Returns the frequency achieved.
 
         SCK is an integer divide of the FPGA bus clock, so the achieved rate is
-        BUS_CLK_HZ/(2*N). Takes effect on
-        the NEXT SPI transaction, and the hardware clamps to SCK_MAX_HZ.
+        BUS_CLK_HZ/(2*N). Takes effect on the NEXT SPI transaction, and the
+        hardware clamps the fast end to SCK_MAX_HZ.
         """
-        half, actual = sck_half_for(sck_hz)
-        self._send_words(cmd_config_sck(half))
-        self.sck_hz = actual
-        logger.info("SCK set to %.3f kHz (half-period %d bus cycles; requested %.3f kHz)",
-                    actual / 1e3, half, sck_hz / 1e3)
-        return actual
+        self.sck_hz = set_clock(
+            CHIP_SCK, sck_hz,
+            lambda half: self._send_words(cmd_config_sck(half)), logger)
+        return self.sck_hz
+
+    def set_chip_clk_hz(self, clk_hz: float) -> float:
+        """Retune clk_chip_o at runtime. Returns the frequency achieved.
+
+        The chip clock is an integer divide of the FPGA bus clock, so the
+        achieved rate is BUS_CLK_HZ/(2*N) (or BUS_CLK_HZ itself in bypass).
+        The range is ~47.7 Hz to 100 MHz.
+
+        Takes effect immediately and glitch-free.
+        """
+        self.chip_clk_hz = set_clock(
+            CHIP_CLK, clk_hz,
+            lambda half: self._send_words(cmd_config_chip_clk(half)), logger)
+        return self.chip_clk_hz
 
     def init_spi(self) -> None:
         """Enable Quad-SPI mode on the chip's SPI slave (write reg0 = 0x01)."""

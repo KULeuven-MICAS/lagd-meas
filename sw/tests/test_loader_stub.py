@@ -30,7 +30,7 @@ from sw.tools.spi_program_loader import (
     SpiProgramLoader,
     SCRATCH_0, SCRATCH_1, SCRATCH_2,
     SCRATCH2_GO_BIT, SCRATCH2_DONE_BIT,
-    MAX_BURST_WORDS,
+    MAX_BURST_WORDS, VERIFY_CHUNK_WORDS,
 )
 
 # Prebuilt ELF copied from the lagd-im SW build (helloworld). Resolved relative
@@ -55,7 +55,7 @@ class StubChip:
     def __init__(self):
         self.mem = {}                 # word address -> 32-bit value
         self.writes = []              # list of (addr, n_words) for burst checks
-        self.read_overrides = {}      # addr -> list of values to return
+        self.read_overrides = {}      # (addr) -> list of values, matched by length
         self.spi_inited = False
         self.clk_rst = None           # (chip_clk_en, chip_rstn)
 
@@ -74,9 +74,36 @@ class StubChip:
 
     def read_mem(self, addr, length=1, timeout=0.5):
         addr &= 0xFFFFFFFF
-        if addr in self.read_overrides:
-            return self.read_overrides[addr]
+        override = self.read_overrides.get(addr)
+        if override is not None and len(override) == length:
+            return list(override)
         return [self.mem.get((addr + i * 4) & 0xFFFFFFFF, 0) for i in range(length)]
+
+    def write_mem_verified(self, addr, data_words, chunk=16, retries=8, timeout=0.0):
+        """Same contract as ChipDriver.write_mem_verified.
+
+        Writes in `chunk`-word pieces, reads each back, retries on mismatch,
+        returns the total retry count, and raises OSError when a piece never
+        lands. Kept in lock-step with the real one on purpose: the loader's
+        default write path goes through here, so a stub that merely aliased
+        write_mem would test a path production never takes.
+        """
+        if isinstance(data_words, int):
+            data_words = [data_words]
+        total_retries = 0
+        for off in range(0, len(data_words), chunk):
+            piece = data_words[off:off + chunk]
+            piece_addr = (addr + 4 * off) & 0xFFFFFFFF
+            for _ in range(retries):
+                self.write_mem(piece_addr, piece)
+                if self.read_mem(piece_addr, length=len(piece)) == piece:
+                    break
+                total_retries += 1
+            else:
+                raise OSError(
+                    f"write_mem_verified: gave up on 0x{piece_addr:08X} "
+                    f"after {retries} attempts")
+        return total_retries
 
 
 class TestElfLoader(unittest.TestCase):
@@ -147,11 +174,10 @@ class TestSpiProgramLoader(unittest.TestCase):
         self.assertEqual(self.chip.mem[SCRATCH_2], SCRATCH2_GO_BIT)
 
     def test_verify_failure_aborts_before_launch(self):
-        # Corrupt one segment word in the stub right after it's written, by
-        # overriding the readback of the segment's first word.
-        self.chip.read_overrides[HELLO_SEG_ADDR] = [0xDEADBEEF]  # length-1 read
-        # load_and_run reads the whole segment at once; emulate a mismatch by
-        # making that read return a wrong-length / wrong-value list.
+        # A corrupt readback of the WHOLE segment is what verify_image sees.
+        # Length nwords, so the loader's per-chunk write verification (which
+        # reads VERIFY_CHUNK_WORDS at a time) still passes and we reach the
+        # verify_image gate rather than tripping the earlier one.
         img = parse_elf(ELF_PATH)
         nwords = len(bytes_to_words(img.segments[0].data))
         self.chip.read_overrides[HELLO_SEG_ADDR] = [0] * nwords  # all-zero != real
@@ -159,6 +185,16 @@ class TestSpiProgramLoader(unittest.TestCase):
                           ELF_PATH, True, True)  # elf, init_spi, verify
         # The go bit must NOT have been set (launch never reached).
         self.assertNotIn(SCRATCH_2, self.chip.mem)
+
+    def test_write_verify_failure_aborts_before_launch(self):
+        # The other guard: a chunk that never reads back correctly makes
+        # write_mem_verified give up. That fires during load_image, so neither
+        # the entry point nor the go bit may be written.
+        self.chip.read_overrides[HELLO_SEG_ADDR] = [0] * VERIFY_CHUNK_WORDS
+        self.assertRaises(OSError, self.loader.load_and_run,
+                          ELF_PATH, True, True)
+        self.assertNotIn(SCRATCH_2, self.chip.mem)
+        self.assertNotIn(SCRATCH_0, self.chip.mem)
 
     def test_verify_image_pass(self):
         img = parse_elf(ELF_PATH)
@@ -176,19 +212,37 @@ class TestSpiProgramLoader(unittest.TestCase):
 
 
 class TestBurstChunking(unittest.TestCase):
-    """write_segment must split > MAX_BURST_WORDS into multiple frames with
-    correctly advanced addresses (the SPI burst-length field is 16 bits)."""
+    """write_segment must split long word lists into frames with correctly
+    advanced addresses. Two different limits apply depending on the path:
+
+      verified=True  (default, all real loads) -> VERIFY_CHUNK_WORDS per frame,
+                     each read back and retried by write_mem_verified
+      verified=False (raw, for error-rate measurement) -> MAX_BURST_WORDS, the
+                     16-bit burst-length field of the SPI slave
+    """
 
     def test_single_frame_when_small(self):
         chip = StubChip()
         SpiProgramLoader(chip, verbose=False).write_segment(0x80000000, [1, 2, 3])
         self.assertEqual(chip.writes, [(0x80000000, 3)])
 
+    def test_verified_path_splits_at_verify_chunk(self):
+        chip = StubChip()
+        n = VERIFY_CHUNK_WORDS + 10        # one full chunk + a small remainder
+        words = list(range(n))
+        SpiProgramLoader(chip, verbose=False).write_segment(0x80000000, words)
+        second_addr = (0x80000000 + VERIFY_CHUNK_WORDS * 4) & 0xFFFFFFFF
+        self.assertEqual(chip.writes,
+                         [(0x80000000, VERIFY_CHUNK_WORDS), (second_addr, 10)])
+        self.assertEqual(chip.mem[0x80000000], 0)
+        self.assertEqual(chip.mem[second_addr], VERIFY_CHUNK_WORDS)
+
     def test_split_when_over_max(self):
         chip = StubChip()
         n = MAX_BURST_WORDS + 10           # one full frame + a small remainder
         words = list(range(n))
-        SpiProgramLoader(chip, verbose=False).write_segment(0x80000000, words)
+        SpiProgramLoader(chip, verbose=False).write_segment(
+            0x80000000, words, verified=False)
         # Expect two frames: [MAX_BURST_WORDS] then [10], addresses contiguous.
         self.assertEqual(len(chip.writes), 2)
         self.assertEqual(chip.writes[0], (0x80000000, MAX_BURST_WORDS))
@@ -197,6 +251,24 @@ class TestBurstChunking(unittest.TestCase):
         # And every word must be readable at its correct byte address.
         self.assertEqual(chip.mem[0x80000000], 0)
         self.assertEqual(chip.mem[second_addr], MAX_BURST_WORDS)
+
+    def test_verified_write_retries_then_succeeds(self):
+        """A chunk that reads back wrong ONCE must be retried, not abandoned."""
+        chip = StubChip()
+        # Fail the first readback of the 3-word chunk, then let it succeed.
+        real_read = chip.read_mem
+        state = {"failed": False}
+
+        def flaky_read(addr, length=1, timeout=0.5):
+            if not state["failed"] and length == 3:
+                state["failed"] = True
+                return [0] * 3
+            return real_read(addr, length, timeout)
+
+        chip.read_mem = flaky_read
+        retries = chip.write_mem_verified(0x80000000, [1, 2, 3], chunk=3)
+        self.assertEqual(retries, 1)
+        self.assertEqual(chip.mem[0x80000000], 1)
 
 
 class TestMultiSegment(unittest.TestCase):

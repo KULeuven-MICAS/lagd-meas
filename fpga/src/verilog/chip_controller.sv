@@ -35,7 +35,8 @@ module chip_controller#(
     parameter int CLK_HZ     = 100_000_000,
     parameter int SCK_HZ     = 5_000_000, // power-on default SCK
     parameter int SCK_MAX_HZ = 25_000_000, // max SCK allowed for the SPI
-    parameter int SCK_HALF_W = 20
+    parameter int SCK_HALF_W = 20,
+    parameter int CHIP_CLK_HALF_W = 20
 )(
     input  logic clk_i,
     (* direct_reset = "yes" *) input  logic rst_i,
@@ -89,6 +90,11 @@ module chip_controller#(
     // Runtime SPI clock divider, set by CONFIG_SCK. Resets to the SCK_HZ
     localparam int SCK_HALF_RESET = CLK_HZ / SCK_HZ / 2;
     (* mark_debug = "true" *) logic [SCK_HALF_W-1:0] sck_half_r;
+
+    // Runtime chip clock divider, set by CONFIG_CHIP_CLK. 0 = bypass.
+    (* mark_debug = "true" *) logic [CHIP_CLK_HALF_W-1:0] chip_clk_half_r;
+    logic [CHIP_CLK_HALF_W-1:0] chip_clk_cnt_r;
+    (* mark_debug = "true" *) logic chip_clk_lvl_r;
 
     // Registered SPI master control
     (* mark_debug = "true" *) logic spi_start_o;
@@ -167,8 +173,33 @@ module chip_controller#(
     // read back precisely what was sent. cmd_word_r holds the command for the
     // whole transaction, so this view is valid throughout SPI_WRITE_STREAM.
     wire write_is_loopback = (chip_command_opcode == DATA_WRITE_LOOPBACK);
-    assign clk_chip_o = chip_clk_en_r ? clk_i : 1'b1;
     assign chip_arst_no = chip_rstn_r;
+
+    // Chip clock generator (CONFIG_CHIP_CLK)
+    wire chip_clk_load   = (state_current == DECODE_CMD) &&
+                           (chip_command_opcode == CONFIG_CHIP_CLK);
+    wire chip_clk_bypass = (chip_clk_half_r == '0);
+    wire chip_clk_park   = !chip_clk_en_r || chip_clk_bypass || chip_clk_load;
+
+    always_ff @(posedge clk_i or posedge rst_i) begin
+        if (rst_i) begin
+            chip_clk_cnt_r <= '0;
+            chip_clk_lvl_r <= 1'b1;
+        end else if (chip_clk_park) begin
+            chip_clk_cnt_r <= '0;
+            chip_clk_lvl_r <= 1'b1;
+        end else if (chip_clk_cnt_r >= chip_clk_half_r - 1'b1) begin
+            // Reachable only when chip_clk_half_r >= 1: half == 0 parks above,
+            // so the -1 here can never wrap.
+            chip_clk_cnt_r <= '0;
+            chip_clk_lvl_r <= ~chip_clk_lvl_r;
+        end else begin
+            chip_clk_cnt_r <= chip_clk_cnt_r + 1'b1;
+        end
+    end
+
+    assign clk_chip_o = chip_clk_en_r ? (chip_clk_bypass ? clk_i : chip_clk_lvl_r)
+                                      : 1'b1;
 
     // Activity/status for LEDs. Track spi_busy_o so the indicator stays asserted
     // for the whole SPI transaction (e.g. a long burst write that streams for
@@ -242,6 +273,7 @@ module chip_controller#(
             chip_clk_en_r   <= 1'b0;
             chip_rstn_r     <= 1'b0;
             sck_half_r      <= SCK_HALF_W'(SCK_HALF_RESET);
+            chip_clk_half_r <= '0;   // bypass: clk_chip_o = clk_i
         end else begin
             spi_start_o <= 1'b0;
 
@@ -267,6 +299,11 @@ module chip_controller#(
                         CONFIG_SCK: begin
                             sck_half_r    <= chip_command.chip_sck.sck_half[SCK_HALF_W-1:0];
                             state_current <= IDLE;
+                        end
+
+                        CONFIG_CHIP_CLK: begin
+                            chip_clk_half_r <= chip_command.chip_clk.clk_half[CHIP_CLK_HALF_W-1:0];
+                            state_current   <= IDLE;
                         end
 
                         CONFIG_SPI_SLAVE: begin

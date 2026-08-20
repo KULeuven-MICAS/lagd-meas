@@ -78,17 +78,15 @@ module perip_controller #(
     output logic perip_busy_o
 );
 
-    localparam int SCK_HALF_MIN     = (CLK_HZ / SCK_MAX_HZ / 2) < 1
-                                      ? 1 : (CLK_HZ / SCK_MAX_HZ / 2);
-    localparam int SCK_HALF_MAX     = CLK_HZ / SCK_MIN_HZ / 2;
+    localparam int SCK_HALF_MIN     = clk_half_min_for(CLK_HZ, SCK_MAX_HZ);
+    localparam int SCK_HALF_MAX     = clk_half_max_for(CLK_HZ, SCK_MIN_HZ);
     localparam int SCK_HALF_W       = $clog2(SCK_HALF_MAX + 1);
     localparam int DAC_HALF_RESET   = CLK_HZ / SCK_HZ / 2;
     localparam int S2P_HALF_RESET   = CLK_HZ / S2P_SCK_HZ / 2;
 
     function automatic logic [SCK_HALF_W-1:0] clamp_half(input logic [19:0] v);
-        if (v < 20'(SCK_HALF_MIN))      clamp_half = SCK_HALF_W'(SCK_HALF_MIN);
-        else if (v > 20'(SCK_HALF_MAX)) clamp_half = SCK_HALF_W'(SCK_HALF_MAX);
-        else                            clamp_half = SCK_HALF_W'(v);
+        clamp_half = SCK_HALF_W'(
+            clk_half_clamp(32'(v), 32'(SCK_HALF_MIN), 32'(SCK_HALF_MAX)));
     endfunction
 
     typedef enum logic [2:0] {
