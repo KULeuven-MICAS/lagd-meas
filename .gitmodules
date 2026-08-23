@@ -4,3 +4,4 @@
 [submodule "openising/lagd-im"]
 	path = submodules/lagd-im
 	url = https://github.com/KULeuven-MICAS/lagd-im.git
+	branch = galena
