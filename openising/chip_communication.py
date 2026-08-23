@@ -26,11 +26,11 @@ def compile_data_convergence(data_folder: Path, interface: str, nb_iteration: in
     @param nb_iteration: the amount of flipping iterations
     """
     folder = data_folder / "run_0"
-    compile_folder = TOP_LAGD_IM / "/sw/tests/data/default"
+    compile_folder = TOP_LAGD_IM / "sw/tests/ref/data/default"
     rename_move_file(folder / "model", compile_folder, "model_1")
     move_to_datafolder(folder, compile_folder, 0)
 
-    Reg_file = TOP_MEAS / "openising/lagd-im/sw/include/lagd_reg_params.h"
+    Reg_file = TOP_MEAS / "openising/lagd-im/sw/include/ref/lagd_reg_params.h"
     it_line = 72  # line 73 but start from 0
     for it in range(nb_iteration):
         with Reg_file.open("r") as f:
@@ -41,7 +41,7 @@ def compile_data_convergence(data_folder: Path, interface: str, nb_iteration: in
 
         elf_file = f"lagd_commands_iteration{it}"
         subprocess.run(["pixi", "run", "make -C ./sw clean all BENDER=bender"])
-        rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_scompute.spm.elf", folder, elf_file)
+        rename_move_file(TOP_LAGD_IM / "sw/tests/ref/lagd_scompute.spm.elf", folder, elf_file)
 
 
 def compile_data(data_folders: list[Path], nb_cores: int):
@@ -57,14 +57,14 @@ def compile_data(data_folders: list[Path], nb_cores: int):
     assert nb_cores <= 2
     os.chdir(TOP_LAGD_IM)
     # copy data to folder
-    compile_folder = TOP_LAGD_IM / "sw/tests/data/default"
+    compile_folder = TOP_LAGD_IM / "sw/tests/ref/data/default"
     nb_runs = len(data_folders)
 
     # make sure the amount of iterations is altered
     ans = Ans()
     ans.load(data_folders[0].parent / "ans.pkl")
     nb_flipping = ans.config.nb_flipping
-    Reg_file = TOP_LAGD_IM / "sw/include/lagd_reg_params.h"
+    Reg_file = TOP_LAGD_IM / "sw/include/ref/lagd_reg_params.h"
     it_line = 74  # line 73 but start from 0
     with Reg_file.open("r") as f:
         data = f.readlines()
@@ -87,10 +87,10 @@ def compile_data(data_folders: list[Path], nb_cores: int):
         elf_file = "lagd_commands.elf"
         subprocess.run(["pixi", "run", "make -C ./sw clean all BENDER=bender"])
         if folder_2 is not None:
-            rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_dcompute.spm.elf", folder_1, elf_file)
-            rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_dcompute.spm.elf", folder_2, elf_file)
+            rename_move_file(TOP_LAGD_IM / "sw/tests/ref/lagd_dcompute.spm.elf", folder_1, elf_file)
+            rename_move_file(TOP_LAGD_IM / "sw/tests/ref/lagd_dcompute.spm.elf", folder_2, elf_file)
         else:
-            rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_scompute.spm.elf", folder_1, elf_file)
+            rename_move_file(TOP_LAGD_IM / "sw/tests/ref/lagd_scompute.spm.elf", folder_1, elf_file)
 
 
 def _stream_uart_output(
