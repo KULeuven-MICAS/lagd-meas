@@ -6,8 +6,8 @@ delta_t: .2
 velocity: 4.0
 
 # Trajectory generation seed
-seed: 42
-nb_control_points: 7
+seed: 38
+nb_control_points: 15
 
 # QUBO parameters (for bicycle riding)
 Q: null   # No full Q

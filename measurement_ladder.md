@@ -166,8 +166,24 @@ python sw/uart/send_uart.py sw/inputs/lagd_scompute.spm.elf --device /dev/ttyUSB
 
 ### BER-SNR @ 24x24 BPSK MIMO
 
+To generate the data, run:
+```[bash]
+python openising/generate_experiment.py -config-file openising/MIMO_experiment/model_6 --simulate --nb-cores 2
+```
+Be sure the config_experiment.yaml file in the folder exists! To send the data to chip and retrieve all the data, run:
+
+```[bash]
+python openising/generate_experiment.py -config_file openising/MIMO_experiment/model_6 --nb-cores 2 --interface <interface> --host <host> --device <device>  --baud <baud> --timeout <timeout> --remote-dir <remote_dir>
+```
+With the interface set to either: uart, jtag, or spi. All other arguments are best to use when you want to change the default setting.
+
 ### BER-SNR @ 256x128 QAM4 MIMO
 
 ### MPC
+
+```[bash]
+python openising/generate_experiment.py -config-file openising/MPPI_experiment/model_0 --interface <interface> --host <host> --device <device>  --baud <baud> --timeout <timeout> --remote-dir <remote_dir>
+```
+With the interface set to either: uart, jtag, or spi. All other arguments are best to use when you want to change the default setting.
 
 ### MaxCut

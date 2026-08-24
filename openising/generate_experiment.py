@@ -53,7 +53,6 @@ parser.add_argument(
     "--convergence-mode",
     help="compile the runs, such that the iteration count increases by one iteration each time",
     action=argparse.BooleanOptionalAction,
-    default=True
 )
 args = parser.parse_args()
 

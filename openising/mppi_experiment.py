@@ -146,14 +146,26 @@ def mppi_experiment(
             sub_stage = QuantizationStage(list_of_callables, **kwargs)
             # Store answers
             out: tuple[Ans] = next(sub_stage.run())  # This runs the ising model
-            ans: Ans = out[0]
-            ans.ising_model = ising_model_hw
-            ans.save(save_folder / "ans.pkl")
-            data_folders = store_run(ans, save_folder, "MPPI")
+            ans_sw: Ans = out[0]
+
+            # Make sure the hardware model gets quantized
+            kwargs_hw = dict()
+            kwargs_hw["ising_model"] = ising_model_hw
+            kwargs_hw["config"] = config
+            kwargs_hw["config"].nb_flipping = 1
+            kwargs_hw["config"].nb_runs = 1
+
+            list_of_callables = [SimulationStage]
+            sub_stage = QuantizationStage(list_of_callables, **kwargs_hw)
+            out: tuple[Ans] = next(sub_stage.run())  # This runs the ising model
+            ans_hw: Ans = out[0]
+            ans_sw.quantized_model = ans_hw.quantized_model
+            ans_sw.save(save_folder / "ans.pkl")
+            data_folders = store_run(ans_sw, save_folder, "MPPI")
             compile_data(data_folders, 1)
             send_chip(save_folder, 1, interface, host, uart_device, uart_baud, uart_timeout, remote_dir)
             actions_hw = np.loadtxt(save_folder / "run_0/hw_final_state_1")
-            actions_sw = (ans.states["Multiplicative"][0] + 1.0) / 2.0
+            actions_sw = (ans_sw.states["Multiplicative"][0] + 1.0) / 2.0
             # Apply actions in continuous space
             u_bar_sw += (actions_sw @ ee.T).reshape(-1, benchmark.action_dim)
             u_bar_hw += (actions_hw @ ee.T).reshape(-1, benchmark.action_dim)
@@ -173,20 +185,20 @@ def mppi_experiment(
         predicted_trajectory_sw.append(x_bar_sw.reshape(-1, benchmark.state_dim))
         predicted_trajectory_hw.append(x_bar_hw.reshape(-1, benchmark.state_dim))
     # Add final result to answer (and some stuff for result plotting)
-    ans.executed_trajectory_sw = executed_trajectory_sw
-    ans.predicted_trajectory_sw = predicted_trajectory_sw
-    ans.executed_trajectory_hw = executed_trajectory_hw
-    ans.predicted_trajectory_hw = predicted_trajectory_hw
-    ans.reference_trajectory = x_ref
-    ans.scene = scene
-    ans.delta_t = benchmark.delta_t
-    ans.save(save_folder / "ans.pkl")
+    ans_sw.executed_trajectory_sw = executed_trajectory_sw
+    ans_sw.predicted_trajectory_sw = predicted_trajectory_sw
+    ans_sw.executed_trajectory_hw = executed_trajectory_hw
+    ans_sw.predicted_trajectory_hw = predicted_trajectory_hw
+    ans_sw.reference_trajectory = x_ref
+    ans_sw.scene = scene
+    ans_sw.delta_t = benchmark.delta_t
+    ans_sw.save(save_folder / "ans.pkl")
 
     plot_mppi(save_folder, plot_sw)
 
 
 def parse_benchmark_trajectory(benchmark):
-    scene = generate_random_scene(seed=benchmark.seed)
+    scene = generate_random_scene(seed=benchmark.seed, nb_control_points=benchmark.nb_control_points)
     env, control_pts, bc_headings = create_environment(scene)
     x_ref = create_reference_trajectory(env, control_pts, bc_headings, v=benchmark.velocity, dt=benchmark.delta_t)
     return scene, x_ref.T
