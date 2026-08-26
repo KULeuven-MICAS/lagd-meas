@@ -40,7 +40,7 @@ Bigger `--mem-size` = more stress but longer (8 KiB × 5 patterns ≈ a few seco
 ## Test commands (add `--no-rtscts` when mapping the chip on FPGA):
 
 ```bash
-./testcases/uart/04_memtest/run.sh --mem-base 0x10000000 --mem-size 0x3fc8 # check stack memory (skip the final 56B that is not testable)
+./testcases/uart/04_memtest/run.sh --mem-base 0x10000000 --mem-size 0x3fc8 # check stack memory (skip the final 56B that is used for saving read addr/len and therefore is not testable)
 ./testcases/uart/04_memtest/run.sh --mem-base 0x80000000 --mem-size 0x10000 # check l2 spm
 ./testcases/uart/04_memtest/run.sh --mem-base 0x90000000 --mem-size 0x10000 # check l1_j_spm_c0 and l1_f_spm_c0
 ./testcases/uart/04_memtest/run.sh --mem-base 0x90010000 --mem-size 0x10000 # check l1_j_spm_c1 and l1_f_spm_c1
