@@ -102,7 +102,7 @@ def example_with_driver():
     return readback
 
 
-def main(setup_pll=True):
+def main(setup_pll=True, mem_test=False):
     # Set up PLL
     if setup_pll:
         pll_test.main()
@@ -113,7 +113,7 @@ def main(setup_pll=True):
     # tune the chip clock and spi clock
     # SCK must stay at or below the chip clock: the slave's RX FIFO is 8 words
     # deep and cannot backpressure SPI, so an AXI side slower than the SPI silently drops words.
-    chip.set_chip_clk_hz(10e6) # 10 MHz
+    # chip.set_chip_clk_hz(10e6) # 10 MHz (FPGA clock is not used for now. Use the on-PCB oscillator instead)
     chip.set_sck_hz(5e6) # 5 MHz
 
     # enable the chip clock and reset the chip
@@ -122,22 +122,24 @@ def main(setup_pll=True):
     # init quad-spi
     chip.init_spi()
 
-    # smoke test: test writeback loop
-    test_writeback()
+    # run a memory test
+    if mem_test:
+        # smoke test: test writeback loop
+        test_writeback()
+
+        # loopback-write check: data is echoed back for verification
+        SCRATCH_0 = 0x80000000
+        length = 50
+        data = [random.randint(0, 0xFFFFFFFF) for _ in range(length)]
+        logger.debug(f"Writing data: {[hex(d) for d in data]}")
+        test_verify_write_mem(SCRATCH_0, data)
+
+        # read back check
+        readback = chip.read_mem(SCRATCH_0, length=length)
+        logger.info(f"Readback matches written data: {readback == data}")
 
 if __name__ == '__main__':
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
     sys.exit(main())
-
-    # loopback-write check: data is echoed back for verification
-    SCRATCH_0 = 0x80000000
-    length = 50
-    data = [random.randint(0, 0xFFFFFFFF) for _ in range(length)]
-    logger.debug(f"Writing data: {[hex(d) for d in data]}")
-    test_verify_write_mem(SCRATCH_0, data)
-
-    # read back check
-    readback = chip.read_mem(SCRATCH_0, length=length)
-    logger.info(f"Readback matches written data: {readback == data}")
