@@ -132,13 +132,7 @@ def test_strb_config_silicon(rates=(1_000, 10_000, 100_000)):
 
 
 def main():
-    """Worked example of the PLL command set. Run it top to bottom.
-
-    Steps 1-3 need nothing but the Zedboard and the bitstream. Step 4 talks to the
-    PLL in the chip and is commented out -- uncomment it once the chip is wired.
-    This script deliberately never switches the SoC clock onto the PLL; see step 5
-    for how to do that, and why it is not automatic.
-    """
+    """Worked example of the PLL command set."""
     open_ports()
 
     if not test_writeback():
@@ -168,8 +162,10 @@ def main():
     logging.info('readback = 0x%012X', readback)
     assert readback == word
 
-    # Move the SoC onto the PLL         [needs the chip; NOT done here]
-    if pll.bring_up(lock_timeout=1.0, switch=True):
+    # Move the SoC onto the PLL
+    locked = pll.wait_lock(timeout=3)
+    if locked:
+        pll.select_pll()
         logging.info('PLL lock = %s and selected as the SoC clock', pll.read_lock())
     else:
         logging.error('PLL did not lock; SoC left on the reference clock')
