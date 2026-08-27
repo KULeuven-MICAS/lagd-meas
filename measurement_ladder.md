@@ -51,38 +51,47 @@ python sw/tests/pll_test.py
 
 ##### UART (FT4232H UART channel, /dev/ttyUSB2)
 
-- 🔳 (optional) FT4232H' UART channel and host serial path work — no chip involved
+- ✅ (optional) FT4232H' UART channel and host serial path work — no chip involved
 
 ```[bash]
 python sw/testcases/uart/00_loopback/loopback.py --device /dev/ttyUSB2
 ```
 
-- 🔳 Find the chip's UART and confirm the bootrom answers the 0x06 handshake
+- ✅ Find the chip's UART and confirm the bootrom answers the 0x06 handshake
 
 ```[bash]
 ./sw/testcases/uart/01_portsweep/portsweep.py --scan
 ```
 
-- 🔳 Chip is clocked and the bootrom works (via the real loader)
+- ✅ Chip is clocked and the bootrom works (via the real loader)
 
 ```[bash]
-./sw/testcases/uart/02_handshake/run.sh
+./testcases/uart/02_handshake/run.sh
 ```
 
-- 🔳 HelloWord ELF test
+- ✅ HelloWord ELF test
 
 ```[bash]
-./sw/testcases/uart/03_load_run/run.sh --device /dev/ttyUSB2 --no-exec --verify ─▶ Memory check only
-./sw/testcases/uart/03_load_run/run.sh --device /dev/ttyUSB2 --verify ─▶ Run and check
+./testcases/uart/03_load_run/run.sh --device /dev/ttyUSB2 --no-exec --verify ─▶ Memory check only
+./testcases/uart/03_load_run/run.sh --device /dev/ttyUSB2 --verify ─▶ Run and check
 ```
 
-- 🔳 Memory volume stress test (mem-base: hex, mem-size: size in bit)
+- ✅ Memory volume stress test (mem-base: hex, mem-size: size in bit)
 
 ```[bash]
-./sw/testcases/uart/04_memtest/run.sh --device /dev/ttyUSB2 --mem-base 0x80000000 --mem-size 0x2000
+./testcases/uart/04_memtest/run.sh --mem-base 0x10000000 --mem-size 0x3fc8
+./testcases/uart/04_memtest/run.sh --mem-base 0x80000000 --mem-size 0x10000
+./testcases/uart/04_memtest/run.sh --mem-base 0x90000000 --mem-size 0x10000
+./testcases/uart/04_memtest/run.sh --mem-base 0x90010000 --mem-size 0x10000
 ```
 
-- 🔳 IsingCore ELF test
+- ✅ IsingCore Reg test
+
+```[bash]
+python sw/uart/send_uart.py sw/inputs/lagd_reg.spm.elf --device /dev/ttyUSB2 --verify
+```
+
+- ✅ IsingCore ELF test
 
 ```[bash]
 python sw/uart/send_uart.py sw/inputs/lagd_dcompute.spm.elf --device /dev/ttyUSB2 --verify
@@ -90,13 +99,13 @@ python sw/uart/send_uart.py sw/inputs/lagd_dcompute.spm.elf --device /dev/ttyUSB
 
 ##### SPI (FPGA FMC)
 
-- 🔳 Quad-SPI interface works and memory can be accessed (no ELF)
+- ✅ Quad-SPI interface works and memory can be accessed (no ELF)
 
 ```[bash]
 python sw/tests/chip_test.py
 ```
 
-- 🔳 HelloWorld ELF test
+- ✅ HelloWorld ELF test
 
 ```[bash]
 python sw/tests/chip_load_spi.py

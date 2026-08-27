@@ -130,9 +130,8 @@ def main(elf=DEFAULT_ELF, sck_hz=None):
     # Open the ports (caller owns the lifecycle; the loader never opens/closes).
     chip = ChipDriver(WRITE_DEV, READ_DEV)
     with chip:
-        # Release the core so the bootrom runs and polls SCRATCH_2 for the
-        # launch signal. (boot_mode pins must already be strapped to 0.)
-        chip.config_clk_rst(chip_clk_en=1, chip_rstn=1)
+        # Reset the chip and enable the clock
+        chip.reset_chip(hold=0.5, chip_clk_en=1)
 
         if sck_hz is not None:
             chip.set_sck_hz(sck_hz) # takes effect on the next transaction
