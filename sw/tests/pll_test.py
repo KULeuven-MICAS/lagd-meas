@@ -131,7 +131,7 @@ def test_strb_config_silicon(rates=(1_000, 10_000, 100_000)):
     return ok
 
 
-def main():
+def setup_pll():
     """Worked example of the PLL command set."""
     open_ports()
 
@@ -180,4 +180,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(setup_pll())

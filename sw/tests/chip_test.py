@@ -102,10 +102,10 @@ def example_with_driver():
     return readback
 
 
-def main(setup_pll=True, mem_test=False):
+def setup_chip(setup_pll=True, mem_test=False):
     # Set up PLL
     if setup_pll:
-        pll_test.main()
+        pll_test.setup_pll()
 
     # Set up the chip driver
     open_ports()
@@ -142,4 +142,4 @@ if __name__ == '__main__':
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
-    sys.exit(main())
+    sys.exit(setup_chip())
