@@ -271,7 +271,7 @@ module chip_controller#(
             spi_len_o       <= '0;
             spi_data_o      <= '0;
             chip_clk_en_r   <= 1'b0;
-            chip_rstn_r     <= 1'b0;
+            chip_rstn_r     <= 1'b1;
             sck_half_r      <= SCK_HALF_W'(SCK_HALF_RESET);
             chip_clk_half_r <= '0;   // bypass: clk_chip_o = clk_i
         end else begin

@@ -231,7 +231,8 @@ set_property PACKAGE_PIN R21 [get_ports {chip_bootmode_o[1]}]
 set_property PACKAGE_PIN R19 [get_ports chip_rtc_o]
 
 ## PLL serial configuration (IOSTANDARD LVCMOS18 inherited from bank 34/35 rule)
-set_property PACKAGE_PIN J18 [get_ports pll_clk_sel_o]
+## pll_clk_sel_o is temporarily moved from J18 to P22 to avoid a bonding mistake on current PCB
+set_property PACKAGE_PIN P22 [get_ports pll_clk_sel_o]
 set_property PACKAGE_PIN K18 [get_ports pll_data_strb_o]
 set_property PACKAGE_PIN L21 [get_ports pll_data_o]
 set_property PACKAGE_PIN J21 [get_ports pll_cfg_vld_strb_o]
