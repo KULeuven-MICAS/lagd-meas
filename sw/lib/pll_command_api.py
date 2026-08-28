@@ -136,29 +136,40 @@ def rst_pll_cfg() -> int:
 # defaults in FIELDS, which mirror the silicon power-on state (PLL powered down,
 # pdown_*=1) and must stay in sync with pomelo_pll_wrap_cfg.yml.
 DEFAULT_CFG = {
-    "fb_clk_oen":      0b1,
-    "pll_clk_o_en":    0b0,
-    "clk_div_val":     4,
-    "clk_div_en":      0b1,
+    "fb_clk_oen":      0b1,      # ?
+    "pll_clk_o_en":    0b0,      # clk_o comes from the divider outside the PLL
+    "clk_div_val":     4,        # divider outside IP, divides frequency by 4+1
+    "clk_div_en":      0b1,      # enabled divider outside the PLL
     "pdown_PD":        0b0,      # PLL enabled
     "pdown_VCO":       0b0,      # PLL enabled
-    "set_current":     0b101,
-    "set_c1":          0b010,
-    "set_c2":          0b011,
-    "set_r1":          0b001,
-    "vco_tune_coarse": 0b1100,
-    "vco_current_min": 0b0010,
-    "vco_current_max": 0b1110,
-    "set_v_ctrl":      0b10,
-    "set_clk_out":     0b0,
-    "set_div_freq":    0b010,
-    "set_fb_mux":      0b01,
+    "set_current":     0b011,    # Icp = pll_iref_i (check)
+    "set_c1":          0b011,    # C1 = 20 pF (check)
+    "set_c2":          0b011,    # C2 = 500 fF (check)
+    "set_r1":          0b011,    # R1 = 5 kOhm (check)
+    "vco_tune_coarse": 0b1010,
+    "vco_current_min": 0b1100,
+    "vco_current_max": 0b1101,
+    "set_v_ctrl":      0b10,     # Debug mode, 00 for default and 11 for out pad
+    "set_clk_out":     0b0,      # PLL loop closed, 1 for CLK_EXT
+    "set_div_freq":    0b010,    # Ndiv = 4
+    "set_fb_mux":      0b00,     # Loop closed, 01 for loop broken and F_FB used, 
+                  # 10 for F_FB from pad, 11 for loop closed and buffered to F_FB
 }
 
 
 def default_cfg_word(**overrides) -> int:
     """Packed 47-bit default operating config (DEFAULT_CFG), with optional overrides."""
     cfg = dict(DEFAULT_CFG)
+    cfg.update(overrides)
+    return pack_pll_cfg(**cfg)
+
+PLL_BYPASS_CFG = default_cfg_word(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
+PD_DEBUG_CFG = default_cfg_word(set_fb_mux=0b10, set_v_ctrl=0b10)
+VCO_CHARAC_CFG = default_cfg_word(pdown_PD=0b1, set_v_ctrl=0b11)
+
+def cfg_word(cfg, **overrides) -> int:
+    """Packed 47-bit config word from a dictionary of field values."""
+    cfg = dict(cfg)
     cfg.update(overrides)
     return pack_pll_cfg(**cfg)
 
