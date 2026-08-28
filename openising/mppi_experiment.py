@@ -1,3 +1,9 @@
+# Copyright 2026 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Sofie De Weer <sofie.deweer@kuleuven.be>
+
 import numpy as np
 import yaml
 from pathlib import Path

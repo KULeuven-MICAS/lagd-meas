@@ -1,3 +1,9 @@
+# Copyright 2026 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Sofie De Weer <sofie.deweer@kuleuven.be>
+
 import os
 import subprocess
 import numpy as np
@@ -143,6 +149,7 @@ def send_chip(
     uart_device: str,
     uart_baud: int,
     uart_timeout: float,
+    rtscts: bool,
     remote_dir: str,
 ) -> int:
     """Send the data of the different software runs to the chip and wait untill the results from the chip are written\
@@ -176,18 +183,32 @@ def send_chip(
     else:
         nb_variables = ans.ising_model.num_variables
         nb_runs = int(ans.config.nb_runs / 2)
-
+    prev_scalings = [1, 1]
+    scaling_factors = [1, 1]
     for run in range(0, nb_runs, nb_cores):
+        for i in range(nb_cores):
+            if ans.config.problem_type == "MIMO":
+                scaling_factors[i] = ans.MIMO[run+1].h_scale_factor
+            else:
+                scaling_factors[i] = ans.h_scale_factor
+        print(f"scaling factors: {scaling_factors}")
+        for i in range(nb_cores):
+            if scaling_factors[i] != prev_scalings[i]:
+                print(f"Need to recalibrate core {i}")
+                breakpoint()
+        prev_scalings = scaling_factors
         reload_board()
         run_folder = data_folder / f"run_{run}"
         elf_file = str((run_folder / "lagd_commands.elf").relative_to(TOP_MEAS))
         if interface == "uart":
             with top_log.open("w") as f:
-                run_elf(host, remote_dir, elf_file, uart_device, ["--no-rtscts"], f)
+                run_elf(host, remote_dir, elf_file, uart_device, ["--no-rtscts" if not rtscts else ""], f)
 
         elif interface in ["spi", "jtag"]:
             with top_log.open("w") as f:
-                _stream_uart_output(f, uart_device, uart_baud, uart_timeout, remote_dir, host, interface, elf_file)
+                _stream_uart_output(
+                    f, uart_device, uart_baud, uart_timeout, remote_dir, host, interface, elf_file, rtscts
+                )
         else:
             raise ValueError(f"Interface {interface} is not yet supported")
         # move to correct folder and parse output

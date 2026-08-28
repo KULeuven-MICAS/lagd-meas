@@ -1,3 +1,9 @@
+# Copyright 2026 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Sofie De Weer <sofie.deweer@kuleuven.be>
+
 import argparse
 import yaml
 import logging
@@ -54,6 +60,8 @@ parser.add_argument(
     help="compile the runs, such that the iteration count increases by one iteration each time",
     action=argparse.BooleanOptionalAction,
 )
+parser.add_argument("--no-rtscts",
+    action=argparse.BooleanOptionalAction,)
 args = parser.parse_args()
 
 # Load base and experiment config files and store them in the correct folder in openising
@@ -109,6 +117,7 @@ if problem_type != "MPPI":
                 uart_device=args.device,
                 uart_baud=args.baud,
                 uart_timeout=args.timeout,
+                rtscts=(not args.rtscts),
                 remote_dir=args.remote_dir,
             )
 else:
