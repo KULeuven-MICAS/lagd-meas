@@ -133,6 +133,8 @@ set_msg_config -new_severity INFO -id {Netlist 29-160}  -string {{vivado_system_
 # Global includes
 # ---------------------------------------------------------------------------
 set_property IS_GLOBAL_INCLUDE 1 [get_files $your_dir/src/verilog/register_and_macros_xilinx.sv]
+# Shared clock-divider clamp, used by quad_spi_master / perip / pll controllers.
+set_property IS_GLOBAL_INCLUDE 1 [get_files $your_dir/src/verilog/clock_div_api.sv]
 set_property IS_GLOBAL_INCLUDE 1 [get_files $your_dir/src/verilog/perip_command_api.sv]
 set_property IS_GLOBAL_INCLUDE 1 [get_files $your_dir/src/verilog/chip_command_api.sv]
 set_property IS_GLOBAL_INCLUDE 1 [get_files $your_dir/src/verilog/pll_command_api.sv]

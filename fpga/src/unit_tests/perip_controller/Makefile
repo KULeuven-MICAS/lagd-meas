@@ -19,6 +19,7 @@ SIM_TOP := tb_perip_controller
 # xvlog command keeps it in the same compilation unit for the simulation).
 # '=' (deferred) so $(VERILOG_DIR) / $(CURDIR) resolve after common.mk runs.
 SIM_SRCS = \
+	$(VERILOG_DIR)/clock_div_api.sv \
 	$(VERILOG_DIR)/perip_command_api.sv \
 	$(VERILOG_DIR)/fifo_to_axi_stream_adapter.sv \
 	$(VERILOG_DIR)/dac_spi_driver.sv \

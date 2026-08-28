@@ -4,6 +4,9 @@
 
 # Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 
+from sw.lib import clock_api
+from sw.lib.clock_api import CHIP_CLK, CHIP_SCK
+
 # ISA of the chip controller
 # Must stay in sync with fpga/src/verilog/chip_command_api.sv
 #
@@ -23,6 +26,8 @@
 #  -------+------------------+--------------------------------------------------
 #  0x00   | CONFIG_CLK_RST     | (local only, no SPI transaction)
 #  0x01   | CONFIG_SPI_SLAVE   | SPI cmd 0x01 (write reg0, enable Quad-SPI)
+#  0x04   | CONFIG_SCK         | (local only) SPI clock half-period in bus cycles
+#  0x05   | CONFIG_CHIP_CLK    | (local only) clk_chip_o half-period in bus cycles
 #  0x02   | DATA_WRITE         | SPI cmd 0x02 (write mem), burst_length words
 #  0x03   | DATA_WRITE_LOOPBACK| SPI cmd 0x02 (write mem) + echo each data word
 #         |                    |   into the readback FIFO (for SW verification)
@@ -36,6 +41,7 @@ CMD_MARKER = 0xF
 CONFIG_CLK_RST      = 0x00  # Configure chip_clk and chip_rstn (local)
 CONFIG_SPI_SLAVE    = 0x01  # Enable Quad-SPI on the slave (SPI cmd 0x01)
 CONFIG_SCK          = 0x04  # Set the SPI clock half-period (local, no SPI txn)
+CONFIG_CHIP_CLK     = 0x05  # Set the chip clock half-period (local, no SPI txn)
 DATA_WRITE          = 0x02  # Write burst_length words        (SPI cmd 0x02)
 DATA_WRITE_LOOPBACK = 0x03  # Like DATA_WRITE + echo each data word to read FIFO
 DATA_READ           = 0x0B  # Read  burst_length words        (SPI cmd 0x0B)
@@ -66,24 +72,22 @@ def cmd_config_clk_rst(chip_clk_en, chip_rstn):
     return [make_command(CONFIG_CLK_RST, payload)]
 
 
-# Bus clock feeding chip_controller (xillydemo.v: CLK_HZ)
-BUS_CLK_HZ = 100_000_000
+BUS_CLK_HZ = clock_api.BUS_CLK_HZ
 
 # The runtime half-period field is 20 bits (chip_sck_t.sck_half).
-MAX_SCK_HALF = 0xFFFFF
+MAX_SCK_HALF = (1 << CHIP_SCK.field_bits) - 1
 
 
 def sck_half_for(sck_hz, bus_clk_hz=BUS_CLK_HZ):
     """Half-period in bus-clock cycles for a requested SCK, and what you'll get.
 
-    Returns (sck_half, actual_hz). The divider is integer, so the achieved rate
-    is bus_clk_hz / (2*sck_half) and generally differs from the request.
+    Returns (sck_half, actual_hz). The divider is integer AND the hardware clamps
+    the fast end to SCK_MAX_HZ, so the achieved rate generally differs from the
+    request -- use the returned value.
     """
-    if sck_hz <= 0:
-        raise ValueError("sck_hz must be positive")
-    half = int(round(bus_clk_hz / (2.0 * sck_hz)))
-    half = max(1, min(half, MAX_SCK_HALF))
-    return half, bus_clk_hz / (2.0 * half)
+    if bus_clk_hz != BUS_CLK_HZ:
+        raise ValueError("bus_clk_hz is fixed by the bitstream; see clock_api")
+    return CHIP_SCK.half_for(sck_hz)
 
 
 def cmd_config_sck(sck_half):
@@ -91,9 +95,38 @@ def cmd_config_sck(sck_half):
     Takes effect on the NEXT SPI transaction.
     Clamps to SCK_MAX_HZ defined in the hardware.
     """
-    if not (1 <= sck_half <= MAX_SCK_HALF):
-        raise ValueError(f"sck_half {sck_half} out of range 1..{MAX_SCK_HALF}")
-    return [make_command(CONFIG_SCK, sck_half)]
+    return [make_command(CONFIG_SCK, CHIP_SCK.check_half(sck_half))]
+
+
+# chip clock (CONFIG_CHIP_CLK)
+# The chip-clock half-period field is 20 bits (chip_clk_t.clk_half),
+# with 0 given a special meaning.
+MAX_CHIP_CLK_HALF = (1 << CHIP_CLK.field_bits) - 1
+CHIP_CLK_BYPASS = CHIP_CLK.bypass_code   # code 0 = forward the bus clock as-is
+MAX_CHIP_CLK_HZ = CHIP_CLK.fastest_hz                    # 100 MHz
+MAX_DIVIDED_CHIP_CLK_HZ = CHIP_CLK.fastest_divided_hz    # 50 MHz
+MIN_CHIP_CLK_HZ = CHIP_CLK.slowest_hz                    # ~47.68 Hz
+
+
+def chip_clk_half_for(clk_hz, bus_clk_hz=BUS_CLK_HZ):
+    """Half-period code for a requested chip clock, and the frequency achieved.
+
+    Returns (clk_half, actual_hz). clk_half == 0 is the bypass code: the bus
+    clock is forwarded untouched (the full bus_clk_hz). Otherwise the output is
+    bus_clk_hz/(2*clk_half).
+    """
+    if bus_clk_hz != BUS_CLK_HZ:
+        raise ValueError("bus_clk_hz is fixed by the bitstream; see clock_api")
+    return CHIP_CLK.half_for(clk_hz)
+
+
+def cmd_config_chip_clk(clk_half):
+    """Word list to set the chip clock half-period (in bus-clock cycles).
+
+    clk_half == 0 selects the bypass (full bus clock). Takes effect immediately
+    and glitch-free; the divider restarts from a full high phase.
+    """
+    return [make_command(CONFIG_CHIP_CLK, CHIP_CLK.check_half(clk_half))]
 
 
 def cmd_config_spi_slave():

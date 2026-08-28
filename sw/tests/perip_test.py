@@ -135,6 +135,26 @@ def test_s2p_sck_config(rates=(1_000, 10_000, 100_000)):
     perip.set_s2p_sck_hz(SCK_HZ)   # back to the power-on rate
     return ok
 
+def test_verify_dac_write(addr=3, data=0x5A, rstn=1, shdn=1):
+    """Loopback DAC write: confirm the controller echoes the exact command word.
+
+    Uses OP_DAC_LOOPBACK: the controller performs the real DAC transfer AND loops
+    the command word back. The AD8802 has no readback, so this verifies the
+    command path (the controller decoded exactly this {rstn,shdn,addr,data}), not
+    the analog output.
+    """
+    expected = cmd_dac_write_loopback(addr, data, rstn, shdn)[0]
+    received = perip.verify_dac_write(addr, data, rstn, shdn)
+    if received is None:
+        logger.error('FAIL: Data sent: 0x%08X, Data received: None', expected)
+        return False
+
+    if received == expected:
+        logger.info('PASS: verify_dac_write addr=%d data=0x%02X echoed 0x%08X', addr, data, received)
+        return True
+    else:
+        logger.error('FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', expected, received)
+        return False
 
 def main():
     """Worked example of the periphery command set. Run it top to bottom.

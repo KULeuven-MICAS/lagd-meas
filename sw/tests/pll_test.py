@@ -131,51 +131,44 @@ def test_strb_config_silicon(rates=(1_000, 10_000, 100_000)):
     return ok
 
 
-def main():
-    """Worked example of the PLL command set. Run it top to bottom.
-
-    Steps 1-3 need nothing but the Zedboard and the bitstream. Step 4 talks to the
-    PLL in the chip and is commented out -- uncomment it once the chip is wired.
-    This script deliberately never switches the SoC clock onto the PLL; see step 5
-    for how to do that, and why it is not automatic.
-    """
+def setup_pll():
+    """Worked example of the PLL command set."""
     open_ports()
 
     if not test_writeback():
         return 1
 
-    # 1. Put the PLL registers in a known state before configuring them.
-    pll.reset()
+    # Tune the strobe rate, 1kHz
+    pll.set_strb_hz(STRB_HZ)
 
-    # 2. Build and load a config
-    word = default_cfg_word()
+    # Put the PLL registers in a known state before configuring them.
+    pll.reset()
+    # Set the clock mux to the external reference
+    pll.select_reference()
+
+    # Build and load a config
+    word = default_cfg_word(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
     if pll.verify_load(word) == word:
-        logging.info('config path OK: controller assembled 0x%012X', word)
+        logging.info('config check OK: 0x%012X', word)
     else:
-        logging.error('config path FAILED for 0x%012X', word)
+        logging.error('config check FAILED: 0x%012X', word)
     # Per-field overrides instead of the packed word:
     #   word = pll.load_default(vco_tune_coarse=0xA)
     #   word = pll.load_cfg(pdown_PD=0, pdown_VCO=0)   # reset defaults elsewhere
 
-    # 3. Tune the strobe rate, 1kHz
-    pll.set_strb_hz(STRB_HZ)
-
-    # 4. Check what the silicon captured   [needs the chip, FMC LA06_N]
-    # READBACK scans the shallow register out of the PLL's data_o (recirculating,
+    # READBACK the chip's shallow register out of the PLL's data_o (recirculating,
     # so it is non-destructive).
-    # assert pll.readback() == word
-    # logging.info('PLL lock = %s', pll.read_lock())     # STATUS, bit0
+    readback = pll.readback()
+    logging.info('readback = 0x%012X', readback)
+    assert readback == word
 
-    # 5. Move the SoC onto the PLL         [needs the chip; NOT done here]
-    # Boot is on the reference clock (bitstream default clk_sel=1) because the PLL
-    # powers up disabled, so switching before it locks would leave the RISC-V with
-    # no clock. bring_up() configures, polls STATUS until lock, and only then
-    # switches. The clock mux is NOT glitchless -- hold the core in reset across
-    # the switch. Left commented because it changes a chip-critical setting.
-    # if pll.bring_up(lock_timeout=1.0, switch=True):
-    #     logging.info('PLL locked and selected as the SoC clock')
-    # else:
-    #     logging.error('PLL did not lock; SoC left on the reference clock')
+    # Move the SoC onto the PLL
+    locked = pll.wait_lock(timeout=3)
+    if locked:
+        pll.select_pll()
+        logging.info('PLL lock = %s and selected as the SoC clock', pll.read_lock())
+    else:
+        logging.error('PLL did not lock; SoC left on the reference clock')
 
     # =====================================================================
     # Optional deeper checks -- none of these are required to use the script
@@ -187,4 +180,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(setup_pll())

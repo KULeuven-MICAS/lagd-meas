@@ -113,9 +113,8 @@ module pll_controller #(
     // Saturate a CONFIG_STRB request into the permitted window, so an out-of-range
     // value slows/limits the strobe instead of hanging the engine.
     function automatic logic [STRB_CW-1:0] clamp_half(input logic [PLL_STRB_BYTES*8-1:0] v);
-        if (v < (PLL_STRB_BYTES*8)'(STRB_HALF_MIN))      clamp_half = STRB_CW'(STRB_HALF_MIN);
-        else if (v > (PLL_STRB_BYTES*8)'(STRB_HALF_MAX)) clamp_half = STRB_CW'(STRB_HALF_MAX);
-        else                                             clamp_half = STRB_CW'(v);
+        clamp_half = STRB_CW'(
+            clk_half_clamp(32'(v), 32'(STRB_HALF_MIN), 32'(STRB_HALF_MAX)));
     endfunction
 
     // Two-FF synchronizer for pll_data_i (the PLL's data_o; slow, PCB-delayed,

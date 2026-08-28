@@ -73,8 +73,7 @@ module quad_spi_master #(
 );
 
     localparam int SCK_HALF_DEFAULT = CLK_HZ / SCK_HZ / 2;
-    localparam int SCK_HALF_MIN     = (CLK_HZ / SCK_MAX_HZ / 2) < 1
-                                      ? 1 : (CLK_HZ / SCK_MAX_HZ / 2);
+    localparam int SCK_HALF_MIN     = clk_half_min_for(CLK_HZ, SCK_MAX_HZ);
     // The counter must hold the LARGEST half-period the register can express.
     localparam int SCK_CW = SCK_HALF_W;
 
@@ -82,8 +81,9 @@ module quad_spi_master #(
     (* mark_debug = "true" *) logic [SCK_HALF_W-1:0] sck_half_r;
 
     // Clamp: never faster than SCK_MAX_HZ (timing) and never zero (would hang).
-    wire [SCK_HALF_W-1:0] sck_half_clamped =
-        (sck_half_i < SCK_HALF_W'(SCK_HALF_MIN)) ? SCK_HALF_W'(SCK_HALF_MIN) : sck_half_i;
+    // The slow end needs no bound here -- the register width is the only limit.
+    wire [SCK_HALF_W-1:0] sck_half_clamped = SCK_HALF_W'(
+        clk_half_clamp(32'(sck_half_i), 32'(SCK_HALF_MIN), 32'((1 << SCK_HALF_W) - 1)));
     // 33 dummy SCK cycles are required by the SPI slave between the read address
     // and the first read data nibble (slave dummy register defaults to 32, plus
     // one extra cycle from the ETHz RX counter off-by-one => 33 actual cycles).

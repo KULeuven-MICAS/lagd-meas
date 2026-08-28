@@ -72,12 +72,42 @@ instead of being misread as a command. Because chip addresses never start with
 | `0x00` | CONFIG_CLK_RST   | `[cmd]` (bit1=clk_en, bit0=rstn)        | – (local) |
 | `0x01` | CONFIG_SPI_SLAVE | `[cmd]`                                 | `0x01` (enable Quad) |
 | `0x02` | DATA_WRITE       | `[cmd(N)] [addr] [d0]…[d(N-1)]`          | `0x02` (write mem) |
+| `0x03` | DATA_WRITE_LOOPBACK | `[cmd(N)] [addr] [d0]…[d(N-1)]` → data echoed back | `0x02` (write mem) |
+| `0x04` | CONFIG_SCK       | `[cmd]` (bits 19:0 = SCK half-period)   | – (local) |
+| `0x05` | CONFIG_CHIP_CLK  | `[cmd]` (bits 19:0 = chip clock half-period) | – (local) |
 | `0x0B` | DATA_READ        | `[cmd(N)] [addr]`  → N words read back   | `0x0B` (read mem) |
 | `0xFF` | WRITEBACK_FIFO   | `[cmd]` → echoed back (loopback test)    | – (local) |
 
 `N` = `burst_length` = number of 32-bit words. `N = 1` is a single word; `N > 1`
 is a burst to consecutive word addresses (`addr`, `addr+4`, …). Up to 65535
 words per frame.
+
+#### Chip clock frequency (`CONFIG_CHIP_CLK`)
+
+`clk_chip_o` is software-tunable over the whole range in **one 32-bit command**.
+The 20-bit payload is the half-period in bus-clock cycles:
+
+| payload | `clk_chip_o` | note |
+|---------|--------------|------|
+| `0` | 100 MHz | **bypass** — `clk_i` forwarded untouched; power-on default |
+| `1` | 50 MHz | fastest the divider itself can make |
+| `50` | 1 MHz | |
+| `500_000` | 100 Hz | |
+| `0xFFFFF` | 47.68 Hz | the floor |
+
+f = `CLK_HZ / (2 × payload)`, 50% duty. A toggle divider has no divide-by-1, so
+nothing between 50 and 100 MHz is reachable — that is what the bypass code is
+for. The divider is integer, so the grid is coarse near the top (100, 50, 25,
+16.7, 12.5 MHz …) and fine below ~1 MHz.
+
+Changes take effect immediately and are **glitch-free**: the divider is parked
+high whenever it is not driving the pin, and both the enable and the divisor are
+registered on `clk_i`, so every mux/gate switch happens with both sides high.
+The narrowest pulse the pin can ever show is the 5 ns half period of `clk_i`
+itself. `tb_chip_controller` test 10 checks the periods and monitors for runts.
+
+From the host: `ChipDriver.set_chip_clk_hz(hz)`, which returns the frequency
+actually achieved and warns when the request was not reachable.
 
 ### How to use it (from the host)
 

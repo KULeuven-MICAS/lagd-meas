@@ -26,14 +26,12 @@ import sys
 import random
 import logging
 # import time
+import sw.tests.pll_test as pll_test
 
 from sw.lib.chip_driver import ChipDriver
 from sw.lib.chip_command_api import WRITEBACK_FIFO, make_command
 
 logger = logging.getLogger(__name__)
-
-# Configure logging: include timestamp and level
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 # Device files for the chip write/read ports (cwp/crp).
 WRITE_DEV = '/dev/xillybus_write_32'
@@ -104,27 +102,44 @@ def example_with_driver():
     return readback
 
 
-def main():
+def setup_chip(setup_pll=True, mem_test=False):
+    # Set up PLL
+    if setup_pll:
+        pll_test.setup_pll()
+
+    # Set up the chip driver
     open_ports()
-    # reset the chip
-    chip.reset_chip(hold=0.001, chip_clk_en=1)
+
+    # tune the chip clock and spi clock
+    # SCK must stay at or below the chip clock: the slave's RX FIFO is 8 words
+    # deep and cannot backpressure SPI, so an AXI side slower than the SPI silently drops words.
+    # chip.set_chip_clk_hz(10e6) # 10 MHz (FPGA clock is not used for now. Use the on-PCB oscillator instead)
+    chip.set_sck_hz(5e6) # 5 MHz
+
+    # enable the chip clock and reset the chip
+    chip.reset_chip(hold=0.5, chip_clk_en=1)
+
     # init quad-spi
     chip.init_spi()
-    # smoke test: test writeback loop
-    # test_writeback()
-    # write data
-    # chip.write_mem(0x100, [random.randint(0, 0xFFFFFFFF) for _ in range(7000)])
-    # loopback-write check: data is echoed back for verification
-    SCRATCH_0 = 0x80000000
-    length = 50
-    data = [random.randint(0, 0xFFFFFFFF) for _ in range(length)]
-    logger.info(f"Writing data: {[hex(d) for d in data]}")
-    test_verify_write_mem(SCRATCH_0, data)
-    readback = chip.read_mem(SCRATCH_0, length=length)
-    logger.info(f"Readback data: {[hex(d) for d in readback]}")
-    logger.info(f"Readback matches written data: {readback == data}")
-    # time.sleep(60)
 
+    # run a memory test
+    if mem_test:
+        # smoke test: test writeback loop
+        test_writeback()
+
+        # loopback-write check: data is echoed back for verification
+        SCRATCH_0 = 0x80000000
+        length = 50
+        data = [random.randint(0, 0xFFFFFFFF) for _ in range(length)]
+        logger.debug(f"Writing data: {[hex(d) for d in data]}")
+        test_verify_write_mem(SCRATCH_0, data)
+
+        # read back check
+        readback = chip.read_mem(SCRATCH_0, length=length)
+        logger.info(f"Readback matches written data: {readback == data}")
 
 if __name__ == '__main__':
-    sys.exit(main())
+    logging_level = logging.INFO
+    logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
+    sys.exit(setup_chip())
