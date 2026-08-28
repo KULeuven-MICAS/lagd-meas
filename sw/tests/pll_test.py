@@ -29,7 +29,8 @@ import time
 
 from sw.lib.pll_driver import PllDriver
 from sw.lib.pll_command_api import (
-    default_cfg_word, OP_WRITEBACK, STRB_HZ, CFG_BITS, header,
+    calculate_div_factor, cfg_word, default_cfg_word, OP_WRITEBACK, STRB_HZ, CFG_BITS, header, 
+    DEFAULT_CFG, PLL_BYPASS_CFG, PD_DEBUG_CFG, VCO_CHARAC_CFG, SAFE_LOOP_CFG, PD_OFF_CFG
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -130,37 +131,41 @@ def test_strb_config_silicon(rates=(1_000, 10_000, 100_000)):
     pll.set_strb_hz(STRB_HZ)   # back to the power-on rate
     return ok
 
-
-def setup_pll():
-    """Worked example of the PLL command set."""
+def start_load_config(cfg):
+    """Start loading a configuration into the PLL."""
     open_ports()
-
+    
     if not test_writeback():
         return 1
-
+    
     # Tune the strobe rate, 1kHz
     pll.set_strb_hz(STRB_HZ)
-
+    
     # Put the PLL registers in a known state before configuring them.
     pll.reset()
     # Set the clock mux to the external reference
     pll.select_reference()
-
+    
     # Build and load a config
-    word = default_cfg_word(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
+    word = cfg_word(cfg)
     if pll.verify_load(word) == word:
         logging.info('config check OK: 0x%012X', word)
+        logging.info('Division factor of config: %d', calculate_div_factor(cfg))
     else:
         logging.error('config check FAILED: 0x%012X', word)
     # Per-field overrides instead of the packed word:
     #   word = pll.load_default(vco_tune_coarse=0xA)
     #   word = pll.load_cfg(pdown_PD=0, pdown_VCO=0)   # reset defaults elsewhere
-
+    
     # READBACK the chip's shallow register out of the PLL's data_o (recirculating,
     # so it is non-destructive).
     readback = pll.readback()
     logging.info('readback = 0x%012X', readback)
     assert readback == word
+
+def setup_pll_bypass():
+    """Worked example of the PLL command set."""
+    start_load_config(PLL_BYPASS_CFG)
 
     # Move the SoC onto the PLL
     locked = pll.wait_lock(timeout=3)
@@ -178,6 +183,32 @@ def setup_pll():
 
     return 0
 
+def vco_characterization():
+    """VCO characterization placeholder."""
+    start_load_config(VCO_CHARAC_CFG)
+
+def charge_pump_sanity_check():
+    """Power down phase detector, assert charge pump behavior in Vctrl node."""
+    start_load_config(PD_OFF_CFG)
+
+def debug_phase_detector():
+    """Phase detector debug test.
+    Set different or same clocks to both reference and feedback clock pads and check Vctrl node.
+    Check 'locked pin for correct behavior.
+    """
+    start_load_config(PD_DEBUG_CFG)
+
+    locked = pll.wait_lock(timeout=3)
+    if locked:
+        logging.info('PLL lock = %s and selected as the SoC clock', pll.read_lock())
+    else:
+        logging.error('PLL did not lock; SoC left on the reference clock')
+
+def ctrl_voltage_transient():
+    """Transient response of the control voltage node."""
+    start_load_config(DEFAULT_CFG)
+    #start_load_config(SAFE_LOOP_CFG)
+
 
 if __name__ == '__main__':
-    sys.exit(setup_pll())
+    sys.exit(setup_pll_bypass())

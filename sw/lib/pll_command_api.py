@@ -165,6 +165,7 @@ def default_cfg_word(**overrides) -> int:
 
 PLL_BYPASS_CFG = default_cfg_word(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
 PD_DEBUG_CFG = default_cfg_word(set_fb_mux=0b10, set_v_ctrl=0b10)
+PD_OFF_CFG = default_cfg_word(pdown_PD=0b1, pdown_VCO=0b1, set_v_ctrl=0b10)
 VCO_CHARAC_CFG = default_cfg_word(pdown_PD=0b1, set_v_ctrl=0b11)
 SAFE_LOOP_CFG = default_cfg_word(set_current=0b000, set_c1=0b111, set_c2=0b111) # Min BW
 
