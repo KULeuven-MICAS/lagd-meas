@@ -188,7 +188,7 @@ def send_chip(
     for run in range(0, nb_runs, nb_cores):
         for i in range(nb_cores):
             if ans.config.problem_type == "MIMO":
-                scaling_factors[i] = ans.MIMO[run+1].h_scale_factor
+                scaling_factors[i] = ans.MIMO[run + 1].h_scale_factor
             else:
                 scaling_factors[i] = ans.h_scale_factor
         print(f"scaling factors: {scaling_factors}")
@@ -197,7 +197,10 @@ def send_chip(
                 print(f"Need to recalibrate core {i}")
                 breakpoint()
         prev_scalings = scaling_factors
-        reload_board()
+        # Reset board
+        subprocess.run(
+            ["ssh", "-t", host, "cd Workspace/workspace_sofie &&", "source env.sh &&", "python3 sw/tests/chip_test.py"]
+        )
         run_folder = data_folder / f"run_{run}"
         elf_file = str((run_folder / "lagd_commands.elf").relative_to(TOP_MEAS))
         if interface == "uart":
