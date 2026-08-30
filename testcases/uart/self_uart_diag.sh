@@ -84,29 +84,29 @@ run_dcompute_test() {
 
 
 run_test 'UART Handshake test' \
-    "02_handshake/run.sh" --device "${DEVICE}"
+    "${REPO_ROOT}/testcases/uart/02_handshake/run.sh" --device "${DEVICE}"
 
 run_test 'UART HelloWorld memory-check test' \
-    "03_load_run/run.sh" \
+    "${REPO_ROOT}/testcases/uart/03_load_run/run.sh" \
     --device "${DEVICE}" --no-exec --verify
 
 run_test 'UART HelloWorld load/run test' \
-    "03_load_run/run.sh" --device "${DEVICE}" --verify
+    "${REPO_ROOT}/testcases/uart/03_load_run/run.sh" --device "${DEVICE}" --verify
 
 run_test 'UART Memory test (0x10000000, 0x3fc8)' \
-    "04_memtest/run.sh" \
+    "${REPO_ROOT}/testcases/uart/04_memtest/run.sh" \
     --device "${DEVICE}" --mem-base 0x10000000 --mem-size 0x3fc8
 
 run_test 'UART Memory test (0x80000000, 0x10000)' \
-    "04_memtest/run.sh" \
+    "${REPO_ROOT}/testcases/uart/04_memtest/run.sh" \
     --device "${DEVICE}" --mem-base 0x80000000 --mem-size 0x10000
 
 run_test 'UART Memory test (0x90000000, 0x10000)' \
-    "04_memtest/run.sh" \
+    "${REPO_ROOT}/testcases/uart/04_memtest/run.sh" \
     --device "${DEVICE}" --mem-base 0x90000000 --mem-size 0x10000
 
 run_test 'UART Memory test (0x90010000, 0x10000)' \
-    "04_memtest/run.sh" \
+    "${REPO_ROOT}/testcases/uart/04_memtest/run.sh" \
     --device "${DEVICE}" --mem-base 0x90010000 --mem-size 0x10000
 
 run_test 'UART IsingCore register test' \
