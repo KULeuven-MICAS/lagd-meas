@@ -60,7 +60,7 @@ python sw/testcases/uart/00_loopback/loopback.py --device /dev/ttyUSB2
 - ✅ Find the chip's UART and confirm the bootrom answers the 0x06 handshake
 
 ```[bash]
-./sw/testcases/uart/01_portsweep/portsweep.py --scan
+./testcases/uart/01_portsweep/portsweep.py --scan
 ```
 
 - ✅ Chip is clocked and the bootrom works (via the real loader)
