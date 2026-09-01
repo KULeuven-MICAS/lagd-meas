@@ -51,20 +51,37 @@ power_analyzer_chip:
 # requires the command line's explicit --enable flag.
 source_measure_units:
   smu_1:
-    name: "Keysight B2901BL SMU 1 - Analog Calibration"
-    IP: "10.91.16.78"
+    name: "Keysight B2901BL SMU 4 - Analog Calibration"
+    IP: "10.91.16.108"
     mode: "current"
-    current: 0.00005 # 50 uA
+    calibration_mode: "base" # jdn
+    current: 0.000064 # 64 uA
     voltage_limit: 0.75
   smu_2:
+    name: "Keysight B2901BL SMU 1 - Analog Calibration"
+    IP: "10.91.16.78"
+    calibration_mode: "j" # jup
+    mode: "current"
+    current: -0.000100 # 50 uA
+    min_current: -0.000180 #1uA
+    max_current: -0.000230  #50uA
+    voltage_limit: 0.75
+  smu_3:
     name: "Keysight B2901BL SMU 2 - Analog Calibration"
     IP: "10.91.16.77"
     mode: "current"
-    current: 0.00005 # 50 uA
+    calibration_mode: "hup"
+    current: -0.000064 # 50 uA
+    min_current: -0.000001 #1uA
+    max_current: -0.000100  #100uA
     voltage_limit: 0.75
-  smu_3:
+  smu_4:
     name: "Keysight B2901BL SMU 3 - Analog Calibration"
     IP: "10.91.16.79"
     mode: "current"
-    current: 0.00005 # 50 uA
+    calibration_mode: "hdn"
+    current: 0.000064 # 50 uA
+    min_current: 0.000001 #1uA
+    max_current: 0.000100  #100uA
     voltage_limit: 0.75
+

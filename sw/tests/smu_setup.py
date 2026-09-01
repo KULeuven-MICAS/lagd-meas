@@ -27,17 +27,15 @@ The default and ``--off`` leave output off.  ``--on`` (and the legacy
 import argparse
 import logging
 import sys
+import yaml
 from pathlib import Path
 
-import yaml
-
-from sw.tests.smu_calibrate import calibrate_smu
+from openising import TOP_MEAS
 from sw.lib.lab_instruments import instrument as inst
 from sw.lib.lab_instruments.drivers.keysight_smu_b2900 import KeysightSMUB2900
 
 
-PRJ_ROOT = Path(__file__).resolve().parent.parent
-INSTR_CFG_PATH = PRJ_ROOT / "lib" / "lab_instruments" / "config" / "meas_setup.yaml"
+INSTR_CFG_PATH = TOP_MEAS / "sw/lib" / "lab_instruments" / "config" / "meas_setup.yaml"
 
 
 def parse_args():
@@ -46,9 +44,9 @@ def parse_args():
     parser.add_argument(
         "--smu", default="smu_1",
         help="YAML SMU key to use (smu_1, smu_2, or smu_3; default: smu_1).")
-    parser.add_argument(
-        "--mode", choices=("current", "voltage"),
-        help="Override the YAML source mode; --compliance limits the other quantity.")
+    # parser.add_argument(
+    #     "--mode", choices=("current", "voltage"),
+    #     help="Override the YAML source mode; --compliance limits the other quantity.", default="current")
     parser.add_argument(
         "--setpoint", type=float,
         help="Override source value, in A for current mode or V for voltage mode.")
@@ -62,9 +60,33 @@ def parse_args():
     output_group.add_argument(
         "--off", dest="output", action="store_const", const="off",
         help="Disable output and leave it off after this program exits (the default).")
-    parser.set_defaults(output="off")
+    parser.set_defaults(output="on")
     parser.add_argument("--verbose", action="store_true", help="Log each SCPI command.")
     return parser.parse_args()
+
+def setup_smu(smu:str, on:bool, mode:int, config_file:Path)->KeysightSMUB2900   :
+    with config_file.open(encoding="utf-8") as config_file:
+        config = yaml.safe_load(config_file)
+
+    source_measure_units = config["source_measure_units"]
+    smu_config = source_measure_units[smu]
+
+    setpoint = smu_config[mode]
+    compliance = smu_config["voltage_limit"]
+
+    smu = KeysightSMUB2900(
+            inst.BaseInstrumentData(name=smu_config["name"], IP=smu_config["IP"]),
+        )
+    if mode == "current":
+        smu.set_current_source(setpoint, compliance)
+    else:
+        smu.set_voltage_source(compliance, setpoint)
+
+    if on:
+        smu.enable_output()
+    else:
+        smu.close()
+    return smu
 
 def main():
     """Configure the SMU, optionally sample it, and safely turn it off."""
@@ -87,7 +109,7 @@ def main():
             f"Unknown SMU '{args.smu}'; choose one of: "
             f"{', '.join(sorted(source_measure_units))}")
 
-    mode = args.mode or smu_config["mode"]
+    mode = smu_config["mode"]
     if mode == "current":
         setpoint = args.setpoint if args.setpoint is not None else smu_config["current"]
         compliance = (
@@ -114,12 +136,11 @@ def main():
             leave_output_on = True
             voltage_v, current_a = smu.measure()
             logging.info("Measured %.12g V, %.12g A", voltage_v, current_a)
-            calibrate_smu(smu, 0.05, 0.1, 0.01, 0.75, "j")
         else:
             logging.info("Configured with output OFF (pass --on to source persistently).")
     finally:
         smu.close(disable_output=not leave_output_on)
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
