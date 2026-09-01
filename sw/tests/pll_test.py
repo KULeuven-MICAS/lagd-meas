@@ -29,7 +29,7 @@ import time
 
 from sw.lib.pll_driver import PllDriver
 from sw.lib.pll_command_api import (
-    calculate_div_factor, cfg_word, default_cfg_word, OP_WRITEBACK, STRB_HZ, CFG_BITS, header, 
+    calculate_div_factor, pack_pll_cfg, default_cfg_word, OP_WRITEBACK, STRB_HZ, CFG_BITS, header, 
     DEFAULT_CFG, PLL_BYPASS_CFG, PD_DEBUG_CFG, VCO_CHARAC_CFG, SAFE_LOOP_CFG, PD_OFF_CFG
 )
 
@@ -147,7 +147,8 @@ def start_load_config(cfg):
     pll.select_reference()
     
     # Build and load a config
-    word = cfg_word(cfg)
+    #word = default_cfg_word(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
+    word = pack_pll_cfg(**cfg)
     if pll.verify_load(word) == word:
         logging.info('config check OK: 0x%012X', word)
         logging.info('Division factor of config: %d', calculate_div_factor(cfg))
@@ -209,6 +210,19 @@ def ctrl_voltage_transient():
     start_load_config(DEFAULT_CFG)
     #start_load_config(SAFE_LOOP_CFG)
 
+def debug_pll(cfg):
+    start_load_config(cfg)
+
+    # Move the SoC onto the PLL
+    locked = pll.wait_lock(timeout=3)
+    if locked:
+        pll.select_pll()
+        logging.info('PLL lock = %s and selected as the SoC clock', pll.read_lock())
+    else:
+        logging.error('PLL did not lock; SoC left on the reference clock')
+
+    return 0
 
 if __name__ == '__main__':
-    sys.exit(setup_pll_bypass())
+    cfg = PLL_BYPASS_CFG
+    sys.exit(debug_pll(cfg))

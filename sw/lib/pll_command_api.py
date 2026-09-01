@@ -163,11 +163,16 @@ def default_cfg_word(**overrides) -> int:
     cfg.update(overrides)
     return pack_pll_cfg(**cfg)
 
-PLL_BYPASS_CFG = default_cfg_word(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
-PD_DEBUG_CFG = default_cfg_word(set_fb_mux=0b10, set_v_ctrl=0b10)
-PD_OFF_CFG = default_cfg_word(pdown_PD=0b1, pdown_VCO=0b1, set_v_ctrl=0b10)
-VCO_CHARAC_CFG = default_cfg_word(pdown_PD=0b1, set_v_ctrl=0b11)
-SAFE_LOOP_CFG = default_cfg_word(set_current=0b000, set_c1=0b111, set_c2=0b111) # Min BW
+PLL_BYPASS_CFG = DEFAULT_CFG.copy()
+PLL_BYPASS_CFG.update(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
+PD_DEBUG_CFG = DEFAULT_CFG.copy()
+PD_DEBUG_CFG.update(set_fb_mux=0b10, set_v_ctrl=0b10)
+PD_OFF_CFG = DEFAULT_CFG.copy()
+PD_OFF_CFG.update(pdown_PD=0b1, pdown_VCO=0b1, set_v_ctrl=0b10)
+VCO_CHARAC_CFG = DEFAULT_CFG.copy()
+VCO_CHARAC_CFG.update(pdown_PD=0b1, set_v_ctrl=0b11)
+SAFE_LOOP_CFG = DEFAULT_CFG.copy()
+SAFE_LOOP_CFG.update(set_current=0b000, set_c1=0b111, set_c2=0b111) # Min BW
 
 def cfg_word(cfg, **overrides) -> int:
     """Packed 47-bit config word from a dictionary of field values."""
@@ -177,7 +182,6 @@ def cfg_word(cfg, **overrides) -> int:
 
 def calculate_div_factor(cfg) -> int:
     """Calculation of total division factor given a configuration"""
-    cfg = dict(cfg)
     div_factor = 2**(cfg["set_div_freq"])
     if cfg["pll_clk_o_en"] == 0b0:
         if cfg["clk_div_en"] == 0b0:
