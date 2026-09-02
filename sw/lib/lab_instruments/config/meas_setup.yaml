@@ -73,7 +73,7 @@ source_measure_units:
     calibration_mode: "hup"
     current: -0.000064 # 50 uA
     min_current: -0.000001 #1uA
-    max_current: -0.000100  #100uA
+    max_current: -0.000150  #100uA
     voltage_limit: 0.75
   smu_4:
     name: "Keysight B2901BL SMU 3 - Analog Calibration"
@@ -82,6 +82,6 @@ source_measure_units:
     calibration_mode: "hdn"
     current: 0.000064 # 50 uA
     min_current: 0.000001 #1uA
-    max_current: 0.000100  #100uA
+    max_current: 0.000150  #100uA
     voltage_limit: 0.75
 
