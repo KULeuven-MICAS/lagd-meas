@@ -153,7 +153,7 @@ DEFAULT_CFG = {
     "set_clk_out":     0b0,      # PLL loop closed, 1 for CLK_EXT
     "set_div_freq":    0b010,    # Ndiv = 4
     "set_fb_mux":      0b00,     # Loop closed, 01 for loop broken and F_FB used, 
-                  # 10 for F_FB from pad, 11 for loop closed and buffered to F_FB
+                  # 10 for clock buffered to F_FB and loop closed
 }
 
 
@@ -180,15 +180,16 @@ def cfg_word(cfg, **overrides) -> int:
     cfg.update(overrides)
     return pack_pll_cfg(**cfg)
 
-def calculate_div_factor(cfg) -> int:
+def calculate_div_factor(cfg) -> tuple:
     """Calculation of total division factor given a configuration"""
-    div_factor = 2**(cfg["set_div_freq"])
+    chip_div_factor = 2**(cfg["set_div_freq"])
+    total_div_factor = chip_div_factor
     if cfg["pll_clk_o_en"] == 0b0:
         if cfg["clk_div_en"] == 0b0:
             raise KeyError(f"Invalid configuration: divider path chosen but divider not enabled")
         else:
-            div_factor = div_factor*(cfg["clk_div_val"] + 1)
-    return div_factor
+            total_div_factor = total_div_factor*2*(cfg["clk_div_val"] + 1)
+    return chip_div_factor, total_div_factor
 
 
 # ---------------------------------------------------------------------------

@@ -151,7 +151,7 @@ def start_load_config(cfg):
     word = pack_pll_cfg(**cfg)
     if pll.verify_load(word) == word:
         logging.info('config check OK: 0x%012X', word)
-        logging.info('Division factor of config: %d', calculate_div_factor(cfg))
+        logging.info('Division factor on chip clock: %d, total: %d', *calculate_div_factor(cfg))
     else:
         logging.error('config check FAILED: 0x%012X', word)
     # Per-field overrides instead of the packed word:
@@ -224,5 +224,7 @@ def debug_pll(cfg):
     return 0
 
 if __name__ == '__main__':
-    cfg = PLL_BYPASS_CFG
+    cfg = PD_DEBUG_CFG.copy()
+    cfg.update(pdown_VCO = 0b1, set_fb_mux = 0b11)
     sys.exit(debug_pll(cfg))
+    #sys.exit(setup_pll_bypass())
