@@ -173,7 +173,11 @@ PD_OFF_CFG.update(pdown_PD=0b1, pdown_VCO=0b1, set_v_ctrl=0b10)
 VCO_CHARAC_CFG = DEFAULT_CFG.copy()
 VCO_CHARAC_CFG.update(pdown_PD=0b1, set_v_ctrl=0b11)
 SAFE_LOOP_CFG = DEFAULT_CFG.copy()
-SAFE_LOOP_CFG.update(set_current=0b000, set_c1=0b111, set_c2=0b111) # Min BW
+SAFE_LOOP_CFG.update(set_current=0b001, set_c1=0b111, set_c2=0b111, set_r1=0b011, set_v_ctrl=0b00) # Min BW
+COOKED_CFG = SAFE_LOOP_CFG.copy()
+COOKED_CFG.update(set_v_ctrl=0b00, vco_current_min=0b1000, vco_current_max=0b1100, vco_tune_coarse=0b1001)
+FREF_20M_CFG = DEFAULT_CFG.copy()
+FREF_20M_CFG.update(clk_div_val=49, set_div_freq=0b010, set_v_ctrl=0b00, vco_current_min=0b0011, vco_current_max=0b0000, vco_tune_coarse=0b0011)
 
 # Fref = 4 MHz
 CFG_32MHZ = DEFAULT_CFG.copy()

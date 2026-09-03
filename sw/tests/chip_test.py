@@ -32,7 +32,7 @@ import sw.tests.pll_test as pll_test
 from sw.lib.chip_driver import ChipDriver
 from sw.lib.chip_command_api import WRITEBACK_FIFO, make_command
 
-from sw.lib.pll_command_api import CFG_32MHZ, CFG_64MHZ, CFG_128MHZ, CFG_256MHZ
+from sw.lib.pll_command_api import CFG_32MHZ, CFG_64MHZ, CFG_128MHZ, CFG_256MHZ, FREF_20M_CFG
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ def example_with_driver():
 def setup_chip(setup_pll: bool = True, pll_freq: int = 32, mem_test: bool = False):
     # Set up PLL
     if setup_pll:
-        assert pll_freq in [32, 64, 128, 256], "pll_freq must be one of [32, 64, 128, 256]"
+        assert pll_freq in [32, 64, 128, 256, 640], "pll_freq must be one of [32, 64, 128, 256]"
         # Set the PLL configuration based on the desired frequency
         # Fref = 4 MHz to achieve specified clock frequency
         if pll_freq == 32:
@@ -124,6 +124,8 @@ def setup_chip(setup_pll: bool = True, pll_freq: int = 32, mem_test: bool = Fals
             cfg = CFG_128MHZ.copy()
         elif pll_freq == 256:
             cfg = CFG_256MHZ.copy()
+        elif pll_freq == 640:
+            cfg = FREF_20M_CFG.copy() #FREF = 20MHz
         else:
             raise ValueError("Invalid pll_freq value. Must be one of [32, 64, 128, 256].")
         pll_test.start_pll(cfg)
@@ -164,4 +166,4 @@ if __name__ == "__main__":
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
-    sys.exit(setup_chip(pll_freq=32))
+    sys.exit(setup_chip(pll_freq=256))

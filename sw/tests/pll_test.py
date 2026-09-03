@@ -259,5 +259,6 @@ def start_pll(cfg):
 
 if __name__ == "__main__":
     cfg = DEFAULT_CFG.copy()
-    cfg.update(set_div_freq=0b100, set_v_ctrl=0b00)
+    # Safer default config
+    cfg.update(set_div_freq=0b010, set_v_ctrl=0b00, vco_current_min=0b0011, vco_current_max=0b0000, vco_tune_coarse=0b0011)
     sys.exit(start_pll(cfg))
