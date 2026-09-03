@@ -21,13 +21,17 @@
 #      with the core held in reset / quiesced.
 # bring_up() does 1-3 (waiting for lock, only switching once locked).
 
+import logging
 import time
 from typing import Dict, List, Optional
 
 from sw.lib.port_driver import PortDriver
+from sw.lib.clock_api import PLL_STRB, set_clock
 from sw.lib.pll_command_api import (
+    CFG_BITS,
     CFG_BYTES,
     STATUS_LOCK_BIT,
+    STRB_HZ,
     DEFAULT_CFG,
     cmd_load,
     cmd_load_loopback,
@@ -36,15 +40,28 @@ from sw.lib.pll_command_api import (
     cmd_readback,
     cmd_status,
     cmd_writeback,
+    cmd_config_strb,
     pack_pll_cfg,
     unpack_pll_cfg,
     rst_pll_cfg,
     join_le,
 )
 
+logger = logging.getLogger(__name__)
+
 # clk_sel encodings (mirror the clk mux in lagd_clk_gen.sv).
 CLK_SEL_PLL       = 0   # I0 = pll_clk_o
 CLK_SEL_REFERENCE = 1   # I1 = clk_i (reference / bypass)
+
+
+def default_timeout(bits, strb_hz):
+    """Read timeout for a command that shifts `bits` bits at `strb_hz`.
+
+    The strobe is runtime-configurable down to 50 Hz, where a 47-bit scan takes
+    nearly a second -- a fixed timeout would report a phantom failure. The 3x
+    factor covers host-side poll overhead; the constant covers the rest.
+    """
+    return bits / float(strb_hz) * 3.0 + 0.1
 
 
 class PllDriver(PortDriver):
@@ -66,6 +83,22 @@ class PllDriver(PortDriver):
         super().__init__(write_dev, read_dev, width=8)
         self._cfg: Optional[int] = None         # last config word written
         self._clk_sel: Optional[int] = None     # last clk_sel set
+        # Strobe rate the controller is currently running at. It powers up at
+        # STRB_HZ and changes only through set_strb_hz.
+        self.strb_hz = float(STRB_HZ)
+
+    def set_strb_hz(self, strb_hz: float) -> float:
+        """Set the PLL serial-config strobe rate; return the rate achieved.
+
+        The divider is integer and the hardware clamps to STRB_MIN_HZ..STRB_MAX_HZ,
+        so the achieved rate can differ from the request. Applies to the next
+        command. Both strobes are gated clocks into the PLL over FMC wiring, so
+        raise this only as far as that path is known to be reliable.
+        """
+        self.strb_hz = set_clock(
+            PLL_STRB, strb_hz,
+            lambda half: self._send_bytes(cmd_config_strb(half)), logger)
+        return self.strb_hz
 
     # ---- byte-level transport helpers ----
     def _send_bytes(self, data: List[int]) -> None:
@@ -131,7 +164,7 @@ class PllDriver(PortDriver):
         """
         self._flush_read()
         self._send_bytes(cmd_load_loopback(word))
-        payload = self.read_bytes(CFG_BYTES)
+        payload = self.read_bytes(CFG_BYTES, default_timeout(CFG_BITS + 1, self.strb_hz))
         self._cfg = word & ((1 << 47) - 1)
         return None if payload is None else join_le(payload)
 
@@ -160,7 +193,7 @@ class PllDriver(PortDriver):
         """
         self._flush_read()
         self._send_bytes(cmd_readback())
-        payload = self.read_bytes(CFG_BYTES)
+        payload = self.read_bytes(CFG_BYTES, default_timeout(CFG_BITS + 1, self.strb_hz))
         return None if payload is None else join_le(payload)
 
     def verify(self, word: int) -> bool:

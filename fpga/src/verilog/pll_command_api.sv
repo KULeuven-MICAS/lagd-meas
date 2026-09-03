@@ -37,7 +37,15 @@
 //  0x4    | 0xF4   | READBACK      | 0 bytes | scan the shallow register out of data_o
 //         |        |               |  (->6B) | (recirculating), return its 47 bits
 //  0x5    | 0xF5   | STATUS        | 0 bytes | return 1 status byte (bit0 = pll_lock)
+//  0x6    | 0xF6   | CONFIG_STRB   | 3 bytes | set the strobe half-period (LE)
 //  0xF    | 0xFF   | WRITEBACK     | 0 bytes | echo the 0xFF header back (liveness)
+//
+// CONFIG_STRB sets the strobe rate at runtime: its 3 little-endian payload bytes
+// are the half-period in clk_i cycles, so strobe = CLK_HZ / (2*half). The
+// controller clamps it to [STRB_HALF_MIN, STRB_HALF_MAX], so an out-of-range
+// request saturates instead of hanging the strobe engine. STRB_HALF is only the
+// power-on default. 3 bytes rather than 2 because the slowest useful rate needs
+// 20 bits (50 Hz at clk_i = 100 MHz -> half = 1e6).
 //
 // READBACK reads what the PLL silicon actually captured: it shifts the shallow
 // register out through data_o (pad_pll_data_o -> FPGA pll_data_i) while recircu-
@@ -69,7 +77,11 @@ localparam bit [3:0] PLL_OP_CLK_SEL       = 4'h2;  // set clk_sel from 1 payload
 localparam bit [3:0] PLL_OP_RESET         = 4'h3;  // pulse both strobes (reset regs)
 localparam bit [3:0] PLL_OP_READBACK      = 4'h4;  // scan shallow reg out -> 6 bytes
 localparam bit [3:0] PLL_OP_STATUS        = 4'h5;  // return 1 status byte (bit0 = lock)
+localparam bit [3:0] PLL_OP_CONFIG_STRB   = 4'h6;  // set strobe half-period (3 LE bytes)
 localparam bit [3:0] PLL_OP_WRITEBACK     = 4'hF;  // echo header (no PLL action)
+
+// CONFIG_STRB payload length, in bytes (a 24-bit half-period, little-endian).
+localparam int unsigned PLL_STRB_BYTES    = 3;
 
 // STATUS byte bit positions.
 localparam int unsigned PLL_STATUS_LOCK_BIT = 0;   // 1 = PLL locked

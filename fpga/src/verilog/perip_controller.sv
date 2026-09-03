@@ -33,12 +33,19 @@
 //         (recirculating, non-destructive) and echo the 32 bits as one word.
 //       * S2P_OE (0x12): set the Output Enable level (bit0). Powers up 0 (blanked);
 //         software enables after a write and blanks around any reconfiguration.
+//
+//   Both serial clocks are runtime-configurable (CONFIG_DAC_SCK 0x04 /
+//   CONFIG_S2P_SCK 0x05, single command words carrying the half-period in the
+//   20-bit payload). SCK_HZ / S2P_SCK_HZ are only the power-on defaults;
+//   SCK_MIN_HZ / SCK_MAX_HZ bound what software may select.
 
 module perip_controller #(
     parameter int CLK_HZ = 100_000_000,
-    parameter int SCK_HZ = 25_000_000,       // DAC SPI clock
+    parameter int SCK_HZ = 25_000_000,       // power-on DAC SPI clock
     parameter int CSB_HOLD_CYCLES = 4,       // in terms of cycles under CLK_HZ
-    parameter int S2P_SCK_HZ = 1_000_000     // HV9308 shift clock
+    parameter int S2P_SCK_HZ = 1_000_000,    // power-on HV9308 shift clock
+    parameter int SCK_MAX_HZ = 25_000_000,   // fastest either clock may be set to
+    parameter int SCK_MIN_HZ = 50            // slowest either clock may be set to
 )(
     input  clk_i,
     (* direct_reset = "yes" *) input logic rst_i,
@@ -70,6 +77,17 @@ module perip_controller #(
     // operation (DAC/S2P write, S2P readback, writeback echo)
     output logic perip_busy_o
 );
+
+    localparam int SCK_HALF_MIN     = clk_half_min_for(CLK_HZ, SCK_MAX_HZ);
+    localparam int SCK_HALF_MAX     = clk_half_max_for(CLK_HZ, SCK_MIN_HZ);
+    localparam int SCK_HALF_W       = $clog2(SCK_HALF_MAX + 1);
+    localparam int DAC_HALF_RESET   = CLK_HZ / SCK_HZ / 2;
+    localparam int S2P_HALF_RESET   = CLK_HZ / S2P_SCK_HZ / 2;
+
+    function automatic logic [SCK_HALF_W-1:0] clamp_half(input logic [19:0] v);
+        clamp_half = SCK_HALF_W'(
+            clk_half_clamp(32'(v), 32'(SCK_HALF_MIN), 32'(SCK_HALF_MAX)));
+    endfunction
 
     typedef enum logic [2:0] {
         IDLE,
@@ -106,6 +124,10 @@ module perip_controller #(
     logic [31:0] s2p_rdata;
     (* mark_debug = "true" *) logic        s2p_oe_r;     // Output Enable level (0 = blank)
 
+    // Runtime serial-clock dividers, set by CONFIG_DAC_SCK / CONFIG_S2P_SCK.
+    (* mark_debug = "true" *) logic [SCK_HALF_W-1:0] dac_half_r;
+    (* mark_debug = "true" *) logic [SCK_HALF_W-1:0] s2p_half_r;
+
     // fifo_cmd_r.bitwise mirrors fifo_word_r (updated in the FSM)
     fifo_to_axi_stream_adapter#(
             .DATA_WIDTH      (32                ),
@@ -122,12 +144,12 @@ module perip_controller #(
     );
 
     dac_spi_driver #(
-        .CLK_HZ          (CLK_HZ         ),
-        .SCK_HZ          (SCK_HZ         ),
-        .CSB_HOLD_CYCLES (CSB_HOLD_CYCLES)
+        .CSB_HOLD_CYCLES (CSB_HOLD_CYCLES),
+        .SCK_HALF_W      (SCK_HALF_W     )
     ) dac_driver_inst (
         .clk_i           (clk_i          ),
         .rst_i           (rst_i          ),
+        .sck_half_i      (dac_half_r     ),
         .load_i          (dac_load_o                 ),
         .rstn_i          (fifo_cmd_r.dac_config.rstn ),
         .shdn_i          (fifo_cmd_r.dac_config.shdn ),
@@ -142,11 +164,11 @@ module perip_controller #(
     );
 
     s2p_driver #(
-        .CLK_HZ     (CLK_HZ        ),
-        .SCK_HZ     (S2P_SCK_HZ    )
+        .SCK_HALF_W (SCK_HALF_W    )
     ) s2p_driver_inst (
         .clk_i      (clk_i         ),
         .rst_i      (rst_i         ),
+        .sck_half_i (s2p_half_r    ),
         .load_i     (s2p_load_o    ),
         .readback_i (s2p_readback_o),
         .wdata_i    (s2p_data_r    ),
@@ -183,6 +205,8 @@ module perip_controller #(
             s2p_readback_o     <= 1'b0;
             s2p_data_r         <= '0;
             s2p_oe_r           <= 1'b0;   // power-on: outputs blanked (OE low)
+            dac_half_r         <= SCK_HALF_W'(DAC_HALF_RESET);
+            s2p_half_r         <= SCK_HALF_W'(S2P_HALF_RESET);
         end else begin
             fifo_perip_wr_en_o <= 1'b0;
             fifo_perip_din_o   <= '0;
@@ -210,6 +234,14 @@ module perip_controller #(
                             end
                             PERIP_OP_S2P_WRITE: begin
                                 state_current <= S2P_FETCH;  // pull the 32-bit value
+                            end
+                            PERIP_OP_CONFIG_DAC_SCK: begin
+                                dac_half_r    <= clamp_half(fifo_cmd_r.perip_sck.sck_half);
+                                state_current <= IDLE;
+                            end
+                            PERIP_OP_CONFIG_S2P_SCK: begin
+                                s2p_half_r    <= clamp_half(fifo_cmd_r.perip_sck.sck_half);
+                                state_current <= IDLE;
                             end
                             PERIP_OP_S2P_READBACK: begin
                                 s2p_readback_o <= 1'b1;

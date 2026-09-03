@@ -1,10 +1,6 @@
 # Xillinux OS Setup
 
-Author: Jiacong Sun
-
-Date: 2026/07/13
-
-This folder is a placeholder for all the settings required to deploy the xillinux on the FPGA, such as the Xillinux image, network scripts, scripts that are useful after the Xillinux is set up on the FPGA.
+This folder is a placeholder for all the settings required to deploy the xillinux on the FPGA, such as the Xillinux image, network scripts, scripts that are useful after the Xillinux is set up on the FPGA. The folder structure follows the same structure as in the Linux OS.
 
 You can find the Xillinux image in the release page. The image contains a built-in Xillinux OS (a Ubuntu OS). Commonly used python packages (please check the [sw/README.md](../sw/README.md) for more details) and OpenOCD have been installed. The OS has the following behaviors:
 
@@ -23,9 +19,11 @@ In DiskGenius, restore the image to your new SD card using the image in the rele
 
 - Two LEDs flash per second.
 - The screen is on.
-- The UART works if you connect the Zedboard to your PC by UART and open a UART interface (e.g., create a new serial session within [MobaXterm](https://mobaxterm.mobatek.net/download-home-edition.html) with speed 115200).
+- The UART works if you connect the Zedboard to your PC by UART and open a UART interface (e.g., create a new serial session within [MobaXterm](https://mobaxterm.mobatek.net/download-home-edition.html) on baudrate 115200).
 
-Keep the UART interface open, since we need to configure the following things:
+Ensure the physical lock (or tab) of the SD card is unlocked (otherwise the boot does not work since the SD card is read-only). If you cannot find where the physical lock is, please check the `Way 1: Manual Unlock` section at [this page](https://www.cleverfiles.com/howto/unlock-sd-card.html).
+
+Boot the Zedboard and log in via uart. We need to configure the following things:
 
 **Update the system hostname:** you need to change the system name to avoid it collides with other OS copies. The default name is `lagdboard`. Suppose the new hostname is `my-env`:
 
@@ -43,14 +41,49 @@ sudo hostnamectl set-hostname my-env
 
 - Reboot the FPGA to apply the change.
 
+**Configure the internet**: Since the FPGA is usually used within a campus network which has firewalls and requests authorization first, it is needed to set up the internet with proper campus authorization.
+
+- Check the Zedboard MAC address `MACAddress` in [/etc/systemd/network/10-eth0.link](/etc/systemd/network/10-eth0.link) and verify its uniqueness in your local network (no local conflict). If the MAC is already in use, change it. This details can be found in the xillybus manual at [here](https://xillybus.com/downloads/doc/xillybus_getting_started_zynq.pdf).
+
+- Enable the `wpa_supplicant` service with `systemctl enable wpa_supplicant`.
+
+- (Optional) Run the `fixboottime.sh`. This shortens the timeout for the network interface.
+
+- Run the `cd /etc/wpa_supplicant/ && source wpa_supplicant_setup.sh` and enter your ESAT password and username when prompted. If you are not KU Leuven/ESAT user, please check how to set up authorization for your network.
+
+- Check the date&time set in `/root/fixnetworking.sh` is more or less up to date, e.g., to a few hours before the current time. Then run `/root/fixnetworking.sh`.
+
+- (Optional) Add the contents of the `/root/crontab` file to the root `crontab` (run `crontab -e` and paste the constants). This fixes networking every time you re-boot your Zedboard.
+
+- If you face connectivity issues each time you reboot your Zedboard, add the following lines in crontab: `@reboot service networking start` and `@reboot service shh start` as well.
+
+- Run the following two commands to avoid stalling the boot if your authorization (e.g., password) may expires one day. Then, please re-set up the connection by rerunning `/etc/wpa_supplicant/wpa_supplicant_setup.sh` and `/root/fixnetworking.sh`.
+
+```bash
+sudo systemctl disable NetworkManager-wait-online.service
+sudo systemctl mask NetworkManager-wait-online.service
+```
+
+- Ensure if the MAC address is correct by running the command `ip link show eth0` and if you get an IPv4 address by the commmand `ip -4 addr show eth0`.
+
 **Update the IP email script**: Once you connect the FPGA to ethernet, it will send an email to notify its latest IP address. Please update the script so that it matches with your new own email address (a copy of the same script is put under current github folder):
 
 - Open the script by `vim /usr/local/bin/report_ip.sh`
 
 - Replace `lagdboard` with your new name `my-env`, and put your own email address in.
 
-
 **Note**: if the network does not work automatically, please check the script `/root/fixnetworking.sh` and `/root/fixboottime.sh`.
+
+**Mount the SD card partition (`/dev/mmcblk0p1`) to `/mnt/pl_sd`**: This is the partition that the PL (programmable logic) reads the FPGA bitstream from. It is put within `/root/.bashrc` and it is executed **automatically** on boot (because `root` is the default user), so you normally do not need to run it by hand.
+
+The FPGA bitstream `xillydemo.bit` should be placed under this mounted folder (`/mnt/pl_sd/xillydemo.bit`) so that it is loaded into the PL.
+
+**Mounts a remote server directory onto the local FPGA filesystem over `sshfs`**: This is to enable the FPGA can directly access scripts hosted on other servers, so that it's not needed to manually copy each time. To do this, please run `source Workspace/mount_workspace.sh`. It opens an SSH tunnel through the campus gateway and then mounts the remote path through that tunnel with read-only permission.
+
+Before running it, edit the configuration block at the top of the [`mount_workspace.sh`](Workspace/mount_workspace.sh) to match your setup.
+
+To kill a mount, please run `fusermount -u /PATH/ON/LOCAL/FPGA/`.
+
 
 ## What if I want to the date to be correct?
 
@@ -73,35 +106,6 @@ sudo invoke-rc.d chrony restart
 date
 chronyc tracking
 ```
-
-## Scripts in this folder
-
-This folder ships a few helper scripts. Below is what each one does and how it is meant to be used.
-
-### `mount_pl_sd.sh`
-
-Mounts the SD card partition (`/dev/mmcblk0p1`) to `/mnt/pl_sd`. This is the partition that the PL (programmable logic) reads the FPGA bitstream from, and it is executed **automatically** on boot, so you normally do not need to run it by hand.
-
-The FPGA bitstream `xillydemo.bit` should be placed under this mounted folder (`/mnt/pl_sd/xillydemo.bit`) so that it is loaded into the PL.
-
-### `mount_workspace.sh`
-
-Mounts a remote server directory onto the local FPGA filesystem over `sshfs`, so that the FPGA can access files hosted on other servers. It first opens an SSH tunnel through the campus gateway and then mounts the remote path through that tunnel.
-
-Before running it, edit the configuration block at the top of the script to match your setup:
-
-- `PORT` — the local port used for the SSH tunnel.
-- `UNAME` — your username on the campus SSH gateway / remote server.
-- `REMOTE_PATH` — the directory on the remote server you want to access.
-- `LOCAL_DIR` — the local directory on the FPGA where the remote files are mounted.
-
-You will be prompted for your server password (once to open the tunnel, once to mount).
-
-### `report_ip.sh`
-
-Reports the IP address of the ZedBoard by email after it boots and connects to the campus network. See the [setup section above](#how-to-create-your-xillinux-os-on-zedboard) for how to update it under `/usr/local/bin/report_ip.sh` (it is automatically triggered on reboot via `crontab`). Remember to change the email address to your own.
-
-## Others
 
 ### Why cannot I run `sudo apt update`?
 

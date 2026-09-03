@@ -6,7 +6,7 @@
 # Reach the chip's bootrom UART debug server via the ACK handshake -- no ELF loaded.
 # A thin wrapper around 'send_uart.py --ping' (the reusable tool in sw/uart/).
 #
-#   ./run.sh                          # default device /dev/ttyUSB10
+#   ./run.sh                          # default device /dev/ttyUSB2
 #   ./run.sh --device /dev/ttyUSB2    # extra options pass through to send_uart.py
 #   ./run.sh --no-rtscts
 

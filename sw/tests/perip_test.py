@@ -17,17 +17,22 @@
 #   perip.dac_write(addr, data)           # low-level register write (12-bit load)
 #   perip.verify_dac_write(addr, data)    # DAC write + echo command for verification
 #   perip.writeback(payload)              # loopback self-test primitive
+#   perip.set_dac_sck_hz(hz)              # retune the DAC SPI clock -> actual Hz
+#   perip.set_s2p_sck_hz(hz)              # retune the HV9308 shift clock -> actual Hz
 #
-# Running this file directly executes the writeback stress test (see main()).
+# Tuning the serial clocks -- the short version:
+#   actual = perip.set_dac_sck_hz(1_000_000)
 #
-# See: fpga/src/verilog/perip_controller.sv and perip_command_api.sv
+# Related to: fpga/src/verilog/perip_controller.sv and perip_command_api.sv
 
 import sys
 import logging
 import time
 
-from sw.lib.perip_driver import PeripDriver
-from sw.lib.perip_command_api import OP_WRITEBACK, make_command, cmd_dac_write_loopback
+from sw.lib.perip_driver import PeripDriver, DAC_XFER_BITS
+from sw.lib.perip_command_api import (
+    OP_WRITEBACK, SCK_HZ, make_command, cmd_dac_write_loopback,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +76,65 @@ def test_writeback(payload=0xADBEE):
         return False
 
 
+def test_sck_config(rates=(1_000, 10_000, 100_000, 1_000_000), reps=20):
+    """Verify CONFIG_DAC_SCK actually changes the DAC serial clock.
+
+    Uses the DAC loopback: the controller echoes the command word only after the
+    12-bit SPI transfer has finished, so the round-trip time is dominated by the
+    serial clock. Timing it is what proves the divider moved -- a correct echo on
+    its own would come back from a stuck divider too.
+
+    Needs no DAC on the board: the transfer runs on the dac_* pins whether or not
+    anything is listening, and the echo comes from the FPGA. That makes this a
+    pure test of the new command, independent of what is wired to the FMC.
+    """
+    cmd = cmd_dac_write_loopback(3, 0x5A)[0]
+    ok, elapsed = True, {}
+    for hz in rates:
+        actual = perip.set_dac_sck_hz(hz)
+        t0 = time.time()
+        echoes_ok = all(perip.verify_dac_write(3, 0x5A) == cmd for _ in range(reps))
+        elapsed[hz] = time.time() - t0
+        wire = reps * DAC_XFER_BITS / actual
+        ok &= echoes_ok
+        logger.info('%s: %8.0f Hz requested -> %10.2f Hz actual | %d echoes %s | '
+                    'wire %6.3f s, measured %6.3f s',
+                    'PASS' if echoes_ok else 'FAIL', hz, actual, reps,
+                    'ok' if echoes_ok else 'MISMATCH/TIMEOUT', wire, elapsed[hz])
+
+    # The rate really changed: the slowest sweep point must take far longer than
+    # the fastest. A stuck divider (either direction) collapses this ratio.
+    slow, fast = elapsed[min(rates)], elapsed[max(rates)]
+    ratio_ok = slow > fast * 5
+    ok &= ratio_ok
+    logger.info('%s: %.0f Hz took %.3f s vs %.0f s at %.0f Hz (%.1fx, need >5x)',
+                'PASS' if ratio_ok else 'FAIL', min(rates), slow, fast, max(rates),
+                slow / fast if fast else float('inf'))
+
+    perip.set_dac_sck_hz(SCK_HZ)   # back to the power-on rate
+    return ok
+
+
+def test_s2p_sck_config(rates=(1_000, 10_000, 100_000)):
+    """Sweep the HV9308 shift clock and confirm it still captures a value.
+
+    Unlike test_sck_config this DOES need the HV9308 wired (FMC LA11-13): the
+    check is a recirculating readback of the device's own shift register. A rate
+    the wiring cannot sustain shows up as a mismatch, which is the point -- this
+    finds the ceiling of that path rather than assuming one.
+    """
+    ok = True
+    perip.s2p_output_enable(True)
+    for hz in rates:
+        actual = perip.set_s2p_sck_hz(hz)
+        step_ok = perip.s2p_verify(0xA5A5_5A5A)
+        ok &= step_ok
+        logger.info('%s: %8.0f Hz requested -> %10.2f Hz actual, readback %s',
+                    'PASS' if step_ok else 'FAIL', hz, actual,
+                    'ok' if step_ok else 'MISMATCH')
+    perip.set_s2p_sck_hz(SCK_HZ)   # back to the power-on rate
+    return ok
+
 def test_verify_dac_write(addr=3, data=0x5A, rstn=1, shdn=1):
     """Loopback DAC write: confirm the controller echoes the exact command word.
 
@@ -92,63 +156,54 @@ def test_verify_dac_write(addr=3, data=0x5A, rstn=1, shdn=1):
         logger.error('FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X', expected, received)
         return False
 
-
-def test_s2p(value=0xDEADBEEF):
-    """S2P write + read-back verify against the HV9308's own shift register.
-
-    Enables the outputs, shifts `value` into the HV9308, then scans it back out of
-    the cascade Data Out and compares -- reads what the silicon actually captured.
-    Requires the bitstream with the s2p_* pins wired (FMC LA11-13).
-    """
-    perip.s2p_output_enable(True)
-    if perip.s2p_verify(value):
-        logger.info('PASS: s2p_verify 0x%08X (HV9308 captured it)', value)
-        return True
-    rb = perip.s2p_readback()
-    logger.error('FAIL: s2p wrote 0x%08X, read back %s',
-                  value, f'0x{rb:08X}' if rb is not None else 'None')
-    return False
-
-
-def example_with_driver():
-    """Reference example: drive the AD8802 via PeripDriver as a context manager."""
-    with PeripDriver(WRITE_DEV, READ_DEV) as perip:
-        perip.midscale()                       # all 12 channels -> 0x80 (V_REF/2)
-
-        # Set channel 1 to 0.6 V; set channel 2 by raw code.
-        code = perip.set_voltage(channel=1, volts=0.6, vref=VREF)
-        perip.set_code(channel=2, code=0x40)
-        logger.info(f'ch1 -> code 0x{code:02X} ({perip.get_voltage(1, VREF):.3f} V), '
-                 f'ch2 -> 0x{perip.get_code(2):02X} ({perip.get_voltage(2, VREF):.3f} V)')
-    # The ports are closed automatically on exiting the `with` block above.
-
-
 def main():
+    """Worked example of the periphery command set. Run it top to bottom.
+
+    Steps 1-2 need nothing but the Zedboard and the bitstream. Steps 3-4 talk to
+    real devices on the FMC and are commented out -- uncomment what your board
+    actually has. Nothing here changes a chip-critical setting, so it is safe to
+    run as-is.
+    """
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
     open_ports()
-    ##################################
-    ## DAC configuration
-    ##################################
-    # reset first
-    perip.reset()
-    # test writeback of DAC controller to ensure it is alive
-    test_writeback()
-    # loopback-write check: a real DAC write whose command is echoed back
-    for i in range(10000):
-        test_verify_dac_write(addr=3, data=0x5A)
-        logger.info("iteration %d", i)
-    ##################################
-    ## Serial2Parallel configuration
-    ##################################
-    # S2P (HV9308): write + read-back verify of the 32-bit bias-resistor register
-    # test_s2p()
-    # set all channels to a volt
-    # volt = 0.6
-    # perip.set_all_voltage(volt, VREF)
-    time.sleep(1)
-    # pdb.set_trace()  # drop into interactive mode for manual testing
+
+    # 1. Is the Zedboard controller alive?
+    if not test_writeback():
+        return 1
+
+    # 2. Tune the serial clocks (the two devices are independent)
+    perip.set_dac_sck_hz(SCK_HZ)
+    perip.set_s2p_sck_hz(SCK_HZ)
+
+    # 3. Drive the DAC (AD8802)     [needs the DAC on the FMC]
+    # perip.reset()                                    # hardware RS_N -> all 0x80
+    # perip.midscale()                                 # or set them in software
+    # code = perip.set_voltage(channel=1, volts=0.6, vref=VREF)
+    # perip.set_code(channel=2, code=0x40)             # or by raw 8-bit code
+    # logger.info('ch1 -> 0x%02X (%.3f V), ch2 -> 0x%02X (%.3f V)',
+    #             code, perip.get_voltage(1, VREF),
+    #             perip.get_code(2), perip.get_voltage(2, VREF))
+    # The AD8802 has no readback, so get_* returns a host-side cache of what was
+    # written. To verify the command really reached the controller, use the echo:
+    #     assert perip.verify_dac_write(3, 0x5A) == cmd_dac_write_loopback(3, 0x5A)[0]
+
+    # 4. Drive the HV9308 S2P       [needs the HV9308 wired, FMC LA11-13]
+    # perip.s2p_output_enable(True)                    # outputs power up blanked
+    # perip.s2p_write(0xA5A5_5A5A)                     # shift 32 bits + latch
+    # assert perip.s2p_readback() == 0xA5A5_5A5A       # what the silicon holds
+    # perip.s2p_reconfigure(0x1234_5678)               # blank -> write -> re-enable
+
+    # Optional deeper checks -- none of these are required to use the script
+    # test_sck_config()        # sweep + time the DAC clock   (no hardware needed)
+    # test_s2p_sck_config()    # sweep the S2P clock          (needs the HV9308)
+    # Soak the command path:
+    # for i in range(10_000):
+    #     assert perip.verify_dac_write(3, 0x5A) == cmd_dac_write_loopback(3, 0x5A)[0]
+
+    return 0
+
 
 if __name__ == '__main__':
     sys.exit(main())

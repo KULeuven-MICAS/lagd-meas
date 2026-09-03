@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Author: Jiacong Sun <jiacong.sun@kuleuven.be>
-// Assisted by Copilot (2026)
 //
 //   Control inputs
 //        |
@@ -33,11 +32,21 @@
 // falling edge of SCK.
 
 module quad_spi_master #(
-    parameter int CLK_HZ = 100_000_000,
-    parameter int SCK_HZ = 25_000_000
+    parameter int CLK_HZ     = 100_000_000,
+    parameter int SCK_HZ     = 5_000_000, // power-on default SCK
+    // SCK_MAX_HZ: fastest SCK may select = CLK_HZ/4 (sck_half=2).
+    // NOT CLK_HZ/2: sck_half=1 makes sck_edge_tick fire every clock, so SCK
+    // toggles every cycle and the data has no setup against its own edge.
+    parameter int SCK_MAX_HZ = 25_000_000,
+    parameter int SCK_HALF_W = 20 // width of the runtime half-period register
 )(
     input  logic        clk_i,
     (* direct_reset = "yes" *) input  logic rst_i,
+    // Runtime SCK half-period in clk_i cycles: SCK = CLK_HZ / (2*sck_half_i).
+    // Sampled ONLY when a transaction starts, so a mid-flight change can never
+    // desync the divider. 0 is clamped to SCK_HALF_MIN (a zero half-period
+    // would make sck_cnt_r never match and hang the engine).
+    input  logic [SCK_HALF_W-1:0] sck_half_i,
     input  logic        start_i,
     input  logic        quad_mode_i,
     input  logic        read_i,
@@ -63,11 +72,18 @@ module quad_spi_master #(
     output logic [3:0]  chip_sd_oe_o
 );
 
-    localparam int SCK_HALF = CLK_HZ / SCK_HZ / 2;
-    // Width must hold SCK_HALF-1 (e.g. 49999 at SCK_HZ=1 kHz). A fixed narrow
-    // counter silently overflows at low SCK_HZ and sck_edge_tick never fires
-    // -> the SPI engine hangs. Size it from the parameter.
-    localparam int SCK_CW = (SCK_HALF <= 2) ? 1 : $clog2(SCK_HALF);
+    localparam int SCK_HALF_DEFAULT = CLK_HZ / SCK_HZ / 2;
+    localparam int SCK_HALF_MIN     = clk_half_min_for(CLK_HZ, SCK_MAX_HZ);
+    // The counter must hold the LARGEST half-period the register can express.
+    localparam int SCK_CW = SCK_HALF_W;
+
+    // Latched half-period actually driving the divider this transaction.
+    (* mark_debug = "true" *) logic [SCK_HALF_W-1:0] sck_half_r;
+
+    // Clamp: never faster than SCK_MAX_HZ (timing) and never zero (would hang).
+    // The slow end needs no bound here -- the register width is the only limit.
+    wire [SCK_HALF_W-1:0] sck_half_clamped = SCK_HALF_W'(
+        clk_half_clamp(32'(sck_half_i), 32'(SCK_HALF_MIN), 32'((1 << SCK_HALF_W) - 1)));
     // 33 dummy SCK cycles are required by the SPI slave between the read address
     // and the first read data nibble (slave dummy register defaults to 32, plus
     // one extra cycle from the ETHz RX counter off-by-one => 33 actual cycles).
@@ -117,7 +133,7 @@ module quad_spi_master #(
                       (state_current == Q_WRITE_DATA) ||
                       (state_current == Q_READ_DATA);
 
-    wire sck_edge_tick = sck_active && (sck_cnt_r == SCK_HALF - 1);
+    wire sck_edge_tick = sck_active && (sck_cnt_r == sck_half_r - 1);
     wire sck_rise_tick = sck_edge_tick && (chip_sck_o == 1'b0);
     wire sck_fall_tick = sck_edge_tick && (chip_sck_o == 1'b1);
 
@@ -141,6 +157,7 @@ module quad_spi_master #(
             read_data_o    <= '0;
             chip_sck_o     <= 1'b0;
             chip_csb_o     <= 1'b1;
+            sck_half_r     <= SCK_HALF_W'(SCK_HALF_DEFAULT);
         end else begin
             done_o <= 1'b0;
 
@@ -150,6 +167,7 @@ module quad_spi_master #(
                 sd_oe_r    <= 4'b0000;
                 sck_cnt_r  <= '0;
                 if (start_i) begin
+                    sck_half_r <= sck_half_clamped;
                     busy_o     <= 1'b1;
                     chip_csb_o <= 1'b0;
                     read_r     <= read_i;

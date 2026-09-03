@@ -1,9 +1,8 @@
 # sw/tests
 
-Top-level scripts and tests. Run them **from the `sw/` directory** so the
-`lib.*` and `tools.*` imports resolve, e.g. `python3 tests/chip_load_spi.py`.
+Top-level scripts and tests. Run them **from the lagd-meas root**, e.g. `python3 sw/tests/chip_load_spi.py`.
 
-This README covers the program-loading and test files. (`chip_test.py`,
+This README covers the program-loading and test files. (`chip_diag.py`,
 `perip_test.py`, and `pll_test.py` are the chip / periphery / PLL interactive +
 writeback test scripts; they are documented separately.)
 
@@ -58,14 +57,8 @@ live software->FPGA path use the writeback loopback in `chip_test.py`.
 
 Run:
 ```
-python3 -m unittest tests.test_loader_stub      # from sw/
-python3 tests/test_loader_stub.py               # also works (adds sw/ to path)
+python3 sw/tests/test_loader_stub.py
 ```
-
-## __init__.py
-
-Marks `tests/` as a Python package so `python3 -m unittest tests.test_loader_stub`
-resolves the module. No code.
 
 ## Related (not in this folder)
 

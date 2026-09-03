@@ -174,6 +174,49 @@ module tb_chip_controller;
         wait_idle();
     endtask
 
+    task automatic do_chip_clk(input logic [19:0] clk_half);
+        push_word(make_cmd(CONFIG_CHIP_CLK, clk_half));
+        wait_idle();
+    endtask
+
+    // Measure the clk_chip_o period in nanoseconds over one full cycle, starting
+    // from a rising edge so a truncated phase at the switch is not counted.
+    // $realtime (not $time) throughout: it is already scaled to the 1ns timeunit,
+    // whereas a `time` literal like CLK_PERIOD carries raw precision units, and
+    // mixing the two silently compares nanoseconds against picoseconds.
+    task automatic measure_chip_clk(input string name, input real exp_ns);
+        real t0, got_ns;
+        @(posedge clk_chip); @(posedge clk_chip);   // skip the first (partial) cycle
+        t0 = $realtime;
+        @(posedge clk_chip);
+        got_ns = $realtime - t0;
+        checks++;
+        if (got_ns != exp_ns) begin
+            errors++;
+            $error("[%0t] %s PERIOD MISMATCH: got %.3f ns exp %.3f ns", $time, name, got_ns, exp_ns);
+        end else begin
+            $display("[%0t] %s OK: %.3f ns", $time, name, got_ns);
+        end
+    endtask
+
+    // Minimum-pulse-width monitor on clk_chip_o. Parking the divider high means
+    // no switch may emit a pulse shorter than the bus clock's own half period --
+    // that is the natural pulse width in bypass, and the floor a truncated phase
+    // in the divided modes can reach. Anything below it is a real glitch.
+    localparam real CHIP_CLK_MIN_PULSE_NS = 5.0;   // CLK_PERIOD/2 at 100 MHz
+    real  chip_clk_last_edge = 0.0;
+    int   chip_clk_runts = 0;
+    logic chip_clk_watch = 1'b0;
+    always @(clk_chip) begin
+        if (chip_clk_watch && chip_clk_last_edge != 0.0 &&
+            ($realtime - chip_clk_last_edge) < CHIP_CLK_MIN_PULSE_NS) begin
+            chip_clk_runts++;
+            $error("[%0t] clk_chip_o RUNT pulse: %.3f ns wide (< %.3f ns)", $time,
+                   $realtime - chip_clk_last_edge, CHIP_CLK_MIN_PULSE_NS);
+        end
+        chip_clk_last_edge = $realtime;
+    end
+
     task automatic do_write(input logic [31:0] addr, input logic [31:0] data []);
         push_word(make_cmd(DATA_WRITE, data.size()));
         push_word(addr);
@@ -304,6 +347,44 @@ module tb_chip_controller;
         do_read(32'h0000_0400, 12, rdata);
         foreach (rdata[i])
             check_eq($sformatf("wb bp data[%0d]", i), rdata[i], wdata[i]);
+
+        // ---- 10. CONFIG_CHIP_CLK: runtime chip clock divider ----
+        //   Reset default is bypass, then divide down and come back, watching for
+        //   runt pulses across every switch.
+        $display("=== Test 10: chip clock divider ===");
+        chip_clk_watch = 1'b1;
+        do_clk_rst(1'b1, 1'b1);                       // clock enabled
+        measure_chip_clk("chip_clk bypass", 10.0);    // reset default = clk_i, 100 MHz
+
+        do_chip_clk(20'd1);                           // 50 MHz
+        measure_chip_clk("chip_clk /2", 20.0);
+
+        do_chip_clk(20'd5);                           // 10 MHz
+        measure_chip_clk("chip_clk /10", 100.0);
+
+        do_chip_clk(20'd50);                          // 1 MHz
+        measure_chip_clk("chip_clk /100", 1000.0);
+
+        do_chip_clk(20'd0);                           // back to bypass
+        measure_chip_clk("chip_clk bypass again", 10.0);
+
+        // Gate off / on: parked high while off, clean restart after.
+        do_chip_clk(20'd5);
+        do_clk_rst(1'b0, 1'b1);
+        repeat (40) @(posedge clk);
+        check_eq("chip_clk parked high", {31'h0, clk_chip}, 32'h1);
+        do_clk_rst(1'b1, 1'b1);
+        measure_chip_clk("chip_clk /10 after regate", 100.0);
+        do_chip_clk(20'd0);                           // leave in bypass
+
+        checks++;
+        if (chip_clk_runts != 0) begin
+            errors++;
+            $error("clk_chip_o emitted %0d runt pulse(s)", chip_clk_runts);
+        end else begin
+            $display("clk_chip_o glitch-free across all switches OK");
+        end
+        chip_clk_watch = 1'b0;
 
         // ---- summary ----
         repeat (10) @(posedge clk);

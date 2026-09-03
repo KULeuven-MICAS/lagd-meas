@@ -34,6 +34,7 @@ import sys
 import time
 
 from sw.tools.elf_loader import parse_elf, bytes_to_words
+from sw.lib.chip_driver import ChipDriver
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,13 @@ SCRATCH2_DONE_BIT = 1 << 0
 # words per frame). Larger segments are split across frames.
 MAX_BURST_WORDS = 0xFFFF
 
+# Chunk size for verified (read-back + retry) writes: trades round-trip
+# overhead against retry granularity. Each chunk costs 53 extra SCK cycles
+# (10 write cmd/addr + 43 read cmd/addr/dummy), but a glitch only resends that
+# chunk rather than the whole image. 64 keeps the overhead near 10%. Do NOT use
+# MAX_BURST_WORDS here - a 65535-word read-back is enormous at any SCK.
+VERIFY_CHUNK_WORDS = 64
+
 
 class SpiProgramLoader:
     """Load + launch an ELF over SPI using a ChipDriver.
@@ -72,12 +80,23 @@ class SpiProgramLoader:
         if self.verbose:
             logger.info("[spi-load] %s", msg)
 
-    def write_segment(self, addr, words):
+    def write_segment(self, addr, words, verified=True):
         """Write a list of 32-bit words to consecutive addresses from `addr`.
 
         Splits into MAX_BURST_WORDS-sized chunks; each chunk is one chip_controller
         DATA_WRITE frame (CS held low, address auto-increments by 4 per word).
+
+        `verified` (default) routes through ChipDriver.write_mem_verified, which
+        reads each chunk back and retries on mismatch.
+        Pass verified=False only to measure the raw (unretried) error rate.
         """
+        if verified:
+            retries = self.chip.write_mem_verified(
+                addr & 0xFFFFFFFF, list(words), chunk=VERIFY_CHUNK_WORDS)
+            if retries:
+                self._log(f"  (recovered from {retries} failed chunk write(s) by retrying)")
+            return
+
         off = 0
         n = len(words)
         while off < n:
@@ -193,11 +212,6 @@ def _main():
     ap.add_argument("--wait", action="store_true",
                     help="poll for end-of-computation and print the exit code")
     args = ap.parse_args()
-
-    # Imported lazily (not at module top) so importing this module -- e.g. from
-    # the hardware-free stub tests -- doesn't pull in chip_driver's hardware/port
-    # dependencies, unlike the pure-stdlib elf_loader.
-    from lib.chip_driver import ChipDriver  # noqa: PLC0415
 
     with ChipDriver(args.write_dev, args.read_dev) as chip:
         if not args.no_clk_rst:
