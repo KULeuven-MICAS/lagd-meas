@@ -25,6 +25,7 @@
 import sys
 import random
 import logging
+
 # import time
 import sw.tests.pll_test as pll_test
 
@@ -36,8 +37,8 @@ from sw.lib.pll_command_api import CFG_32MHZ, CFG_64MHZ, CFG_128MHZ, CFG_256MHZ
 logger = logging.getLogger(__name__)
 
 # Device files for the chip write/read ports (cwp/crp).
-WRITE_DEV = '/dev/xillybus_write_32'
-READ_DEV = '/dev/xillybus_read_32'
+WRITE_DEV = "/dev/xillybus_write_32"
+READ_DEV = "/dev/xillybus_read_32"
 
 # Populated by open_ports(); declared here so the interactive helpers below
 # (and `python -i chip_test.py` sessions) can refer to it as a global.
@@ -60,15 +61,16 @@ def test_writeback(payload=0xADBEE):
     command = make_command(WRITEBACK_FIFO, payload)
     received = chip.writeback(payload)
     if received is None:
-        logging.error('[FPGA FIFO Test] FAIL: Data sent: 0x%08X, Data received: None', command)
+        logging.error("[FPGA FIFO Test] FAIL: Data sent: 0x%08X, Data received: None", command)
         return False
 
     if received == command:
-        logging.info('[FPGA FIFO Test] PASS: Data sent: 0x%08X, Data received: 0x%08X', command, received)
+        logging.info("[FPGA FIFO Test] PASS: Data sent: 0x%08X, Data received: 0x%08X", command, received)
         return True
     else:
-        logging.error('[FPGA FIFO Test] FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X',
-                      command, received)
+        logging.error(
+            "[FPGA FIFO Test] FAIL [Data unmatch]: Data sent: 0x%08X, Data received: 0x%08X", command, received
+        )
         return False
 
 
@@ -83,13 +85,17 @@ def test_verify_write_mem(addr=0x200, data=None):
         data = [0xC0DE0000 + i for i in range(4)]
     received = chip.verify_write_mem(addr, data)
     if received == data:
-        logging.info('[Chip mem test] PASS: verify_write_mem echoed %d words at 0x%08X', len(data), addr)
-        logging.debug('      Sent: %s', [hex(d) for d in data])
-        logging.debug('      Received: %s', [hex(r) for r in received])
+        logging.info("[Chip mem test] PASS: verify_write_mem echoed %d words at 0x%08X", len(data), addr)
+        logging.debug("      Sent: %s", [hex(d) for d in data])
+        logging.debug("      Received: %s", [hex(r) for r in received])
         return True
     else:
-        logging.error('[Chip mem test] FAIL: verify_write_mem at 0x%08X: sent %s, received %s',
-                      addr, [hex(d) for d in data], [hex(r) for r in received])
+        logging.error(
+            "[Chip mem test] FAIL: verify_write_mem at 0x%08X: sent %s, received %s",
+            addr,
+            [hex(d) for d in data],
+            [hex(r) for r in received],
+        )
         return False
 
 
@@ -104,8 +110,7 @@ def example_with_driver():
     return readback
 
 
-
-def setup_chip(setup_pll: bool=True, pll_freq: int=32, mem_test: bool=False):
+def setup_chip(setup_pll: bool = True, pll_freq: int = 32, mem_test: bool = False):
     # Set up PLL
     if setup_pll:
         assert pll_freq in [32, 64, 128, 256], "pll_freq must be one of [32, 64, 128, 256]"
@@ -130,7 +135,7 @@ def setup_chip(setup_pll: bool=True, pll_freq: int=32, mem_test: bool=False):
     # SCK must stay at or below the chip clock: the slave's RX FIFO is 8 words
     # deep and cannot backpressure SPI, so an AXI side slower than the SPI silently drops words.
     # chip.set_chip_clk_hz(10e6) # 10 MHz (FPGA clock is not used for now. Use the on-PCB oscillator instead)
-    chip.set_sck_hz(5e6) # 5 MHz
+    chip.set_sck_hz(5e6)  # 5 MHz
 
     # enable the chip clock and reset the chip
     chip.reset_chip(hold=0.5, chip_clk_en=1)
@@ -154,8 +159,9 @@ def setup_chip(setup_pll: bool=True, pll_freq: int=32, mem_test: bool=False):
         readback = chip.read_mem(SCRATCH_0, length=length)
         logger.info(f"Readback matches written data: {readback == data}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
-    sys.exit(setup_chip())
+    sys.exit(setup_chip(pll_freq=32))
