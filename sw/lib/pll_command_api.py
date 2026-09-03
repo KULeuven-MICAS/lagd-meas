@@ -23,6 +23,7 @@
 #   0x3    | 0xF3   | RESET         | 0 bytes | pulse both strobes -> reset PLL regs
 #   0x4    | 0xF4   | READBACK      | 0 bytes | scan shallow reg out of data_o -> 6 bytes
 #   0x5    | 0xF5   | STATUS        | 0 bytes | return 1 status byte (bit0 = pll_lock)
+#   0x6    | 0xF6   | CONFIG_STRB   | 3 bytes | set the strobe half-period (LE)
 #   0xF    | 0xFF   | WRITEBACK     | 0 bytes | echo the 0xFF header back (liveness)
 #
 # READBACK returns the 47-bit shallow-register content (what the PLL silicon
@@ -41,6 +42,9 @@
 from collections import namedtuple
 from typing import Dict, List
 
+from sw.lib import clock_api
+from sw.lib.clock_api import PLL_STRB
+
 # Handshake marker and opcodes (mirror pll_command_api.sv).
 CMD_MARKER        = 0xF
 OP_LOAD           = 0x0  # shift 47 bits + commit
@@ -49,10 +53,23 @@ OP_CLK_SEL        = 0x2  # set clk_sel from 1 payload byte
 OP_RESET          = 0x3  # pulse both strobes (reset registers)
 OP_READBACK       = 0x4  # scan shallow register out of data_o -> 6 bytes
 OP_STATUS         = 0x5  # return 1 status byte (bit0 = pll_lock)
+OP_CONFIG_STRB    = 0x6  # set the strobe half-period (3 little-endian bytes)
 OP_WRITEBACK      = 0xF  # echo header (no PLL action)
 
 CFG_BITS  = 47
 CFG_BYTES = 6
+
+# CONFIG_STRB payload: a 24-bit half-period, little-endian.
+STRB_BYTES = 3
+
+BUS_CLK_HZ  = clock_api.BUS_CLK_HZ   # xillydemo.v: CLK_HZ
+STRB_HZ     = PLL_STRB.default_hz    # power-on default
+STRB_MAX_HZ = PLL_STRB.max_hz        # hardware clamp: fastest selectable
+STRB_MIN_HZ = PLL_STRB.min_hz        # hardware clamp: slowest selectable
+
+STRB_HALF_MIN = PLL_STRB.half_min
+STRB_HALF_MAX = PLL_STRB.half_max
+assert PLL_STRB.field_bits == 8 * STRB_BYTES, "knob field width must match the payload bytes"
 
 # STATUS byte bit positions (mirror pll_command_api.sv).
 STATUS_LOCK_BIT = 0      # 1 = PLL locked
@@ -119,24 +136,26 @@ def rst_pll_cfg() -> int:
 # defaults in FIELDS, which mirror the silicon power-on state (PLL powered down,
 # pdown_*=1) and must stay in sync with pomelo_pll_wrap_cfg.yml.
 DEFAULT_CFG = {
-    "fb_clk_oen":      0b1,
-    "pll_clk_o_en":    0b0,
-    "clk_div_val":     4,
-    "clk_div_en":      0b1,
+    "fb_clk_oen":      0b1,      # ?
+    "pll_clk_o_en":    0b0,      # clk_o comes from the divider outside the PLL
+    "clk_div_val":     4,        # divider outside IP, divides frequency by 4+1
+    "clk_div_en":      0b1,      # enabled divider outside the PLL
     "pdown_PD":        0b0,      # PLL enabled
     "pdown_VCO":       0b0,      # PLL enabled
-    "set_current":     0b101,
-    "set_c1":          0b010,
-    "set_c2":          0b011,
-    "set_r1":          0b001,
-    "vco_tune_coarse": 0b1100,
-    "vco_current_min": 0b0010,
-    "vco_current_max": 0b1110,
-    "set_v_ctrl":      0b10,
-    "set_clk_out":     0b0,
-    "set_div_freq":    0b010,
-    "set_fb_mux":      0b01,
+    "set_current":     0b011,    # Icp = pll_iref_i (check)
+    "set_c1":          0b011,    # C1 = 20 pF (check)
+    "set_c2":          0b011,    # C2 = 500 fF (check)
+    "set_r1":          0b011,    # R1 = 5 kOhm (check)
+    "vco_tune_coarse": 0b1010,
+    "vco_current_min": 0b1100,
+    "vco_current_max": 0b1101,
+    "set_v_ctrl":      0b10,     # Debug mode, 00 for default and 11 for out pad
+    "set_clk_out":     0b0,      # PLL loop closed, 1 for CLK_EXT
+    "set_div_freq":    0b010,    # Ndiv = 4
+    "set_fb_mux":      0b00,     # Loop closed, 01 for loop broken and F_FB used, 
+                  # 10 for clock buffered to F_FB and loop closed
 }
+
 
 
 def default_cfg_word(**overrides) -> int:
@@ -144,6 +163,44 @@ def default_cfg_word(**overrides) -> int:
     cfg = dict(DEFAULT_CFG)
     cfg.update(overrides)
     return pack_pll_cfg(**cfg)
+
+PLL_BYPASS_CFG = DEFAULT_CFG.copy()
+PLL_BYPASS_CFG.update(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
+PD_DEBUG_CFG = DEFAULT_CFG.copy()
+PD_DEBUG_CFG.update(set_fb_mux=0b10, set_v_ctrl=0b10)
+PD_OFF_CFG = DEFAULT_CFG.copy()
+PD_OFF_CFG.update(pdown_PD=0b1, pdown_VCO=0b1, set_v_ctrl=0b10)
+VCO_CHARAC_CFG = DEFAULT_CFG.copy()
+VCO_CHARAC_CFG.update(pdown_PD=0b1, set_v_ctrl=0b11)
+SAFE_LOOP_CFG = DEFAULT_CFG.copy()
+SAFE_LOOP_CFG.update(set_current=0b000, set_c1=0b111, set_c2=0b111) # Min BW
+
+# Fref = 4 MHz
+CFG_32MHZ = DEFAULT_CFG.copy()
+CFG_32MHZ.update(set_div_freq=0b100, set_v_ctrl=0b00)
+CFG_64MHZ = DEFAULT_CFG.copy()
+CFG_64MHZ.update(set_div_freq=0b011, set_v_ctrl=0b00)
+CFG_128MHZ = DEFAULT_CFG.copy()
+CFG_128MHZ.update(set_div_freq=0b010, set_v_ctrl=0b00)
+CFG_256MHZ = DEFAULT_CFG.copy()
+CFG_256MHZ.update(set_div_freq=0b001, set_v_ctrl=0b00)
+
+def cfg_word(cfg, **overrides) -> int:
+    """Packed 47-bit config word from a dictionary of field values."""
+    cfg = dict(cfg)
+    cfg.update(overrides)
+    return pack_pll_cfg(**cfg)
+
+def calculate_div_factor(cfg) -> tuple:
+    """Calculation of total division factor given a configuration"""
+    chip_div_factor = 2**(cfg["set_div_freq"])
+    total_div_factor = chip_div_factor
+    if cfg["pll_clk_o_en"] == 0b0:
+        if cfg["clk_div_en"] == 0b0:
+            raise KeyError(f"Invalid configuration: divider path chosen but divider not enabled")
+        else:
+            total_div_factor = total_div_factor*2*(cfg["clk_div_val"] + 1)
+    return chip_div_factor, total_div_factor
 
 
 # ---------------------------------------------------------------------------
@@ -200,3 +257,26 @@ def cmd_status() -> List[int]:
 def cmd_writeback() -> List[int]:
     """Frame for WRITEBACK: header only (echoes 0xFF back; controller liveness)."""
     return [header(OP_WRITEBACK)]
+
+
+def strb_half_for(strb_hz, bus_clk_hz=BUS_CLK_HZ):
+    """Half-period in bus-clock cycles for a requested strobe rate, and what
+    you'll get.
+
+    Returns (half, actual_hz), clamped to the same window the hardware enforces.
+    The divider is integer, so the achieved rate is bus_clk_hz / (2*half) and
+    generally differs from the request.
+    """
+    if bus_clk_hz != BUS_CLK_HZ:
+        raise ValueError("bus_clk_hz is fixed by the bitstream; see clock_api")
+    return PLL_STRB.half_for(strb_hz)
+
+
+def cmd_config_strb(strb_half: int) -> List[int]:
+    """Frame for CONFIG_STRB: header + 3 little-endian bytes of half-period.
+
+    Takes effect on the next command. Out-of-range values are clamped by the
+    hardware, so the rate saturates rather than hanging the strobe engine.
+    """
+    PLL_STRB.check_half(strb_half)
+    return [header(OP_CONFIG_STRB)] + [(strb_half >> (8 * k)) & 0xFF for k in range(STRB_BYTES)]
