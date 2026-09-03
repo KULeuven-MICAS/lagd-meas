@@ -41,6 +41,7 @@ from sw.lib.pll_command_api import (
     PD_DEBUG_CFG,
     VCO_CHARAC_CFG,
     PD_OFF_CFG,
+    SAFE_LOOP_CFG,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
