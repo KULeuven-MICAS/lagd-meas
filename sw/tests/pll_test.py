@@ -29,7 +29,7 @@ import time
 
 from sw.lib.pll_driver import PllDriver
 from sw.lib.pll_command_api import (
-    calculate_div_factor, pack_pll_cfg, default_cfg_word, OP_WRITEBACK, STRB_HZ, CFG_BITS, header, 
+    calculate_div_factor, pack_pll_cfg, default_cfg_word, OP_WRITEBACK, STRB_HZ, CFG_BITS, header,
     DEFAULT_CFG, PLL_BYPASS_CFG, PD_DEBUG_CFG, VCO_CHARAC_CFG, SAFE_LOOP_CFG, PD_OFF_CFG
 )
 
@@ -134,18 +134,18 @@ def test_strb_config_silicon(rates=(1_000, 10_000, 100_000)):
 def start_load_config(cfg):
     """Start loading a configuration into the PLL."""
     open_ports()
-    
+
     if not test_writeback():
         return 1
-    
+
     # Tune the strobe rate, 1kHz
     pll.set_strb_hz(STRB_HZ)
-    
+
     # Put the PLL registers in a known state before configuring them.
     pll.reset()
     # Set the clock mux to the external reference
     pll.select_reference()
-    
+
     # Build and load a config
     #word = default_cfg_word(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
     word = pack_pll_cfg(**cfg)
@@ -157,7 +157,7 @@ def start_load_config(cfg):
     # Per-field overrides instead of the packed word:
     #   word = pll.load_default(vco_tune_coarse=0xA)
     #   word = pll.load_cfg(pdown_PD=0, pdown_VCO=0)   # reset defaults elsewhere
-    
+
     # READBACK the chip's shallow register out of the PLL's data_o (recirculating,
     # so it is non-destructive).
     readback = pll.readback()

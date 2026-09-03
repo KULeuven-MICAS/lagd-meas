@@ -152,7 +152,7 @@ DEFAULT_CFG = {
     "set_v_ctrl":      0b10,     # Debug mode, 00 for default and 11 for out pad
     "set_clk_out":     0b0,      # PLL loop closed, 1 for CLK_EXT
     "set_div_freq":    0b010,    # Ndiv = 4
-    "set_fb_mux":      0b00,     # Loop closed, 01 for loop broken and F_FB used, 
+    "set_fb_mux":      0b00,     # Loop closed, 01 for loop broken and F_FB used,
                   # 10 for clock buffered to F_FB and loop closed
 }
 
