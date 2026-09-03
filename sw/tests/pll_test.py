@@ -210,7 +210,7 @@ def ctrl_voltage_transient():
     start_load_config(DEFAULT_CFG)
     #start_load_config(SAFE_LOOP_CFG)
 
-def debug_pll(cfg):
+def start_pll(cfg):
     start_load_config(cfg)
 
     # Move the SoC onto the PLL
@@ -224,7 +224,7 @@ def debug_pll(cfg):
     return 0
 
 if __name__ == '__main__':
-    cfg = PD_DEBUG_CFG.copy()
-    cfg.update(pdown_VCO = 0b1, set_fb_mux = 0b11)
-    sys.exit(debug_pll(cfg))
-    #sys.exit(setup_pll_bypass())
+    cfg = DEFAULT_CFG.copy()
+    cfg.update(set_div_freq=0b100, set_v_ctrl=0b00)
+    sys.exit(start_pll(cfg))
+    #sys.exit(vco_characterization())

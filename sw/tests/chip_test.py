@@ -31,6 +31,8 @@ import sw.tests.pll_test as pll_test
 from sw.lib.chip_driver import ChipDriver
 from sw.lib.chip_command_api import WRITEBACK_FIFO, make_command
 
+from sw.lib.pll_command_api import CFG_32MHZ, CFG_64MHZ, CFG_128MHZ, CFG_256MHZ
+
 logger = logging.getLogger(__name__)
 
 # Device files for the chip write/read ports (cwp/crp).
@@ -105,9 +107,12 @@ def example_with_driver():
 def setup_chip(setup_pll=True, mem_test=False):
     # Set up PLL
     if setup_pll:
-        cfg = pll_test.DEFAULT_CFG.copy()
-        cfg.update(set_div_freq=0b001)
-        pll_test.debug_pll(cfg)
+        # Fref = 4 MHz to achieve specified clock frequency
+        cfg = CFG_32MHZ.copy()
+        # cfg = CFG_64MHZ.copy()
+        # cfg = CFG_128MHZ.copy()  
+        # cfg = CFG_256MHZ.copy()
+        pll_test.start_pll(cfg)
 
     # Set up the chip driver
     open_ports()

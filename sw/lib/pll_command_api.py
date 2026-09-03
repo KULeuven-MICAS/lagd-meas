@@ -157,6 +157,7 @@ DEFAULT_CFG = {
 }
 
 
+
 def default_cfg_word(**overrides) -> int:
     """Packed 47-bit default operating config (DEFAULT_CFG), with optional overrides."""
     cfg = dict(DEFAULT_CFG)
@@ -173,6 +174,16 @@ VCO_CHARAC_CFG = DEFAULT_CFG.copy()
 VCO_CHARAC_CFG.update(pdown_PD=0b1, set_v_ctrl=0b11)
 SAFE_LOOP_CFG = DEFAULT_CFG.copy()
 SAFE_LOOP_CFG.update(set_current=0b000, set_c1=0b111, set_c2=0b111) # Min BW
+
+# Fref = 4 MHz
+CFG_32MHZ = DEFAULT_CFG.copy()
+CFG_32MHZ.update(set_div_freq=0b100, set_v_ctrl=0b00)
+CFG_64MHZ = DEFAULT_CFG.copy()
+CFG_64MHZ.update(set_div_freq=0b011, set_v_ctrl=0b00)
+CFG_128MHZ = DEFAULT_CFG.copy()
+CFG_128MHZ.update(set_div_freq=0b010, set_v_ctrl=0b00)
+CFG_256MHZ = DEFAULT_CFG.copy()
+CFG_256MHZ.update(set_div_freq=0b001, set_v_ctrl=0b00)
 
 def cfg_word(cfg, **overrides) -> int:
     """Packed 47-bit config word from a dictionary of field values."""
