@@ -104,14 +104,23 @@ def example_with_driver():
     return readback
 
 
-def setup_chip(setup_pll=True, mem_test=False):
+
+def setup_chip(setup_pll: bool=True, pll_freq: int=32, mem_test: bool=False):
     # Set up PLL
     if setup_pll:
+        assert pll_freq in [32, 64, 128, 256], "pll_freq must be one of [32, 64, 128, 256]"
+        # Set the PLL configuration based on the desired frequency
         # Fref = 4 MHz to achieve specified clock frequency
-        cfg = CFG_32MHZ.copy()
-        # cfg = CFG_64MHZ.copy()
-        # cfg = CFG_128MHZ.copy()  
-        # cfg = CFG_256MHZ.copy()
+        if pll_freq == 32:
+            cfg = CFG_32MHZ.copy()
+        elif pll_freq == 64:
+            cfg = CFG_64MHZ.copy()
+        elif pll_freq == 128:
+            cfg = CFG_128MHZ.copy()
+        elif pll_freq == 256:
+            cfg = CFG_256MHZ.copy()
+        else:
+            raise ValueError("Invalid pll_freq value. Must be one of [32, 64, 128, 256].")
         pll_test.start_pll(cfg)
 
     # Set up the chip driver
