@@ -105,7 +105,9 @@ def example_with_driver():
 def setup_chip(setup_pll=True, mem_test=False):
     # Set up PLL
     if setup_pll:
-        pll_test.setup_pll()
+        cfg = pll_test.DEFAULT_CFG.copy()
+        cfg.update(set_div_freq=0b001)
+        pll_test.debug_pll(cfg)
 
     # Set up the chip driver
     open_ports()
