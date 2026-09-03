@@ -197,7 +197,7 @@ def calculate_div_factor(cfg) -> tuple:
     total_div_factor = chip_div_factor
     if cfg["pll_clk_o_en"] == 0b0:
         if cfg["clk_div_en"] == 0b0:
-            raise KeyError(f"Invalid configuration: divider path chosen but divider not enabled")
+            raise KeyError("Invalid configuration: divider path chosen but divider not enabled")
         else:
             total_div_factor = total_div_factor*2*(cfg["clk_div_val"] + 1)
     return chip_div_factor, total_div_factor

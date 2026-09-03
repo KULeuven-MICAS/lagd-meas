@@ -207,7 +207,7 @@ def debug_phase_detector():
 
 def ctrl_voltage_transient():
     """Transient response of the control voltage node."""
-    start_load_config(DEFAULT_CFG)
+    start_load_config(SAFE_LOOP_CFG)
 
 def start_pll(cfg):
     start_load_config(cfg)
