@@ -110,7 +110,8 @@ def example_with_driver():
     return readback
 
 
-def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32, mem_test: bool = False, bypass_pll: bool = False):
+def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32, 
+                mem_test: bool = False, bypass_pll: bool = False):
     # Set up PLL
     if setup_pll:
         if bypass_pll:
