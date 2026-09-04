@@ -37,12 +37,9 @@ from sw.lib.pll_command_api import (
     CFG_BITS,
     header,
     DEFAULT_CFG,
-    PLL_BYPASS_CFG,
-    PD_DEBUG_CFG,
-    VCO_CHARAC_CFG,
-    PD_OFF_CFG,
-    SAFE_LOOP_CFG,
 )
+
+from sw.lib.pll_settings import *
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
@@ -258,7 +255,7 @@ def start_pll(cfg):
 
 
 if __name__ == "__main__":
-    cfg = DEFAULT_CFG.copy()
+    cfg = CFG_REF8_OUT512MHZ.copy()
     # Safer default config
-    cfg.update(set_div_freq=0b010, set_v_ctrl=0b00, vco_current_min=0b0011, vco_current_max=0b0000, vco_tune_coarse=0b0011)
+    
     sys.exit(start_pll(cfg))

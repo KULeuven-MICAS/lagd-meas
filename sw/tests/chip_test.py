@@ -32,7 +32,7 @@ import sw.tests.pll_test as pll_test
 from sw.lib.chip_driver import ChipDriver
 from sw.lib.chip_command_api import WRITEBACK_FIFO, make_command
 
-from sw.lib.pll_command_api import CFG_32MHZ, CFG_64MHZ, CFG_128MHZ, CFG_256MHZ, FREF_20M_CFG
+from sw.lib.pll_settings import *
 
 logger = logging.getLogger(__name__)
 
@@ -110,24 +110,43 @@ def example_with_driver():
     return readback
 
 
-def setup_chip(setup_pll: bool = True, pll_freq: int = 32, mem_test: bool = False):
+def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32, mem_test: bool = False):
     # Set up PLL
     if setup_pll:
-        assert pll_freq in [32, 64, 128, 256, 640], "pll_freq must be one of [32, 64, 128, 256]"
-        # Set the PLL configuration based on the desired frequency
-        # Fref = 4 MHz to achieve specified clock frequency
-        if pll_freq == 32:
-            cfg = CFG_32MHZ.copy()
-        elif pll_freq == 64:
-            cfg = CFG_64MHZ.copy()
-        elif pll_freq == 128:
-            cfg = CFG_128MHZ.copy()
-        elif pll_freq == 256:
-            cfg = CFG_256MHZ.copy()
-        elif pll_freq == 640:
-            cfg = FREF_20M_CFG.copy() #FREF = 20MHz
+        assert pll_freq in [8, 16, 32, 64, 128, 256, 512], "pll_freq must be one of [32, 64, 128, 256]"
+        assert ref_freq in [4, 8], "ref_freq must be one of [4, 8, 20]"
+
+        if ref_freq == 4:
+            if pll_freq == 32:
+                cfg = CFG_REF4_OUT32MHZ.copy()
+            elif pll_freq == 64:
+                cfg = CFG_REF4_OUT64MHZ.copy()
+            elif pll_freq == 128:
+                cfg = CFG_REF4_OUT128MHZ.copy()
+            elif pll_freq == 256:
+                cfg = CFG_REF4_OUT256MHZ.copy()
+            else:
+                raise ValueError("this frequency cannot be made with the selected reference clock")
+        elif ref_freq == 8:
+            if pll_freq == 8:
+                cfg = CFG_REF8_OUT8MHZ.copy()
+            elif pll_freq == 16:
+                cfg = CFG_REF8_OUT16MHZ.copy()
+            elif pll_freq == 32:
+                cfg = CFG_REF8_OUT32MHZ.copy()
+            elif pll_freq == 64:
+                cfg = CFG_REF8_OUT64MHZ.copy()
+            elif pll_freq == 128:
+                cfg = CFG_REF8_OUT128MHZ.copy()
+            elif pll_freq == 256:
+                cfg = CFG_REF8_OUT256MHZ.copy()
+            elif pll_freq == 512:
+                cfg = CFG_REF8_OUT512MHZ.copy()
+            else:
+                raise ValueError("this frequency cannot be made with the selected reference clock")
         else:
-            raise ValueError("Invalid pll_freq value. Must be one of [32, 64, 128, 256].")
+            raise ValueError("this reference clock is not supported (yet)")
+
         pll_test.start_pll(cfg)
 
     # Set up the chip driver
@@ -166,4 +185,4 @@ if __name__ == "__main__":
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
-    sys.exit(setup_chip(pll_freq=256))
+    sys.exit(setup_chip(ref_freq=8, pll_freq=512))

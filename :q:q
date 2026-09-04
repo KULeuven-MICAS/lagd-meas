@@ -165,6 +165,39 @@ def default_cfg_word(**overrides) -> int:
     return pack_pll_cfg(**cfg)
 
 
+PLL_BYPASS_CFG = DEFAULT_CFG.copy()
+PLL_BYPASS_CFG.update(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
+PD_DEBUG_CFG = DEFAULT_CFG.copy()
+PD_DEBUG_CFG.update(set_fb_mux=0b10, set_v_ctrl=0b10)
+PD_OFF_CFG = DEFAULT_CFG.copy()
+PD_OFF_CFG.update(pdown_PD=0b1, pdown_VCO=0b1, set_v_ctrl=0b10)
+VCO_CHARAC_CFG = DEFAULT_CFG.copy()
+VCO_CHARAC_CFG.update(pdown_PD=0b1, set_v_ctrl=0b11)
+SAFE_LOOP_CFG = DEFAULT_CFG.copy()
+SAFE_LOOP_CFG.update(set_current=0b001, set_c1=0b111, set_c2=0b111, set_r1=0b011, set_v_ctrl=0b00)  # Min BW
+COOKED_CFG = SAFE_LOOP_CFG.copy()
+COOKED_CFG.update(set_v_ctrl=0b00, vco_current_min=0b1000, vco_current_max=0b1100, vco_tune_coarse=0b1001)
+FREF_20M_CFG = DEFAULT_CFG.copy()
+FREF_20M_CFG.update(
+    clk_div_val=49,
+    set_div_freq=0b010,
+    set_v_ctrl=0b00,
+    vco_current_min=0b0011,
+    vco_current_max=0b0000,
+    vco_tune_coarse=0b0011,
+)
+
+# Fref = 4 MHz
+CFG_REF4_OUT32MHZ = DEFAULT_CFG.copy()
+CFG_REF4_OUT32MHZ.update(set_div_freq=0b100, set_v_ctrl=0b00)
+CFG_REF4_OUT64MHZ = DEFAULT_CFG.copy()
+CFG_REF4_OUT64MHZ.update(set_div_freq=0b011, set_v_ctrl=0b00)
+CFG_REF4_OUT128MHZ = DEFAULT_CFG.copy()
+CFG_REF4_OUT128MHZ.update(set_div_freq=0b010, set_v_ctrl=0b00)
+CFG_REF4_OUT256MHZ = DEFAULT_CFG.copy()
+CFG_REF4_OUT256MHZ.update(set_div_freq=0b001, set_v_ctrl=0b00)
+
+
 def cfg_word(cfg, **overrides) -> int:
     """Packed 47-bit config word from a dictionary of field values."""
     cfg = dict(cfg)
