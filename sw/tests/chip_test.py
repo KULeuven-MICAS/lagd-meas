@@ -110,42 +110,47 @@ def example_with_driver():
     return readback
 
 
-def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32, mem_test: bool = False):
+def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32, mem_test: bool = False, bypass_pll: bool = False):
     # Set up PLL
     if setup_pll:
-        assert pll_freq in [8, 16, 32, 64, 128, 256, 512], "pll_freq must be one of [32, 64, 128, 256]"
-        assert ref_freq in [4, 8], "ref_freq must be one of [4, 8, 20]"
-
-        if ref_freq == 4:
-            if pll_freq == 32:
-                cfg = CFG_REF4_OUT32MHZ.copy()
-            elif pll_freq == 64:
-                cfg = CFG_REF4_OUT64MHZ.copy()
-            elif pll_freq == 128:
-                cfg = CFG_REF4_OUT128MHZ.copy()
-            elif pll_freq == 256:
-                cfg = CFG_REF4_OUT256MHZ.copy()
-            else:
-                raise ValueError("this frequency cannot be made with the selected reference clock")
-        elif ref_freq == 8:
-            if pll_freq == 8:
-                cfg = CFG_REF8_OUT8MHZ.copy()
-            elif pll_freq == 16:
-                cfg = CFG_REF8_OUT16MHZ.copy()
-            elif pll_freq == 32:
-                cfg = CFG_REF8_OUT32MHZ.copy()
-            elif pll_freq == 64:
-                cfg = CFG_REF8_OUT64MHZ.copy()
-            elif pll_freq == 128:
-                cfg = CFG_REF8_OUT128MHZ.copy()
-            elif pll_freq == 256:
-                cfg = CFG_REF8_OUT256MHZ.copy()
-            elif pll_freq == 512:
-                cfg = CFG_REF8_OUT512MHZ.copy()
-            else:
-                raise ValueError("this frequency cannot be made with the selected reference clock")
+        if bypass_pll:
+            # Bypass the PLL and use the reference clock directly
+            cfg = PLL_BYPASS_CFG.copy()
         else:
-            raise ValueError("this reference clock is not supported (yet)")
+            # Set up the PLL
+            assert pll_freq in [8, 16, 32, 64, 128, 256, 512], "pll_freq must be one of [32, 64, 128, 256]"
+            assert ref_freq in [4, 8], "ref_freq must be one of [4, 8, 20]"
+
+            if ref_freq == 4:
+                if pll_freq == 32:
+                    cfg = CFG_REF4_OUT32MHZ.copy()
+                elif pll_freq == 64:
+                    cfg = CFG_REF4_OUT64MHZ.copy()
+                elif pll_freq == 128:
+                    cfg = CFG_REF4_OUT128MHZ.copy()
+                elif pll_freq == 256:
+                    cfg = CFG_REF4_OUT256MHZ.copy()
+                else:
+                    raise ValueError("this frequency cannot be made with the selected reference clock")
+            elif ref_freq == 8:
+                if pll_freq == 8:
+                    cfg = CFG_REF8_OUT8MHZ.copy()
+                elif pll_freq == 16:
+                    cfg = CFG_REF8_OUT16MHZ.copy()
+                elif pll_freq == 32:
+                    cfg = CFG_REF8_OUT32MHZ.copy()
+                elif pll_freq == 64:
+                    cfg = CFG_REF8_OUT64MHZ.copy()
+                elif pll_freq == 128:
+                    cfg = CFG_REF8_OUT128MHZ.copy()
+                elif pll_freq == 256:
+                    cfg = CFG_REF8_OUT256MHZ.copy()
+                elif pll_freq == 512:
+                    cfg = CFG_REF8_OUT512MHZ.copy()
+                else:
+                    raise ValueError("this frequency cannot be made with the selected reference clock")
+            else:
+                raise ValueError("this reference clock is not supported (yet)")
 
         pll_test.start_pll(cfg)
 
@@ -185,4 +190,4 @@ if __name__ == "__main__":
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
-    sys.exit(setup_chip(ref_freq=8, pll_freq=512))
+    sys.exit(setup_chip(ref_freq=8, pll_freq=512, bypass_pll=True))  # exit code 0 = success, 1 = failure
