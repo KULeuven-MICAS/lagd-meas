@@ -255,7 +255,6 @@ def start_pll(cfg):
 
 
 if __name__ == "__main__":
-    cfg = CFG_REF8_OUT512MHZ.copy()
+    cfg = CFG_REF4_OUT128MHZ.copy()
     # Safer default config
-    
     sys.exit(start_pll(cfg))

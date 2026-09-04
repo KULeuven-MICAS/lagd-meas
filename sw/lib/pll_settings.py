@@ -34,80 +34,72 @@ FREF_20M_CFG.update(
 )
 
 # Fref = 4 MHz
-CFG_REF4_OUT32MHZ = DEFAULT_CFG.copy()
-CFG_REF4_OUT32MHZ.update(clk_div_val=49, set_div_freq=0b100, set_v_ctrl=0b00)
-CFG_REF4_OUT64MHZ = DEFAULT_CFG.copy()
-CFG_REF4_OUT64MHZ.update(clk_div_val=49, set_div_freq=0b011, set_v_ctrl=0b00)
-CFG_REF4_OUT128MHZ = DEFAULT_CFG.copy()
-CFG_REF4_OUT128MHZ.update(clk_div_val=49, set_div_freq=0b010, set_v_ctrl=0b00)
-CFG_REF4_OUT256MHZ = DEFAULT_CFG.copy()
-CFG_REF4_OUT256MHZ.update(clk_div_val=49, set_div_freq=0b001, set_v_ctrl=0b00)
+# Reference on sample 3 tested 3.2MHz to 5 MHz
+CFG_REF4 = DEFAULT_CFG.copy()
+CFG_REF4.update(
+    clk_div_val=49,
+    set_v_ctrl=0b00,
+    vco_tune_coarse=0b1111,
+    vco_current_max=0b1100,
+    vco_current_min=0b1011,
+)
+
+CFG_REF4_OUT32MHZ = CFG_REF4.copy()
+CFG_REF4_OUT32MHZ.update(
+    set_div_freq=0b100,
+)
+CFG_REF4_OUT64MHZ = CFG_REF4.copy()
+CFG_REF4_OUT64MHZ.update(
+    set_div_freq=0b011,
+)
+CFG_REF4_OUT128MHZ = CFG_REF4.copy()
+CFG_REF4_OUT128MHZ.update(
+    set_div_freq=0b010,
+)
+CFG_REF4_OUT256MHZ = CFG_REF4.copy()
+CFG_REF4_OUT256MHZ.update(
+    set_div_freq=0b001,
+)
 
 # Fref = 8 MHz, VCO out is 8*128 = 1024 MHz
-# 6.8 to 9.2 MHz for sample 3
-CFG_REF8_OUT8MHZ = DEFAULT_CFG.copy()
+# 7 to 9 MHz for sample 3
+CFG_REF8 = DEFAULT_CFG.copy()
+CFG_REF8.update(
+    clk_div_val=49,
+    set_v_ctrl=0b00,
+    vco_tune_coarse=0b1000,
+    vco_current_max=0b0000,
+    vco_current_min=0b1100,
+)
+
+CFG_REF8_OUT8MHZ = CFG_REF8.copy()
 CFG_REF8_OUT8MHZ.update(
-    clk_div_val=49,
     set_div_freq=0b111,
-    set_v_ctrl=0b00,
-    vco_tune_coarse=0b1000,
-    vco_current_max=0b0000,
-    vco_current_min=0b1100,
 )
-CFG_REF8_OUT16MHZ = DEFAULT_CFG.copy()
+CFG_REF8_OUT16MHZ = CFG_REF8.copy()
 CFG_REF8_OUT16MHZ.update(
-    clk_div_val=49,
     set_div_freq=0b110,
-    set_v_ctrl=0b00,
-    vco_tune_coarse=0b1000,
-    vco_current_max=0b0000,
-    vco_current_min=0b1100,
 )
-CFG_REF8_OUT32MHZ = DEFAULT_CFG.copy()
+CFG_REF8_OUT32MHZ = CFG_REF8.copy()
 CFG_REF8_OUT32MHZ.update(
-    clk_div_val=49,
     set_div_freq=0b101,
-    set_v_ctrl=0b00,
-    vco_tune_coarse=0b1000,
-    vco_current_max=0b0000,
-    vco_current_min=0b1100,
 )
-CFG_REF8_OUT64MHZ = DEFAULT_CFG.copy()
+CFG_REF8_OUT64MHZ = CFG_REF8.copy()
 CFG_REF8_OUT64MHZ.update(
-    clk_div_val=49,
     set_div_freq=0b100,
-    set_v_ctrl=0b00,
-    vco_tune_coarse=0b1000,
-    vco_current_max=0b0000,
-    vco_current_min=0b1100,
 )
-CFG_REF8_OUT128MHZ = DEFAULT_CFG.copy()
+CFG_REF8_OUT128MHZ = CFG_REF8.copy()
 CFG_REF8_OUT128MHZ.update(
-    clk_div_val=49,
     set_div_freq=0b011,
-    set_v_ctrl=0b00,
-    vco_tune_coarse=0b1000,
-    vco_current_max=0b0000,
-    vco_current_min=0b1100,
 )
-CFG_REF8_OUT256MHZ = DEFAULT_CFG.copy()
+CFG_REF8_OUT256MHZ = CFG_REF8.copy()
 CFG_REF8_OUT256MHZ.update(
-    clk_div_val=49,
     set_div_freq=0b010,
-    set_v_ctrl=0b00,
-    vco_tune_coarse=0b1000,
-    vco_current_max=0b0000,
-    vco_current_min=0b1100,
 )
 # We pushed this one with ref 9.1 output 580MHz the uart test succeeded
-CFG_REF8_OUT512MHZ = DEFAULT_CFG.copy()
+CFG_REF8_OUT512MHZ = CFG_REF8.copy()
 CFG_REF8_OUT512MHZ.update(
-    clk_div_val=49,
     set_div_freq=0b001,
-    set_v_ctrl=0b00,
-    vco_tune_coarse=0b1000,
-    vco_current_max=0b0000,
-    vco_current_min=0b1100,
 )
 
 
