@@ -5,8 +5,6 @@
 # Author: Willem Vandesteene
 # Goal: Collect all settings for PLL in file for easy import
 
-from collections import namedtuple
-from typing import Dict, List
 
 from sw.lib.pll_command_api import DEFAULT_CFG
 
