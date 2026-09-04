@@ -46,33 +46,33 @@ from sw.lib import clock_api
 from sw.lib.clock_api import PLL_STRB
 
 # Handshake marker and opcodes (mirror pll_command_api.sv).
-CMD_MARKER        = 0xF
-OP_LOAD           = 0x0  # shift 47 bits + commit
-OP_LOAD_LOOPBACK  = 0x1  # LOAD + echo the 6 payload bytes
-OP_CLK_SEL        = 0x2  # set clk_sel from 1 payload byte
-OP_RESET          = 0x3  # pulse both strobes (reset registers)
-OP_READBACK       = 0x4  # scan shallow register out of data_o -> 6 bytes
-OP_STATUS         = 0x5  # return 1 status byte (bit0 = pll_lock)
-OP_CONFIG_STRB    = 0x6  # set the strobe half-period (3 little-endian bytes)
-OP_WRITEBACK      = 0xF  # echo header (no PLL action)
+CMD_MARKER = 0xF
+OP_LOAD = 0x0  # shift 47 bits + commit
+OP_LOAD_LOOPBACK = 0x1  # LOAD + echo the 6 payload bytes
+OP_CLK_SEL = 0x2  # set clk_sel from 1 payload byte
+OP_RESET = 0x3  # pulse both strobes (reset registers)
+OP_READBACK = 0x4  # scan shallow register out of data_o -> 6 bytes
+OP_STATUS = 0x5  # return 1 status byte (bit0 = pll_lock)
+OP_CONFIG_STRB = 0x6  # set the strobe half-period (3 little-endian bytes)
+OP_WRITEBACK = 0xF  # echo header (no PLL action)
 
-CFG_BITS  = 47
+CFG_BITS = 47
 CFG_BYTES = 6
 
 # CONFIG_STRB payload: a 24-bit half-period, little-endian.
 STRB_BYTES = 3
 
-BUS_CLK_HZ  = clock_api.BUS_CLK_HZ   # xillydemo.v: CLK_HZ
-STRB_HZ     = PLL_STRB.default_hz    # power-on default
-STRB_MAX_HZ = PLL_STRB.max_hz        # hardware clamp: fastest selectable
-STRB_MIN_HZ = PLL_STRB.min_hz        # hardware clamp: slowest selectable
+BUS_CLK_HZ = clock_api.BUS_CLK_HZ  # xillydemo.v: CLK_HZ
+STRB_HZ = PLL_STRB.default_hz  # power-on default
+STRB_MAX_HZ = PLL_STRB.max_hz  # hardware clamp: fastest selectable
+STRB_MIN_HZ = PLL_STRB.min_hz  # hardware clamp: slowest selectable
 
 STRB_HALF_MIN = PLL_STRB.half_min
 STRB_HALF_MAX = PLL_STRB.half_max
 assert PLL_STRB.field_bits == 8 * STRB_BYTES, "knob field width must match the payload bytes"
 
 # STATUS byte bit positions (mirror pll_command_api.sv).
-STATUS_LOCK_BIT = 0      # 1 = PLL locked
+STATUS_LOCK_BIT = 0  # 1 = PLL locked
 
 
 # ---------------------------------------------------------------------------
@@ -83,24 +83,25 @@ Field = namedtuple("Field", ["name", "lsb", "width", "default", "desc"])
 
 
 FIELDS = [
-    Field("fb_clk_oen",       0,  1, 0,      "Feedback clock output enable"),
-    Field("pll_clk_o_en",     1,  1, 0,      "PLL clock output enable"),
-    Field("clk_div_val",      2, 10, 0x3FF,  "Output clock division value"),
-    Field("clk_div_en",      12,  1, 0,      "Clock division enable"),
-    Field("pdown_PD",        13,  1, 1,      "Power down phase detector (active high)"),
-    Field("pdown_VCO",       14,  1, 1,      "Power down VCO (active high)"),
-    Field("set_current",     15,  3, 0b100,  "Charge pump current level"),
-    Field("set_c1",          18,  3, 0b100,  "Loop filter C1"),
-    Field("set_c2",          21,  3, 0b100,  "Loop filter C2"),
-    Field("set_r1",          24,  3, 0b100,  "Loop filter Rp"),
-    Field("vco_tune_coarse", 27,  4, 0b1000, "Oscillator inverter chain length"),
-    Field("vco_current_min", 31,  4, 0b1000, "VCO minimum current"),
-    Field("vco_current_max", 35,  4, 0b1000, "VCO maximum current"),
-    Field("set_v_ctrl",      39,  2, 0b10,   "VCO control voltage source"),
-    Field("set_clk_out",     41,  1, 0,      "Output clock source (0:PLL, 1:CLK_EXT)"),
-    Field("set_div_freq",    42,  3, 0b100,  "Frequency division ratio"),
-    Field("set_fb_mux",      45,  2, 0b00,   "Feedback clock source"),
+    Field("fb_clk_oen", 0, 1, 0, "Feedback clock output enable"),
+    Field("pll_clk_o_en", 1, 1, 0, "PLL clock output enable"),
+    Field("clk_div_val", 2, 10, 0x3FF, "Output clock division value"),
+    Field("clk_div_en", 12, 1, 0, "Clock division enable"),
+    Field("pdown_PD", 13, 1, 1, "Power down phase detector (active high)"),
+    Field("pdown_VCO", 14, 1, 1, "Power down VCO (active high)"),
+    Field("set_current", 15, 3, 0b100, "Charge pump current level"),
+    Field("set_c1", 18, 3, 0b100, "Loop filter C1"),
+    Field("set_c2", 21, 3, 0b100, "Loop filter C2"),
+    Field("set_r1", 24, 3, 0b100, "Loop filter Rp"),
+    Field("vco_tune_coarse", 27, 4, 0b1000, "Oscillator inverter chain length"),
+    Field("vco_current_min", 31, 4, 0b1000, "VCO minimum current"),
+    Field("vco_current_max", 35, 4, 0b1000, "VCO maximum current"),
+    Field("set_v_ctrl", 39, 2, 0b10, "VCO control voltage source"),
+    Field("set_clk_out", 41, 1, 0, "Output clock source (0:PLL, 1:CLK_EXT)"),
+    Field("set_div_freq", 42, 3, 0b100, "Frequency division ratio"),
+    Field("set_fb_mux", 45, 2, 0b00, "Feedback clock source"),
 ]
+
 
 def pack_pll_cfg(**overrides) -> int:
     """Build the 47-bit config word from per-field values (defaults otherwise).
@@ -136,23 +137,24 @@ def rst_pll_cfg() -> int:
 # defaults in FIELDS, which mirror the silicon power-on state (PLL powered down,
 # pdown_*=1) and must stay in sync with pomelo_pll_wrap_cfg.yml.
 DEFAULT_CFG = {
-    "fb_clk_oen":      0b1,
-    "pll_clk_o_en":    0b0,
-    "clk_div_val":     4,
-    "clk_div_en":      0b1,
-    "pdown_PD":        0b0,      # PLL enabled
-    "pdown_VCO":       0b0,      # PLL enabled
-    "set_current":     0b101,
-    "set_c1":          0b010,
-    "set_c2":          0b011,
-    "set_r1":          0b001,
-    "vco_tune_coarse": 0b1100,
-    "vco_current_min": 0b0010,
-    "vco_current_max": 0b1110,
-    "set_v_ctrl":      0b10,
-    "set_clk_out":     0b0,
-    "set_div_freq":    0b010,
-    "set_fb_mux":      0b01,
+    "fb_clk_oen": 0b1,  # ?
+    "pll_clk_o_en": 0b0,  # clk_o comes from the divider outside the PLL
+    "clk_div_val": 4,  # divider outside IP, divides frequency by 4+1
+    "clk_div_en": 0b1,  # enabled divider outside the PLL
+    "pdown_PD": 0b0,  # PLL enabled
+    "pdown_VCO": 0b0,  # PLL enabled
+    "set_current": 0b011,  # Icp = pll_iref_i (check)
+    "set_c1": 0b011,  # C1 = 20 pF (check)
+    "set_c2": 0b011,  # C2 = 500 fF (check)
+    "set_r1": 0b011,  # R1 = 5 kOhm (check)
+    "vco_tune_coarse": 0b1010,
+    "vco_current_min": 0b1100,
+    "vco_current_max": 0b1101,
+    "set_v_ctrl": 0b10,  # Debug mode, 00 for default and 11 for out pad
+    "set_clk_out": 0b0,  # PLL loop closed, 1 for CLK_EXT
+    "set_div_freq": 0b010,  # Ndiv = 4
+    "set_fb_mux": 0b00,  # Loop closed, 01 for loop broken and F_FB used,
+    # 10 for clock buffered to F_FB and loop closed
 }
 
 
@@ -161,6 +163,25 @@ def default_cfg_word(**overrides) -> int:
     cfg = dict(DEFAULT_CFG)
     cfg.update(overrides)
     return pack_pll_cfg(**cfg)
+
+
+def cfg_word(cfg, **overrides) -> int:
+    """Packed 47-bit config word from a dictionary of field values."""
+    cfg = dict(cfg)
+    cfg.update(overrides)
+    return pack_pll_cfg(**cfg)
+
+
+def calculate_div_factor(cfg) -> tuple:
+    """Calculation of total division factor given a configuration"""
+    chip_div_factor = 2 ** (cfg["set_div_freq"])
+    total_div_factor = chip_div_factor
+    if cfg["pll_clk_o_en"] == 0b0:
+        if cfg["clk_div_en"] == 0b0:
+            raise KeyError("Invalid configuration: divider path chosen but divider not enabled")
+        else:
+            total_div_factor = total_div_factor * 2 * (cfg["clk_div_val"] + 1)
+    return chip_div_factor, total_div_factor
 
 
 # ---------------------------------------------------------------------------
