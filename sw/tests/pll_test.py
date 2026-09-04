@@ -36,7 +36,6 @@ from sw.lib.pll_command_api import (
     STRB_HZ,
     CFG_BITS,
     header,
-    DEFAULT_CFG,
 )
 
 from sw.lib.pll_settings import *
