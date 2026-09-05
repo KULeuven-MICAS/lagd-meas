@@ -191,4 +191,4 @@ if __name__ == "__main__":
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
-    sys.exit(setup_chip(ref_freq=8, pll_freq=512, bypass_pll=True))  # exit code 0 = success, 1 = failure
+    sys.exit(setup_chip(ref_freq=8, pll_freq=512, bypass_pll=False))  # exit code 0 = success, 1 = failure
