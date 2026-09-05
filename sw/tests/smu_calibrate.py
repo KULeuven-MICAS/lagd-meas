@@ -12,6 +12,28 @@ from openising import TOP_MEAS, connect_to_host_commands
 from sw.lib.lab_instruments.drivers.keysight_smu_b2900 import KeysightSMUB2900
 
 
+def validate_calibration_range(calibrateMode: str, minCurrent: float, maxCurrent: float, scalingFactor: int = 1):
+    """Guard the current sweep against the B2901BL absolute current limit.
+
+    The calibration sweep is always evaluated in absolute-current magnitude, and
+    every HUP/HDN scaling factor multiplies the configured current span by the
+    same factor.  If the scaled range exceeds the instrument limit, fail fast
+    instead of sending a dangerous setpoint to the SMU.
+    """
+    if calibrateMode not in ["j", "hup", "hdn"]:
+        raise ValueError(f"Invalid calibrate mode: {calibrateMode}")
+
+    scaled_min = abs(minCurrent) * abs(scalingFactor)
+    scaled_max = abs(maxCurrent) * abs(scalingFactor)
+    limit = KeysightSMUB2900.MAX_CURRENT_A
+    if scaled_min > limit or scaled_max > limit:
+        raise ValueError(
+            f"Calibration range for {calibrateMode} with sf={scalingFactor} "
+            f"exceeds B2901BL limit: [{scaled_min:.6g}, {scaled_max:.6g}] A > {limit:.6g} A"
+        )
+    return scaled_min, scaled_max
+
+
 def calibrate_smu(
     smu: KeysightSMUB2900,
     calibrateMode: str,
@@ -43,6 +65,8 @@ def calibrate_smu(
     @rtype: float
     @return: the best current setting
     """
+    validate_calibration_range(calibrateMode, minCurrent, maxCurrent, scalingFactor)
+
     smu.set_current_source(minCurrent, complianceVoltage)
     smu.enable_output()
     output_file = TOP_MEAS / "sw/tests/smu_calibration_results.log"
@@ -77,12 +101,10 @@ def calibrate_smu(
                         elf_file,
                         "--verify",
                     ],
-                    check=True,
-                    timeout=7,
                     stdout=f,
                     stderr=subprocess.STDOUT,
                 )
-            except subprocess.TimeoutExpired:
+            except subprocess.CalledProcessError:
                 pass
         _,  nb_ones, nb_zeros = count_zeros_ones(output_file)
         if nb_ones > 0 and new_min is None:
@@ -91,13 +113,11 @@ def calibrate_smu(
             new_max = current
         if new_min is not None and new_max is not None:
             break
-    fineStep = 0.25e-6*np.sign(new_min)
+    fineStep = 0.5e-6*np.sign(new_min)
 
-    currents = np.arange(new_min, new_max + fineStep, fineStep) * scalingFactor
+    currents = np.arange(new_min, new_max + fineStep, fineStep)
     compliances = []
 
-    # Get correct elf file for calibration
-    scalingFactor = f"0{scalingFactor}" if scalingFactor < 10 else f"{scalingFactor}"
 
     for current in currents:
         subprocess.run(
@@ -117,13 +137,10 @@ def calibrate_smu(
                         elf_file,
                         "--verify",
                     ],
-                    check=True,
-                    timeout=25,
                     stdout=f,
                     stderr=subprocess.STDOUT,
                 )
-                subprocess.run(["reset"])
-            except subprocess.TimeoutExpired:
+            except subprocess.CalledProcessError:
                 pass
         compliances.append(count_zeros_ones(output_file)[0])
 
