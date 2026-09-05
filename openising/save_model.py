@@ -55,19 +55,41 @@ def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
             quantized_model: IsingModel = ans.MIMO[int(i/2)].quantized_model
         else:
             quantized_model: IsingModel = ans.quantized_model
-        quantized_model_J = np.zeros_like(quantized_model.J, dtype="<U4")
-        quantized_model_h = np.zeros_like(quantized_model.h, dtype="<U4")
-        for j in range(quantized_model.num_variables):
-            quantized_model_h[j] = np.binary_repr(int(quantized_model.h[j]), width=4)
-            for k in range(j, quantized_model.num_variables):
-                quantized_model_J[j, k] = np.binary_repr(int(quantized_model.J[j, k]), width=4)
-                quantized_model_J[k, j] = quantized_model_J[j, k]
+        quantized_model_J = np.zeros((256,256), dtype="<U4")
+        quantized_model_h = np.zeros((256,), dtype="<U4")
+        quantized_model_J_galena = np.zeros((256,256), dtype="<U4")
+        quantized_model_h_galena = np.zeros((256,), dtype="<U4")
+        for j in range(256):
+            if j >= quantized_model.num_variables:
+                quantized_model_h[j] = np.binary_repr(0, width=4)
+                quantized_model_h_galena[j] = np.binary_repr(0, width=4)
+            else:
+                quantized_model_h[j] = np.binary_repr(int(quantized_model.h[j]), width=4)
+                quantized_model_h_galena[j] = np.binary_repr(int(-quantized_model.h[j]), width=4)
+            for k in range(j, 256):
+                if j >= quantized_model.num_variables or k >= quantized_model.num_variables:
+                    quantized_model_J[j, k] = np.binary_repr(0, width=4)
+                    quantized_model_J[k, j] = quantized_model_J[j, k]
+                    quantized_model_J_galena[j, k] = np.binary_repr(0, width=4)
+                    quantized_model_J_galena[k, j] = quantized_model_J_galena[j, k]
+                else:
+                    quantized_model_J[j, k] = np.binary_repr(int(quantized_model.J[j, k]), width=4)
+                    quantized_model_J[k, j] = quantized_model_J[j, k]
+                    quantized_model_J_galena[j, k] = np.binary_repr(int(-quantized_model.J[j, k]), width=4)
+                    quantized_model_J_galena[k, j] = quantized_model_J_galena[j, k]
 
         with (folder_run / "model").open("w") as f:
             f.write("# J matrix\n")
             np.savetxt(f, quantized_model_J, fmt="%4s")
             f.write("# h vector\n")
             np.savetxt(f, quantized_model_h, fmt="%4s")
+            f.write(f"# offset\n{quantized_model.c}\n")
+            f.write(f"# scaling factor h \n {scale_factor}\n")
+        with (folder_run / "model_galena").open("w") as f:
+            f.write("# J matrix\n")
+            np.savetxt(f, quantized_model_J_galena, fmt="%4s")
+            f.write("# h vector\n")
+            np.savetxt(f, quantized_model_h_galena, fmt="%4s")
             f.write(f"# offset\n{quantized_model.c}\n")
             f.write(f"# scaling factor h \n {scale_factor}\n")
     return save_folders
@@ -101,10 +123,16 @@ def store_results_logfile(logfile: Path, data_name: str, save_folder: Path, file
         return
     elif data_name in ["state_in", "state_out"]:
         new_data = np.where(data <= 0, 0, 1)
+        if new_data.shape[1] < 256:
+            padding = np.zeros((new_data.shape[0], 256-new_data.shape[1]))
+            new_data = np.append(new_data, padding, axis=1)
     else:
-        new_data = data
+        new_data = np.append(np.zeros((1,data.shape[1])), data[:-1, :], axis=0)
         if data.shape[0] < 513:
             padding = np.full((513 - data.shape[0], data.shape[1]), 0)
             new_data = np.append(new_data, padding, axis=0)
+        if new_data.shape[1] < 256:
+            padding = np.zeros((new_data.shape[0], 256-new_data.shape[1]))
+            new_data = np.append(new_data, padding, axis=1)
     with save_path.open("w") as f:
         np.savetxt(f, new_data, fmt="%1u", delimiter="")

@@ -8,13 +8,21 @@ import argparse
 import yaml
 import logging
 
-from __init__ import TOP_ISING, TOP_MEAS
+from __init__ import (
+    TOP_ISING,
+    TOP_MEAS,
+    default_remote_dir,
+    default_host,
+    default_device,
+    default_uart_baud,
+    default_uart_timeout,
+)
+from openising.tests import run_test
 from submodules.openising.ising.api import get_hamiltonian_energy
 from openising.save_model import store_run
 from openising.mppi_experiment import mppi_experiment
 from chip_communication import compile_data, send_chip, compile_data_convergence, send_chip_convergence
 from submodules.openising.ising.stages.simulation_stage import Ans
-from openising import default_remote_dir, default_host, default_device, default_uart_baud, default_uart_timeout
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -30,38 +38,23 @@ parser.add_argument(
     action=argparse.BooleanOptionalAction,
 )
 parser.add_argument("--nb-cores", help="The amount of cores to use on chip", type=int, default=1)
+parser.add_argument("--core", help="which core to use on chip", type=int, default=1)
 parser.add_argument("--interface", help="The interface to send the data with", type=str, default="uart")
-parser.add_argument(
-    "--host",
-    default=default_host,
-    help=f"measurement host, user@ip (default: {default_host})",
-)
-parser.add_argument(
-    "-b",
-    "--baud",
-    help=f"baud rate to send/receive data. Must match the chip (default {default_uart_baud} baud)",
-    default=default_uart_baud,
-)
-parser.add_argument("-d", "--device", default=default_device, help=f"serial device (default: {default_device})")
-parser.add_argument(
-    "--remote-dir",
-    default=default_remote_dir,
-    help=f"repo directory on the measurement host (default: {default_remote_dir})",
-)
-parser.add_argument(
-    "--timeout",
-    type=float,
-    default=default_uart_timeout,
-    help=f"per-command response timeout in seconds (default: {default_uart_timeout})",
-)
 parser.add_argument("--plot-sw", help="Plot software simulation of the MPC run", action=argparse.BooleanOptionalAction)
 parser.add_argument(
     "--convergence-mode",
     help="compile the runs, such that the iteration count increases by one iteration each time",
     action=argparse.BooleanOptionalAction,
 )
-parser.add_argument("--no-rtscts",
-    action=argparse.BooleanOptionalAction,)
+parser.add_argument("-chip", help="which chip we are using to send the data to", default=1, type=int)
+parser.add_argument(
+    "--no-rtscts",
+    action=argparse.BooleanOptionalAction,
+)
+parser.add_argument(
+    "--smu-config", help="config file for the smu", default="sw/lib/lab_instruments/config/meas_setup.yaml"
+)
+parser.add_argument("--test", action=argparse.BooleanOptionalAction, default=False)
 args = parser.parse_args()
 
 # Load base and experiment config files and store them in the correct folder in openising
@@ -91,34 +84,54 @@ with openising_config.open("w") as f:
 if problem_type != "MPPI":
     if args.simulate:
         if not (save_folder / "ans.pkl").exists():
-            ans, _ = get_hamiltonian_energy(problem_type, config_path, args.logging_level)
+            if not args.test:
+                ans, _ = get_hamiltonian_energy(problem_type, config_path, args.logging_level)
+            else:
+                ans, _ = run_test(config_path)
             # Store everything
             ans.save(save_folder / "ans.pkl")
         else:
-            ans = Ans()
-            ans.load(save_folder / "ans.pkl")
+            if args.test:
+                ans, _ = run_test(config_path)
+                ans.save(save_folder / "ans.pkl")
+            else:
+                ans = Ans()
+                ans.load(save_folder / "ans.pkl")
         data_folders = store_run(ans, save_folder, problem_type)
         # compile everything
         if args.convergence_mode:
-            compile_data_convergence(data_folders=data_folders, nb_iteration=ans.config.nb_flipping)
+            compile_data_convergence(data_folders=data_folders, nb_iteration=ans.config.nb_flipping, core=args.core)
         else:
-            compile_data(data_folders, args.nb_cores)
+            compile_data(data_folders, args.nb_cores, core=args.core)
     else:
         if args.convergence_mode:
             send_chip_convergence(
-                save_folder, args.interface, args.host, args.device, args.baud, args.timeout, args.remote_dir
+                save_folder,
+                args.interface,
+                default_host,
+                default_device,
+                default_uart_baud,
+                default_uart_timeout,
+                default_remote_dir,
+                args.chip,
+                core=args.core,
+                smu_config_file=TOP_MEAS/args.smu_config,
+                rtscts=(not args.no_rtscts),
             )
         else:
             send_chip(
                 data_folder=save_folder,
-                nb_cores=args.nb_cores,
                 interface=args.interface,
-                host=args.host,
-                uart_device=args.device,
-                uart_baud=args.baud,
-                uart_timeout=args.timeout,
-                rtscts=(not args.rtscts),
-                remote_dir=args.remote_dir,
+                host=default_host,
+                uart_device=default_device,
+                uart_baud=default_uart_baud,
+                uart_timeout=default_uart_timeout,
+                rtscts=(not args.no_rtscts),
+                remote_dir=default_remote_dir,
+                chip=args.chip,
+                core=args.core,
+                smu_config_file=TOP_MEAS/args.smu_config,
+                nb_cores=args.nb_cores,
             )
 else:
     mppi_experiment(
