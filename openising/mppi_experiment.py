@@ -168,8 +168,9 @@ def mppi_experiment(
             ans_sw.quantized_model = ans_hw.quantized_model
             ans_sw.save(save_folder / "ans.pkl")
             data_folders = store_run(ans_sw, save_folder, "MPPI")
-            compile_data(data_folders, 1)
-            send_chip(save_folder, 1, interface, host, uart_device, uart_baud, uart_timeout, remote_dir)
+            compile_data(data_folders, 1, 1)
+            breakpoint()
+            # send_chip(save_folder, 1, interface, host, uart_device, uart_baud, uart_timeout, remote_dir)
             actions_hw = np.loadtxt(save_folder / "run_0/hw_final_state_1")
             actions_sw = (ans_sw.states["Multiplicative"][0] + 1.0) / 2.0
             # Apply actions in continuous space
