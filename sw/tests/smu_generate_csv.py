@@ -91,6 +91,8 @@ def generate_calibration_files(chip: int, core: int, calibrateH: bool = False):
                     core=core,
                 )
                 write_calibration_values(csv_file, fieldnames, currents)
+            else:
+                instruments[smu].set_current_source(float(currents["j"]), config[smu]["voltage_limit"])
         else:
             for factor in scaling_factors:
                 key = f"{mode}_sf{factor}"

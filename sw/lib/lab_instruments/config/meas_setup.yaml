@@ -55,33 +55,33 @@ source_measure_units:
     IP: "10.91.16.108"
     mode: "current"
     calibration_mode: "base" # jdn
-    current: 0.000064 # 64 uA
+    current: 0.000300 # 300 uA
     voltage_limit: 0.75
   smu_2:
     name: "Keysight B2901BL SMU 1 - Analog Calibration"
     IP: "10.91.16.78"
     calibration_mode: "j" # jup
     mode: "current"
-    current: -0.000100 # 50 uA
-    min_current: -0.000180 #1uA
-    max_current: -0.000230  #50uA
+    current: -0.0006500 # 50 uA
+    min_current: -0.000600 #1uA
+    max_current: -0.000700  #50uA
     voltage_limit: 0.75
   smu_3:
     name: "Keysight B2901BL SMU 2 - Analog Calibration"
     IP: "10.91.16.77"
     mode: "current"
     calibration_mode: "hup"
-    current: -0.000064 # 50 uA
-    min_current: -0.000001 #1uA
-    max_current: -0.000150  #100uA
-    voltage_limit: 0.75
+    current: -0.0000155 # 50 uA
+    min_current: -0.000005 #1uA
+    max_current: -0.000000  #100uA
+    voltage_limit: 0.9
   smu_4:
     name: "Keysight B2901BL SMU 3 - Analog Calibration"
     IP: "10.91.16.79"
     mode: "current"
     calibration_mode: "hdn"
-    current: 0.000064 # 50 uA
+    current: 0.0000115 # 50 uA
     min_current: 0.000001 #1uA
-    max_current: 0.000150  #100uA
-    voltage_limit: 0.75
+    max_current: 0.000050  #100uA
+    voltage_limit: 0.9
 

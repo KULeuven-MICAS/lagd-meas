@@ -64,8 +64,8 @@ def store_run(ans: Ans, save_folder: Path, problem_type: str) -> None:
                 quantized_model_h[j] = np.binary_repr(0, width=4)
                 quantized_model_h_galena[j] = np.binary_repr(0, width=4)
             else:
-                quantized_model_h[j] = np.binary_repr(int(quantized_model.h[j]), width=4)
-                quantized_model_h_galena[j] = np.binary_repr(int(-quantized_model.h[j]), width=4)
+                quantized_model_h[j] = np.binary_repr(int(quantized_model.h[j]/scale_factor), width=4)
+                quantized_model_h_galena[j] = np.binary_repr(int(-quantized_model.h[j]/scale_factor), width=4)
             for k in range(j, 256):
                 if j >= quantized_model.num_variables or k >= quantized_model.num_variables:
                     quantized_model_J[j, k] = np.binary_repr(0, width=4)

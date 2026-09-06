@@ -55,6 +55,8 @@ parser.add_argument(
     "--smu-config", help="config file for the smu", default="sw/lib/lab_instruments/config/meas_setup.yaml"
 )
 parser.add_argument("--test", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--clock-speed", help="The speed of the clock", type=float, default=32e6)
+parser.add_argument("--delta-h-calculation", action=argparse.BooleanOptionalAction, default=True)
 args = parser.parse_args()
 
 # Load base and experiment config files and store them in the correct folder in openising
@@ -100,7 +102,12 @@ if problem_type != "MPPI":
         data_folders = store_run(ans, save_folder, problem_type)
         # compile everything
         if args.convergence_mode:
-            compile_data_convergence(data_folders=data_folders, nb_iteration=ans.config.nb_flipping, core=args.core)
+            compile_data_convergence(
+                data_folders=data_folders,
+                nb_iteration=ans.config.nb_flipping,
+                core=args.core,
+                delta_h_calculation=args.delta_h_calculation,
+            )
         else:
             compile_data(data_folders, args.nb_cores, core=args.core)
     else:
@@ -115,7 +122,7 @@ if problem_type != "MPPI":
                 default_remote_dir,
                 args.chip,
                 core=args.core,
-                smu_config_file=TOP_MEAS/args.smu_config,
+                smu_config_file=TOP_MEAS / args.smu_config,
                 rtscts=(not args.no_rtscts),
             )
         else:
@@ -130,18 +137,19 @@ if problem_type != "MPPI":
                 remote_dir=default_remote_dir,
                 chip=args.chip,
                 core=args.core,
-                smu_config_file=TOP_MEAS/args.smu_config,
+                smu_config_file=TOP_MEAS / args.smu_config,
                 nb_cores=args.nb_cores,
+                clock_speed=args.clock_speed,
             )
 else:
     mppi_experiment(
         config_path,
         save_folder,
         args.interface,
-        args.host,
-        args.device,
-        args.baud,
-        args.timeout,
-        args.remote_dir,
+        default_host,
+        default_device,
+        default_uart_baud,
+        default_uart_timeout,
+        default_remote_dir,
         args.plot_sw,
     )

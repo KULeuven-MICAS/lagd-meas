@@ -52,12 +52,19 @@ def biqmac_pm1d(nb_zeros: int, nb_ones: int, add_h: bool, h_sign: int = 1, nb_ru
     initial_states = [-np.ones(model.num_variables) for _ in range(nb_runs)]
     return model, initial_states
 
+def problem_full(nb_zeros: int, nb_ones: int, add_h: bool, h_sign: int = 1, nb_runs: int = 2):
+    J = np.random.choice([-1, 0, 1], (256,256))
+    J = np.triu(J, k=1)
+    h = np.zeros(256)
+    initial_states = [-np.ones(256), np.ones(256)]
+    return IsingModel(J, h), initial_states
+
 def dummy_maxcut_small(nb_zeros: int, nb_ones: int, add_h: bool, h_sign: int = 1, nb_runs: int = 2):
     assert nb_zeros + nb_ones == 256
     initial_states = []
     for _ in range(nb_runs):
         initial_state_ones1 = np.array([-1, -1, 1, 1, -1])
-        initial_state_zeros = -np.ones(nb_zeros)
+        # initial_state_zeros = -np.ones(nb_zeros)
         # initial_state1 = np.append(initial_state_zeros, initial_state_ones1)
         initial_states.append(initial_state_ones1)
     # J = np.zeros((256, 256))
@@ -100,6 +107,14 @@ def run_test(
         )
     elif config["test"] == "biqmac_pm1d":
         model, initial_states = biqmac_pm1d(
+            config["nb_zeros"],
+            config["nb_ones"],
+            config["add_h"],
+            config["sign_h"],
+            config["nb_runs"],
+        )
+    elif config["test"] == "problem_full":
+        model, initial_states = problem_full(
             config["nb_zeros"],
             config["nb_ones"],
             config["add_h"],

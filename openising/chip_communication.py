@@ -28,7 +28,7 @@ from target.zcu102.top import (
 from sw.tests.smu_setup import setup_smu
 
 
-def compile_data_convergence(data_folders: list[Path], nb_iteration: int, core: int):
+def compile_data_convergence(data_folders: list[Path], nb_iteration: int, core: int, delta_h_calculation: bool):
     """Compiles data for every flipping iteration of one run.
 
     @type data_folders: list[pathlib.Path]
@@ -46,7 +46,12 @@ def compile_data_convergence(data_folders: list[Path], nb_iteration: int, core: 
         for line in data:
             if line.find("#define ICON_LAST_RADDR_PLUS_ONE") != -1:
                 index = data.index(line)
+            elif line.find("#define GCFG1_ENABLE_FLIP_DETECTION") != -1:
+                index_deltah = data.index(line)
     cases = ["_galena", ""]
+    data[index_deltah] = f"#define GCFG1_ENABLE_FLIP_DETECTION {int(delta_h_calculation)}\n"
+    with Reg_file.open("w") as f:
+        f.writelines(data)
     for folder in data_folders:
         move_to_datafolder(folder, compile_folder, core)
 
@@ -57,7 +62,7 @@ def compile_data_convergence(data_folders: list[Path], nb_iteration: int, core: 
                 with Reg_file.open("w") as f:
                     f.writelines(data)
 
-                elf_file = f"lagd_commands_iteration{it}{case}.elf"
+                elf_file = f"lagd_commands_iteration{it}{case}" + ("_deltah.elf" if delta_h_calculation else ".elf")
                 subprocess.run(
                     [
                         "pixi",
@@ -94,7 +99,10 @@ def compile_data(data_folders: list[Path], nb_cores: int, core: int):
         for line in data:
             if line.find("#define ICON_LAST_RADDR_PLUS_ONE") != -1:
                 index = data.index(line)
+            elif line.find("#define GCFG1_ENABLE_FLIP_DETECTION") != -1:
+                index_deltah = data.index(line)
     data[index] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(nb_flipping * 2)} // max: 0x0400 (1024)\n"
+    data[index_deltah] = "#define GCFG1_ENABLE_FLIP_DETECTION 1\n"
     with Reg_file.open("w") as f:
         f.writelines(data)
 
@@ -184,6 +192,7 @@ def send_chip(
     core: int,
     smu_config_file: Path,
     nb_cores: int,
+    clock_speed: float,
 ) -> int:
     """Send the data of the different software runs to the chip and wait untill the results from the chip are written\
        to a file.
@@ -230,7 +239,7 @@ def send_chip(
         folders = [run_folder]
         if nb_cores == 2:
             folders.append(data_folder / f"run_{run + 1}")
-        retrieve_data_from_output(folders, nb_cores, nb_variables, nb_flipping, ans.ising_model)
+        retrieve_data_from_output(folders, nb_cores, nb_variables, nb_flipping, ans.ising_model, clock_speed)
     return 0
 
 
@@ -246,6 +255,7 @@ def send_chip_convergence(
     core: int,
     smu_config_file: Path,
     rtscts: bool,
+    clock_speed: float,
 ):
 
     ans: Ans = load_ans(data_folder)
@@ -272,9 +282,12 @@ def send_chip_convergence(
                     interface, top_log, host, remote_dir, elf_file, uart_device, rtscts, uart_baud, uart_timeout
                 )
             # move to correct folder and parse output
-            retrieve_data_from_output([run_folder], 1, ans.ising_model.num_variables, it, ans.ising_model, True)
+            retrieve_data_from_output(
+                [run_folder], 1, ans.ising_model.num_variables, it, ans.ising_model, True, clock_speed
+            )
 
-def setup_smus(smu_config_file:Path, chip: int, core: int):
+
+def setup_smus(smu_config_file: Path, chip: int, core: int):
     with smu_config_file.open("r") as f:
         smu_cfg_all = yaml.safe_load(f)
 
@@ -308,6 +321,7 @@ def setup_smus(smu_config_file:Path, chip: int, core: int):
             instrument.set_current_source(float(current_settings[key]), smu_config[smu]["voltage_limit"])
     return instruments, current_settings, smu_config
 
+
 def set_smus(
     instruments: list, ans: Ans, run: int, prev_scalings: list[int], current_settings: dict[str:float], smu_config: dict
 ):
@@ -332,6 +346,7 @@ def retrieve_data_from_output(
     nb_flipping: int,
     ising_model,
     convergence_mode: bool = False,
+    clock_speed: float = 0,
 ):
     """
     This function retrieves the output data of the chip and stores it in the correct folder.
@@ -351,20 +366,16 @@ def retrieve_data_from_output(
     energies = np.zeros((2 * nb_cores, nb_flipping))
     final_states = np.zeros((2 * nb_cores, nb_variables), dtype=int)
     current_it = np.zeros((2 * nb_cores,), dtype=int)
+    cycle_amount = np.zeros((2 * nb_cores,), dtype=int)
     with output_file.open("r") as f:
         for line in f.readlines():
             parts_line = line.split(" ")
             if parts_line[0] == "[chip]":
                 if "energy_fifo_data" in line:
                     # energy case
-                    if nb_cores == 1:
-                        curr_core = 0
-                    else:
-                        curr_core = int(parts_line[4][0])
-                    run = (int(parts_line[-2]) - 1) % 2
+                    cur_run = current_run(parts_line, nb_cores)
                     iteration = int((int(parts_line[-2]) - 1) / 2)
                     energy = int.from_bytes(bytes.fromhex(parts_line[-1][2:]), signed=True)
-                    cur_run = 2 * curr_core + run
                     energies[cur_run, iteration] = energy
                     if iteration > current_it[cur_run]:
                         energies[cur_run, current_it[cur_run] : iteration] = energies[cur_run, current_it[cur_run]]
@@ -382,10 +393,10 @@ def retrieve_data_from_output(
                     run = int(parts_line[1][-5])
                     for node in range(nb_variables):
                         final_states[curr_core * 2 + run][node] = int(state[node]) * 2 - 1
-                    print(
-                        f"Ising energy: {ising_model.evaluate(final_states[curr_core * 2 + run])},\
- State: {final_states[curr_core * 2 + run, 0 : ising_model.num_variables]}"
-                    )
+                #                     print(
+                #                         f"Ising energy: {ising_model.evaluate(final_states[curr_core * 2 + run])},\
+                #  State: {final_states[curr_core * 2 + run, 0 : ising_model.num_variables]}"
+                #                     )
                 elif "Energy FIFO data" in line:
                     # final energy case
                     energy = int.from_bytes(bytes.fromhex(parts_line[-1][2:]), signed=True)
@@ -399,11 +410,17 @@ def retrieve_data_from_output(
                         energies[cur_run, current_it[cur_run] + 1 :] = energy
                     else:
                         energies[cur_run, -1] = energy
+                elif "cc_cmpt" in line:
+                    cycle = int(parts_line[-1])
+                    cur_run = current_run(parts_line, nb_cores)
+                    cycle_amount[cur_run] = cycle
     if not convergence_mode:
         for core, folder in zip(range(nb_cores), data_folders):
             for run in range(2):
                 np.savetxt(folder / f"hw_best_energy_{run + 1}", energies[2 * core + run, :])
                 np.savetxt(folder / f"hw_final_state_{run + 1}", final_states[2 * core + run, :], fmt="%1u")
+                np.savetxt(folder / f"hw_final_time_{run + 1}", cycle_amount[2 * core + run] / clock_speed)
+                np.savetxt(folder / f"hw_clock_cycle_{run + 1}", cycle_amount[2 * core + run])
     else:
         if nb_flipping == 1:
             for core, folder in zip(range(nb_cores), data_folders):
@@ -414,16 +431,39 @@ def retrieve_data_from_output(
                     np.savetxt(
                         folder / f"hw_final_state_{run + 1}_convergence", final_states[2 * core + run, :], fmt="%1u"
                     )
+                    np.savetxt(
+                        folder / f"hw_final_time_{run + 1}_convergence", cycle_amount[2 * core + run] / clock_speed
+                    )
+                    np.savetxt(folder / f"hw_clock_cycle_{run + 1}_convergence", cycle_amount[2 * core + run])
         else:
             for core, folder in zip(range(nb_cores), data_folders):
                 for run in range(2):
                     np.savetxt(
                         folder / f"hw_final_state_{run + 1}_convergence", final_states[2 * core + run, :], fmt="%1u"
                     )
-                    best_energies = np.loadtxt(folder / f"hw_best_energy_{run + 1}_convergence")
-                    best_energies = np.append(best_energies, energies[2 * core + run, -1])
-                    print(best_energies)
+                    best_energies = np.append(
+                        np.loadtxt(folder / f"hw_best_energy_{run + 1}_convergence"), energies[2 * core + run, -1]
+                    )
+                    times = np.append(
+                        np.loadtxt(folder / f"hw_final_time_{run + 1}_convergence"),
+                        cycle_amount[2 * core + run] / clock_speed,
+                    )
+                    clock = np.append(
+                        np.loadtxt(folder / f"hw_clock_cycle_{run + 1}_convergence"), cycle_amount[2 * core + run]
+                    )
+                    # print(best_energies)
                     np.savetxt(folder / f"hw_best_energy_{run + 1}_convergence", best_energies, fmt="%32s")
+                    np.savetxt(folder / f"hw_final_time_{run + 1}_convergence", times)
+                    np.savetxt(folder / f"hw_clock_cycle_{run + 1}_convergence", clock)
+
+
+def current_run(line_part: list[str], nb_cores: int):
+    if nb_cores == 1:
+        curr_core = 0
+    else:
+        curr_core = int(line_part[3][0])
+    run = (int(line_part[-2]) - 1) % 2
+    return 2 * curr_core + run
 
 
 def move_to_datafolder(source_folder: Path, data_folder: Path, core: int):

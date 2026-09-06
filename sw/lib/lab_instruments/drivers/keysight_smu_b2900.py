@@ -30,8 +30,8 @@ class KeysightSMUB2900(inst.BaseInstrument):
     magnitude.  They are enforced here as a final software guard.
     """
 
-    MAX_VOLTAGE_V = 0.75
-    MAX_CURRENT_A = 1.0
+    MAX_VOLTAGE_V = 0.9
+    MAX_CURRENT_A = 0.002
 
     def __init__(self, info: inst.BaseInstrumentData, verbose: bool = False):
         self._output_enabled = False

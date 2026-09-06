@@ -7,6 +7,7 @@
 import numpy as np
 from pathlib import Path
 import subprocess
+from functools import partial
 from openising import TOP_MEAS, connect_to_host_commands
 
 from sw.lib.lab_instruments.drivers.keysight_smu_b2900 import KeysightSMUB2900
@@ -32,6 +33,103 @@ def validate_calibration_range(calibrateMode: str, minCurrent: float, maxCurrent
             f"exceeds B2901BL limit: [{scaled_min:.6g}, {scaled_max:.6g}] A > {limit:.6g} A"
         )
     return scaled_min, scaled_max
+
+
+def find_transition_interval(low, high, response_fn: callable, threshold=0.5, max_iter=8):
+    """Binary-search for the transition band between mostly-zero and mostly-one responses.
+
+    ``low`` is the current closest to 0 A and ``high`` is the current farthest
+    from 0 A.  The sign matters: for negative currents, the one-fraction grows as
+    the magnitude increases; for positive currents, the one-fraction shrinks as the
+    magnitude increases.  The search therefore follows the sign-specific direction
+    while still using a binary-search pattern.
+    """
+    if low == high:
+        return low, high
+
+    low_value = response_fn(low)
+    high_value = response_fn(high)
+
+    if low_value >= threshold and high_value >= threshold:
+        return low, high
+    if low_value < threshold and high_value < threshold:
+        return low, high
+
+    for _ in range(max_iter):
+        mid = 0.5 * (low + high)
+        mid_value = response_fn(mid)
+
+        if low < 0:
+            # Negative branch: farther from zero => more ones
+            if mid_value < threshold:
+                low = mid
+                low_value = mid_value
+            else:
+                high = mid
+                high_value = mid_value
+        else:
+            # Positive branch: farther from zero => more zeros
+            if mid_value >= threshold:
+                low = mid
+                low_value = mid_value
+            else:
+                high = mid
+                high_value = mid_value
+
+    return low, high
+
+
+def measure_transition_metric(
+    smu: KeysightSMUB2900,
+    current: float,
+    complianceVoltage: float,
+    elf_file: str,
+    output_file: Path,
+    connect_to_host_commands: list[str],
+):
+    """Measure the one-fraction for a single current point."""
+    subprocess.run(
+        connect_to_host_commands + ["python3", "sw/tests/chip_test.py"],
+        check=True,
+    )
+    smu.set_current_source(current, complianceVoltage)
+    with output_file.open("w") as f:
+        try:
+            subprocess.run(
+                connect_to_host_commands
+                + [
+                    "python3",
+                    "sw/uart/send_uart.py",
+                    "--timeout 5",
+                    elf_file,
+                    "--verify",
+                ],
+                stdout=f,
+                stderr=subprocess.STDOUT,
+            )
+        except subprocess.CalledProcessError:
+            pass
+    _, nb_ones, nb_zeros = count_zeros_ones(output_file)
+    return nb_ones / max(1, nb_ones + nb_zeros)
+
+
+def transition_score(
+    current: float,
+    smu: KeysightSMUB2900,
+    complianceVoltage: float,
+    elf_file: str,
+    output_file: Path,
+    connect_to_host_commands: list[str],
+) -> float:
+    """Return the one-fraction at a given current for broad-search bracket selection."""
+    return measure_transition_metric(
+        smu=smu,
+        current=current,
+        complianceVoltage=complianceVoltage,
+        elf_file=elf_file,
+        output_file=output_file,
+        connect_to_host_commands=connect_to_host_commands,
+    )
 
 
 def calibrate_smu(
@@ -79,47 +177,60 @@ def calibrate_smu(
         elf_file = f"~/calibration_elfs/calibrate_{calibrateMode}_core{core}{sf if calibrateMode != 'j' else ''}.elf"
     else:
         raise ValueError(f"Invalid calibrate mode: {calibrateMode}")
-    coarse_currents = np.arange(minCurrent, maxCurrent+coarseStep, coarseStep)* scalingFactor
+    lower = minCurrent * scalingFactor
+    upper = maxCurrent * scalingFactor
 
-    new_min = None
-    new_max = None
-    for current in coarse_currents:
-        subprocess.run(
-            connect_to_host_commands + ["python3", "sw/tests/chip_test.py"],
-            check=True,
-        )
-        smu.set_current_source(current, complianceVoltage)
-        # Calibrate j,hup or hdn
-        with output_file.open("w") as f:
-            try:
-                subprocess.run(
-                    connect_to_host_commands
-                    + [
-                        "python3",
-                        "sw/uart/send_uart.py",
-                        "--timeout 5",
-                        elf_file,
-                        "--verify",
-                    ],
-                    stdout=f,
-                    stderr=subprocess.STDOUT,
-                )
-            except subprocess.CalledProcessError:
-                pass
-        _,  nb_ones, nb_zeros = count_zeros_ones(output_file)
-        if nb_ones > 0 and new_min is None:
-            new_min = current
-        elif new_max is None and 0 <= nb_zeros < 5:
-            new_max = current
-        if new_min is not None and new_max is not None:
-            break
-    fineStep = 0.5e-6*np.sign(new_min)
 
-    currents = np.arange(new_min, new_max + fineStep, fineStep)
+    response_fn = partial(
+        transition_score,
+        smu=smu,
+        complianceVoltage=complianceVoltage,
+        elf_file=elf_file,
+        output_file=output_file,
+        connect_to_host_commands=connect_to_host_commands,
+    )
+    low, high = find_transition_interval(
+        lower,
+        upper,
+        response_fn,
+        threshold=0.5,
+        max_iter=6,
+    )
+
+    fineStep=np.sign(low)*0.5e-6
+    fine_currents = np.arange(low, high + fineStep, fineStep)
+    print(fine_currents)
+
+    # new_min = None
+    # new_max = None
+    # for current in fine_currents:
+    #     value = measure_transition_metric(
+    #         smu=smu,
+    #         current=current,
+    #         complianceVoltage=complianceVoltage,
+    #         elf_file=elf_file,
+    #         output_file=output_file,
+    #         connect_to_host_commands=connect_to_host_commands,
+    #     )
+    #     if value >= 0.5 and new_min is None:
+    #         new_min = current
+    #     elif value < 0.5 and new_max is None:
+    #         new_max = current
+    #     if new_min is not None and new_max is not None:
+    #         break
+
+    # if new_min is None:
+    #     new_min = low
+    # if new_max is None:
+    #     new_max = high
+
+    # fineStep = 0.5e-6 * np.sign(new_min)
+
+    # currents = np.arange(new_min, new_max + fineStep, fineStep)
     compliances = []
 
 
-    for current in currents:
+    for current in fine_currents:
         subprocess.run(
             connect_to_host_commands + ["python3", "sw/tests/chip_test.py"],
             check=True,
@@ -144,7 +255,7 @@ def calibrate_smu(
                 pass
         compliances.append(count_zeros_ones(output_file)[0])
 
-    best_current = currents[np.argmin(compliances)]
+    best_current = fine_currents[np.argmin(compliances)]
     smu.set_current_source(best_current, complianceVoltage)
     smu.measure()
     # smu.disable_output()
