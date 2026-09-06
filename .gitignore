@@ -21,3 +21,6 @@ results/
 openising/**/run_*/**
 **.pkl
 **.out
+
+# iclab key files
+**.key

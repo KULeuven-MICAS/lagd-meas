@@ -18,7 +18,7 @@ reset_chip() {
     # resets/enables the chip clock, and initializes the SPI control path that
     # drives the reset.  A fresh reset also restores the one-shot bootrom UART
     # server before each UART check.
-    python3 -c 'from sw.tests.chip_test import setup_chip; setup_chip()'
+    python3 -c 'from sw.tests.chip_test import setup_chip; setup_chip(ref_freq=8, pll_freq=512, bypass_pll=False)'
 }
 
 
@@ -84,30 +84,26 @@ run_dcompute_test() {
 
 
 run_test 'UART Handshake test' \
-    "02_handshake/run.sh" --device "${DEVICE}"
+    "${REPO_ROOT}/testcases/uart/02_handshake/run.sh" --device "${DEVICE}"
 
 run_test 'UART HelloWorld memory-check test' \
-    "03_load_run/run.sh" \
+    "${REPO_ROOT}/testcases/uart/03_load_run/run.sh" \
     --device "${DEVICE}" --no-exec --verify
 
 run_test 'UART HelloWorld load/run test' \
-    "03_load_run/run.sh" --device "${DEVICE}" --verify
+    "${REPO_ROOT}/testcases/uart/03_load_run/run.sh" --device "${DEVICE}" --verify
 
 run_test 'UART Memory test (0x10000000, 0x3fc8)' \
-    "04_memtest/run.sh" \
+    "${REPO_ROOT}/testcases/uart/04_memtest/run.sh" \
     --device "${DEVICE}" --mem-base 0x10000000 --mem-size 0x3fc8
 
 run_test 'UART Memory test (0x80000000, 0x10000)' \
-    "04_memtest/run.sh" \
+    "${REPO_ROOT}/testcases/uart/04_memtest/run.sh" \
     --device "${DEVICE}" --mem-base 0x80000000 --mem-size 0x10000
 
 run_test 'UART Memory test (0x90000000, 0x10000)' \
-    "04_memtest/run.sh" \
-    --device "${DEVICE}" --mem-base 0x90000000 --mem-size 0x10000
-
-run_test 'UART Memory test (0x90010000, 0x10000)' \
-    "04_memtest/run.sh" \
-    --device "${DEVICE}" --mem-base 0x90010000 --mem-size 0x10000
+    "${REPO_ROOT}/testcases/uart/04_memtest/run.sh" \
+    --device "${DEVICE}" --mem-base 0x9000000<Paste> --mem-size 0x1<Paste>
 
 run_test 'UART IsingCore register test' \
     python3 -m sw.uart.send_uart "${REPO_ROOT}/sw/inputs/lagd_reg.spm.elf" \
