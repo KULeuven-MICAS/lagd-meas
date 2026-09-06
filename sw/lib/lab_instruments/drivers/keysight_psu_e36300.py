@@ -11,7 +11,7 @@ from sw.lib.lab_instruments import instrument as inst
 
 logger = logging.getLogger(__name__)
 
-class KeysightPSUE36300(inst.BaseInstrument):
+class KeysightPSUE36300(inst.BasePowerSupply):
     """
     Class for the Keysight E36300 series power supply.
     It implements the specific methods for this instrument.

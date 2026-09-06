@@ -18,7 +18,7 @@ reset_chip() {
     # resets/enables the chip clock, and initializes the SPI control path that
     # drives the reset.  A fresh reset also restores the one-shot bootrom UART
     # server before each UART check.
-    python3 -c 'from sw.tests.chip_test import setup_chip; setup_chip()'
+    python3 -c 'from sw.tests.chip_test import setup_chip; setup_chip(ref_freq=8, pll_freq=512, bypass_pll=False)'
 }
 
 

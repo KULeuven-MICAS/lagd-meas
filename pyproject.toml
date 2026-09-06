@@ -13,6 +13,10 @@ ignore = ["PT", "E731"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F403"]
+# pll_settings is a bag of PLL config constants; the tests star-import it so the
+# constants are all available in interactive `python -i` debug sessions.
+"sw/tests/chip_test.py" = ["F403", "F405"]
+"sw/tests/pll_test.py" = ["F403", "F405"]
 
 [tool.pylint.MASTER]
 # Files or directories to skip

@@ -23,3 +23,6 @@ openising/**/run_*
 **.pkl
 **.out
 **.pdf
+
+# iclab key files
+**.key

@@ -8,8 +8,8 @@ import logging
 import sys
 from getpass import getpass
 
-from crypto_utils import create_keyfile
-from iclab_session import prompt_for_credentials
+from sw.lib.os_utils.crypto_utils import create_keyfile
+from sw.lib.os_utils.iclab_session import prompt_for_credentials
 
 logger = logging.getLogger(__name__)
 
