@@ -8,6 +8,7 @@ import numpy as np
 import yaml
 from pathlib import Path
 from argparse import Namespace
+import copy
 
 from chip_communication import send_chip, compile_data
 from save_model import store_run
@@ -24,6 +25,7 @@ from submodules.openising.ising.stages.combine_nodes_stage import CombineNodesSt
 from submodules.openising.ising.benchmarks.MPPI import get_dynamics_model
 from submodules.openising.ising.stages.model.MPPI.QUBOController import QUBOController
 from openising.postprocessing import plot_mppi
+
 
 def get_trajectory_view(benchmark, trajectory: np.ndarray) -> np.ndarray:
     # Get horizon
@@ -95,7 +97,18 @@ def build_ising(
 
 
 def mppi_experiment(
-    config_path, save_folder, interface: str, host: str, uart_device, uart_baud, uart_timeout, remote_dir, plot_sw:bool
+    config_path,
+    save_folder,
+    interface: str,
+    host: str,
+    uart_device,
+    uart_baud,
+    uart_timeout,
+    remote_dir,
+    plot_sw: bool,
+    chip: int,
+    smu_config_file: Path,
+    clock_speed: float,
 ):
     with Path(TOP / config_path).open(encoding="utf-8") as file:
         config: dict = yaml.safe_load(file)
@@ -115,31 +128,41 @@ def mppi_experiment(
     rr, qq, ee = qubo.RR, qubo.QQ, qubo.EE
 
     scene, x_ref = parse_benchmark_trajectory(benchmark)  # Reference benchmark trajectory
-    executed_trajectory_sw = [x_ref[0, :]]  # Initial state (Can be benchmark.x_init)
-    predicted_trajectory_sw = []  # List of all rollouts
-    executed_trajectory_hw = [x_ref[0, :]]
-    predicted_trajectory_hw = []
-    u_bar_sw = None  # Initial actions (Can be benchmark.u_init)
-    u_bar_hw = None
-
-    # Iterate over reference points
-    for point in np.arange(start=1, stop=x_ref.shape[0], step=benchmark.action_horizon):
+    result_ans_file: Path = save_folder / "ans_result.pkl"
+    if not result_ans_file.exists():
+        result_ans = Ans()
+        result_ans.executed_trajectory_sw = [x_ref[0, :]]  # Initial state (Can be benchmark.x_init)
+        result_ans.predicted_trajectory_sw = []  # List of all rollouts
+        result_ans.executed_trajectory_hw = [x_ref[0, :]]
+        result_ans.predicted_trajectory_hw = []
+        result_ans.u_bar_sw = None  # Initial actions (Can be benchmark.u_init)
+        result_ans.u_bar_hw = None
+    else:
+        # Iterate over reference points
+        result_ans = Ans()
+        result_ans.load(result_ans_file)
+    kwargs_hw = dict()
+    kwargs_hw["config"] = copy.deepcopy(config)
+    for point in np.arange(
+        start=len(result_ans.executed_trajectory_hw), stop=x_ref.shape[0], step=benchmark.action_horizon
+    ):
+        print(f"Run : {point}/{x_ref.shape[0]}")
         # Most recently visited state
-        state_sw = executed_trajectory_sw[-1]
-        state_hw = executed_trajectory_hw[-1]
+        state_sw = result_ans.executed_trajectory_sw[-1]
+        state_hw = result_ans.executed_trajectory_hw[-1]
         # Get horizon view
         x_ref_view = get_trajectory_view(benchmark, x_ref[point:, :])
         # Set initial actions to zero
-        u_bar_sw = reset_actions(benchmark, u_bar_sw)
-        u_bar_hw = reset_actions(benchmark, u_bar_hw)
+        result_ans.u_bar_sw = reset_actions(benchmark, result_ans.u_bar_sw)
+        result_ans.u_bar_hw = reset_actions(benchmark, result_ans.u_bar_hw)
         # Amount of MPPI iterations is defined in benchmark config
         for _ in range(benchmark.n_mppi_iterations):
             # Empty variation holder for vjp
-            dx_sw, du_sw = state_sw[None, ...], u_bar_sw[None, ...]
-            dx_hw, du_hw = state_hw[None, ...], u_bar_hw[None, ...]
+            dx_sw, du_sw = state_sw[None, ...], result_ans.u_bar_sw[None, ...]
+            dx_hw, du_hw = state_hw[None, ...], result_ans.u_bar_hw[None, ...]
             # Do model rollout
-            x_bar_sw, _, A_seq_sw, B_seq_sw, _ = model.rollout(state_sw, u_bar_sw, dx_sw, du_sw)
-            x_bar_hw, _, A_seq_hw, B_seq_hw, _ = model.rollout(state_hw, u_bar_hw, dx_hw, du_hw)
+            x_bar_sw, _, A_seq_sw, B_seq_sw, _ = model.rollout(state_sw, result_ans.u_bar_sw, dx_sw, du_sw)
+            x_bar_hw, _, A_seq_hw, B_seq_hw, _ = model.rollout(state_hw, result_ans.u_bar_hw, dx_hw, du_hw)
             # Build ising model
             ising_model_sw = build_ising(benchmark, x_bar_sw, x_ref_view, A_seq_sw, B_seq_sw, rr, qq, ee)
             ising_model_hw = build_ising(benchmark, x_bar_hw, x_ref_view, A_seq_hw, B_seq_hw, rr, qq, ee)
@@ -155,51 +178,62 @@ def mppi_experiment(
             ans_sw: Ans = out[0]
 
             # Make sure the hardware model gets quantized
-            kwargs_hw = dict()
             kwargs_hw["ising_model"] = ising_model_hw
-            kwargs_hw["config"] = config
-            kwargs_hw["config"].nb_flipping = 1
-            kwargs_hw["config"].nb_runs = 1
 
             list_of_callables = [SimulationStage]
             sub_stage = QuantizationStage(list_of_callables, **kwargs_hw)
             out: tuple[Ans] = next(sub_stage.run())  # This runs the ising model
             ans_hw: Ans = out[0]
-            ans_sw.quantized_model = ans_hw.quantized_model
-            ans_sw.save(save_folder / "ans.pkl")
-            data_folders = store_run(ans_sw, save_folder, "MPPI")
-            compile_data(data_folders, 1, 1)
-            breakpoint()
-            # send_chip(save_folder, 1, interface, host, uart_device, uart_baud, uart_timeout, remote_dir)
-            actions_hw = np.loadtxt(save_folder / "run_0/hw_final_state_1")
+            ans_hw.save(save_folder / "ans.pkl")
+            data_folders = store_run(ans_hw, save_folder, "MPPI")
+            compile_data(data_folders, 1, 1, delta_h_calculation=True)
+            # breakpoint()
+            send_chip(
+                data_folder=save_folder,
+                interface=interface,
+                host=host,
+                uart_device=uart_device,
+                uart_baud=uart_baud,
+                uart_timeout=uart_timeout,
+                remote_dir=remote_dir,
+                chip=chip,
+                core=1,
+                smu_config_file=smu_config_file,
+                nb_cores=1,
+                clock_speed=clock_speed,
+                delta_h_calculation=True,
+                rtscts=True,
+            )
+            actions_hw = (np.loadtxt(save_folder / "run_0/hw_final_state_1_deltah") + 1.0) / 2.0
             actions_sw = (ans_sw.states["Multiplicative"][0] + 1.0) / 2.0
             # Apply actions in continuous space
-            u_bar_sw += (actions_sw @ ee.T).reshape(-1, benchmark.action_dim)
-            u_bar_hw += (actions_hw @ ee.T).reshape(-1, benchmark.action_dim)
+            result_ans.u_bar_sw += (actions_sw @ ee.T).reshape(-1, benchmark.action_dim)
+            result_ans.u_bar_hw += (actions_hw @ ee.T).reshape(-1, benchmark.action_dim)
 
         # Execute actions
         for a in range(benchmark.action_horizon):
-            new_u_sw = u_bar_sw[a, :]
+            new_u_sw = result_ans.u_bar_sw[a, :]
             state_sw, force = model.discrete_step(state_sw.squeeze(), new_u_sw.squeeze())
             # Add new state to list
-            executed_trajectory_sw.append(state_sw)
-            new_u_hw = u_bar_hw[a, :]
+            result_ans.executed_trajectory_sw.append(state_sw)
+            new_u_hw = result_ans.u_bar_hw[a, :]
             state_hw, force = model.discrete_step(state_hw.squeeze(), new_u_hw.squeeze())
             # Add new state to list
-            executed_trajectory_hw.append(state_hw)
+            result_ans.executed_trajectory_hw.append(state_hw)
 
         # Full predicted trajectory at point
-        predicted_trajectory_sw.append(x_bar_sw.reshape(-1, benchmark.state_dim))
-        predicted_trajectory_hw.append(x_bar_hw.reshape(-1, benchmark.state_dim))
+        result_ans.predicted_trajectory_sw.append(x_bar_sw.reshape(-1, benchmark.state_dim))
+        result_ans.predicted_trajectory_hw.append(x_bar_hw.reshape(-1, benchmark.state_dim))
+        result_ans.save(result_ans_file)
     # Add final result to answer (and some stuff for result plotting)
-    ans_sw.executed_trajectory_sw = executed_trajectory_sw
-    ans_sw.predicted_trajectory_sw = predicted_trajectory_sw
-    ans_sw.executed_trajectory_hw = executed_trajectory_hw
-    ans_sw.predicted_trajectory_hw = predicted_trajectory_hw
-    ans_sw.reference_trajectory = x_ref
-    ans_sw.scene = scene
-    ans_sw.delta_t = benchmark.delta_t
-    ans_sw.save(save_folder / "ans.pkl")
+    result_ans.executed_trajectory_sw = result_ans.executed_trajectory_sw
+    result_ans.predicted_trajectory_sw = result_ans.predicted_trajectory_sw
+    result_ans.executed_trajectory_hw = result_ans.executed_trajectory_hw
+    result_ans.predicted_trajectory_hw = result_ans.predicted_trajectory_hw
+    result_ans.reference_trajectory = x_ref
+    result_ans.scene = scene
+    result_ans.delta_t = benchmark.delta_t
+    result_ans.save(result_ans_file)
 
     plot_mppi(save_folder, plot_sw)
 

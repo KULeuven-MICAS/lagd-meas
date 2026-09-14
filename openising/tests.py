@@ -49,7 +49,7 @@ def biqmac_pm1d(nb_zeros: int, nb_ones: int, add_h: bool, h_sign: int = 1, nb_ru
     model = MaxcutParserStage.generate_maxcut(graph)
     model.J = np.sign(model.J)
     model.c = 0
-    initial_states = [-np.ones(model.num_variables) for _ in range(nb_runs)]
+    initial_states = [np.random.choice([-1, 1], model.num_variables) for _ in range(nb_runs)]
     return model, initial_states
 
 def problem_full(nb_zeros: int, nb_ones: int, add_h: bool, h_sign: int = 1, nb_runs: int = 2):

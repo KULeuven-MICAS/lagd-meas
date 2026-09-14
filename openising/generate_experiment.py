@@ -55,8 +55,8 @@ parser.add_argument(
     "--smu-config", help="config file for the smu", default="sw/lib/lab_instruments/config/meas_setup.yaml"
 )
 parser.add_argument("--test", action=argparse.BooleanOptionalAction, default=False)
-parser.add_argument("--clock-speed", help="The speed of the clock", type=float, default=32e6)
-parser.add_argument("--delta-h-calculation", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--clock-speed", help="The speed of the clock", type=float, default=512e6)
+parser.add_argument("--no_delta_h_calculation", action=argparse.BooleanOptionalAction, default=False)
 args = parser.parse_args()
 
 # Load base and experiment config files and store them in the correct folder in openising
@@ -106,10 +106,10 @@ if problem_type != "MPPI":
                 data_folders=data_folders,
                 nb_iteration=ans.config.nb_flipping,
                 core=args.core,
-                delta_h_calculation=args.delta_h_calculation,
+                delta_h_calculation=not args.no_delta_h_calculation,
             )
         else:
-            compile_data(data_folders, args.nb_cores, core=args.core)
+            compile_data(data_folders, args.nb_cores, core=args.core, delta_h_calculation=not args.no_delta_h_calculation)
     else:
         if args.convergence_mode:
             send_chip_convergence(
@@ -124,6 +124,8 @@ if problem_type != "MPPI":
                 core=args.core,
                 smu_config_file=TOP_MEAS / args.smu_config,
                 rtscts=(not args.no_rtscts),
+                clock_speed=args.clock_speed,
+                delta_h_calculation=not args.no_delta_h_calculation
             )
         else:
             send_chip(
@@ -140,16 +142,20 @@ if problem_type != "MPPI":
                 smu_config_file=TOP_MEAS / args.smu_config,
                 nb_cores=args.nb_cores,
                 clock_speed=args.clock_speed,
+                delta_h_calculation=not args.no_delta_h_calculation
             )
 else:
     mppi_experiment(
-        config_path,
-        save_folder,
-        args.interface,
-        default_host,
-        default_device,
-        default_uart_baud,
-        default_uart_timeout,
-        default_remote_dir,
-        args.plot_sw,
+        config_path=config_path,
+        save_folder=save_folder,
+        interface=args.interface,
+        host=default_host,
+        uart_device=default_device,
+        uart_baud=default_uart_baud,
+        uart_timeout=default_uart_timeout,
+        remote_dir=default_remote_dir,
+        plot_sw=args.plot_sw,
+        chip=args.chip,
+        smu_config_file=TOP_MEAS/args.smu_config,
+        clock_speed=args.clock_speed
     )

@@ -6,10 +6,12 @@
 
 from pathlib import Path
 import matplotlib.pyplot as plt
+from matplotlib.ticker import ScalarFormatter
 import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from openising import TOP_MEAS
 from submodules.openising.ising.stages.model.MPPI.environment import create_environment, plot_environment
 from submodules.openising.ising.stages.model import IsingModel
 from submodules.openising.ising.stages.simulation_stage import Ans
@@ -27,29 +29,66 @@ def plot_convergence_run(data_folder: Path, add_sw: bool = True, figname: str = 
     @type figname: str, optional
     @param figname: What to call the figure. Defaults to "energy_convergence".
     """
-    ans = load_ans(data_folder.parent)
-    is_MIMO = ans.config.problem_type == "MIMO"
-    model: IsingModel = ans.ising_model
-    nb_runs = 2
-    for run in range(nb_runs):
-        energy_hw = np.loadtxt(data_folder / f"hw_best_energy_{run + 1}", dtype=float)
-        energy_hw += model.c
+    data = {}
+    cases = {
+        "delta_h": ("With delta h calculation", "^", "#87aadeff"),
+        "no_delta_h": ("Without delta h calculation", "o", "#000000"),
+        "galena": ("Analog macro only", "*", "#2ca02cff"),
+    }
+    for case, (case_name, _, _) in cases.items():
+        energy = np.loadtxt(data_folder / f"hw_best_energy_{case}", dtype=float)
+        time = np.loadtxt(data_folder / f"hw_final_time_{case}", dtype=float)
+        cycles = np.loadtxt(data_folder / f"hw_cycles_it_{case}", dtype=float)
+        if case != "galena":
+            for i, time_i in enumerate(time):
+                if time_i == 0.0:
+                    time_i = np.mean(time[[i-1, i+1]])
+                    time[i] = time_i
+            for i, energy_i in enumerate(energy):
+                if energy_i == 0.0:
+                    energy[i] = energy[i-1]
+        data[case_name] = {"time": time, "energy": energy, "cycles": cycles}
 
-        plt.figure()
-        plt.plot(energy_hw, label=f"Chip: best={energy_hw[-1]}")
-        if add_sw:
-            actual_run = str(data_folder).split("/")[-1][-1]
-            if is_MIMO:
-                logfile = ans.MIMO[actual_run].logfiles[run]
-            else:
-                logfile = ans.logfiles[actual_run + run]
-            energy_sw = return_data(logfile, "energy_best")[1:]
-            plt.plot(energy_sw, label=f"Simulation: best={energy_sw[-1]}")
-        plt.xlabel("Iteration")
-        plt.ylabel("Hamiltonian energy")
-        plt.legend()
-        plt.savefig(data_folder / f"{figname}_run{run + 1}.pdf")
-        plt.close()
+    plt.figure()
+    for case_name, marker, color in cases.values():
+        en = data[case_name]["energy"][-1] if case_name != "Analog macro only" else data[case_name]["energy"]
+        time = data[case_name]["time"][-1] if case_name != "Analog macro only" else data[case_name]["time"]
+        plt.plot(
+            data[case_name]["time"],
+            data[case_name]["energy"],
+            marker=marker,
+            color=color,
+            fillstyle='none',
+            label=f"{case_name}: best={en}, time:{time}",
+            linewidth=0.3
+        )
+    plt.xlabel("Time [s]")
+    # plt.xscale("log")
+    plt.ylabel("Hamiltonian energy")
+    plt.legend()
+    plt.savefig(data_folder / f"{figname}.svg")
+    plt.close()
+    plt.figure()
+    for case_name, marker, color in cases.values():
+        if case_name != "Analog macro only":
+            x_points = np.array(list(range(len(data[case_name]["cycles"]))))
+            y_points = data[case_name]["cycles"]
+            zero_points = np.where(y_points == 0)[0]
+            x_points = np.delete(x_points, zero_points)
+            y_points = np.delete(y_points, zero_points)
+            mean = np.mean(y_points)
+            plt.scatter(
+                x_points,
+                y_points,
+                marker=marker,
+                # edgecolor=color,
+                facecolor=color,
+                label=f"{case_name}: Avg={mean}"
+            )
+    plt.xlabel("Iteration")
+    plt.ylabel("Cycles/iteration")
+    plt.legend()
+    plt.savefig(data_folder / f"{figname}_cycles.svg")
 
 
 def plot_BER(data_folders: list[Path], figname: str = "ber_curve", add_sw: bool = True):
@@ -69,40 +108,12 @@ def plot_BER(data_folders: list[Path], figname: str = "ber_curve", add_sw: bool 
         ans = load_ans(model_folder)
         if snr_ber_points.get(ans.SNR) is None:
             snr_ber_points[ans.SNR] = []
-        N = np.shape(ans.x_tilde)[0]
-        if ans.config.dummy_qam == 2:
-            r = 1
-        else:
-            if ans.config.is_hamming_encoding:  # with hamming encoding
-                r = int(np.sqrt(ans.config.dummy_qam) - 1)
-            else:  # with binary encoding
-                r = int(np.ceil(np.log2(np.sqrt(ans.config.dummy_qam))))
-        if ans.config.is_hamming_encoding:  # with hamming encoding
-            T = np.block([[np.eye(N) for _ in range(r)]])
-        else:  # with binary encoding
-            T = np.block([[2 ** (r - i) * np.eye(N) for i in range(1, r + 1)]])
-        nb_trials = len(ans.MIMO)
-        differences = np.zeros((N, nb_trials))
-        for trial in range(nb_trials):
-            lowest_id = 0
-            lowest_en = np.inf
-            for run in range(2):
-                en = np.loadtxt(data_folders / f"run_{trial}/hw_best_energy_{run + 1}")[-1]
-                if en < lowest_en:
-                    lowest_id = run
-                    lowest_en = en
-            state = np.loadtxt(data_folders / f"run_{trial}/hw_final_state_{lowest_id + 1}")
-            differences[:, trial] = compute_difference(state, T, r, ans.x_tilde[trial, :], ans.config.dummy_qam, N)
-        array_mid = differences.shape[0] // 2
-        diff_real_half = differences[0:array_mid, :]
-        diff_imag_half = differences[array_mid:, :]
-        diff_of_users = np.hstack((diff_real_half, diff_imag_half))
-        snr_ber_points[ans.SNR].append(
-            np.mean(np.sum(np.abs(diff_of_users) / 2, axis=1) / (np.log2(ans.config.dummy_qam) * nb_trials))
-        )
-        snr_ber_points_zf[ans.SNR] = ans.BER["ZF"]
+            snr_ber_points_sw[ans.SNR] = []
+            snr_ber_points_zf[ans.SNR] = []
+        snr_ber_points.append(compute_BER(ans, model_folder))
+        snr_ber_points_zf[ans.SNR].append(ans.BER["ZF"])
         if add_sw:
-            snr_ber_points_sw[ans.SNR] = ans.BER["Multiplicative"]
+            snr_ber_points_sw[ans.SNR].append(ans.BER["Multiplicative"])
 
     snr_values = list(snr_ber_points.keys())
     plt.figure()
@@ -166,19 +177,19 @@ def plot_convergence_multi(data_folder: Path, add_sw: bool = True, figname: str 
     plt.close()
 
 
-def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxplot"):
-    """Makes a boxplot for every model folder in the data_folders list.
+def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxplot", delta_h_calculation: bool = True):
+    """Makes a boxplot for every model folder in the data_folders list, and add the TTS as another data point.
 
     Args:
         data_folders (list[Path]): _description_
         add_sw (bool, optional): _description_. Defaults to True.
         figname (str, optional): _description_. Defaults to "boxplot".
     """
-    # TODO
-    final_energies = list()
-
+    final_energies = dict()
+    delta_h_str = int(delta_h_calculation) * "_deltah"
     for model_folder in data_folders:
         ans = load_ans(model_folder)
+        # print(np.mean(np.array(ans.energies["Multiplicative"])/ans.best_found))
         if ans.config.problem_type == "MIMO":
             print("MIMO is not supported. Skipping this folder ...")
             break
@@ -188,47 +199,41 @@ def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxpl
         for run in range(int(nb_runs / 2)):
             run_folder = model_folder / f"run_{run}"
             for i in range(2):
-                final_state = np.loadtxt(run_folder / f"hw_final_state_{i}")
-                energies.append(relative_to_best_found(model.evaluate(final_state), ans.best_found))
-        final_energies.append(
-            pd.DataFrame(
-                {
-                    "relative Hamiltonian energy": energies,
-                    "simulation type": "Hardware",
-                    "benchmark": ans.benchmark_name,
-                }
-            )
-        )
-        if add_sw:
-            final_energies.append(
-                pd.DataFrame(
-                    {
-                        "relative Hamiltonian energy": relative_to_best_found(
-                            ans.energies["Multiplicative"], ans.best_found
-                        ),
-                        "simulation type": "software simulation",
-                        "benchmark": ans.benchmark_name,
-                    }
-                )
-            )
-    final_energies = pd.concat(final_energies)
+                final_state = np.loadtxt(run_folder / f"hw_final_state_{i + 1}{delta_h_str}")
+                energies.append(np.abs(model.evaluate(final_state) / ans.best_found) * 100)
 
-    plt.figure()
-    sns.boxplot(data=final_energies, x="benchmark", y="relative Hamiltonian energy", hue="simulation type")
-    plt.yscale("log")
-    plt.xlabel("Benchmark")
-    plt.ylabel("Relative Ising Energy")
-    plt.savefig(data_folders[0] / figname)
+        final_energies[ans.benchmark] = energies
+        print(f"Max {ans.benchmark}: {np.max(energies)}, Min: {np.min(energies)}, Avg: {np.mean(energies)}")
+
+    fig, ax = plt.subplots()
+    data  = []
+    xticks = []
+    for benchmark, energy in final_energies.items():
+        data.append(energy)
+        print(f"{benchmark}: min {np.min(energy)}, avg {np.mean(energy)}, max {np.max(energy)}")
+        xticks.append(benchmark)
+    fig, ax = plt.subplots()
+    bplot = ax.boxplot(data, patch_artist=True, tick_labels=xticks)
+    for patch in bplot['boxes']:
+        patch.set_facecolor("#739cd9")
+    for median in bplot['medians']:
+        median.set_color('black')
+    ax.set_ybound(60, 105)
+    fig.savefig(data_folders[0] / f"{figname}.svg")
     plt.close()
 
 
 def plot_mppi(data_folder, add_sw: bool = True, figname: str = "mppi_results"):
-    ans = load_ans(data_folder)
+    ans = Ans()
+    ans.load(data_folder / "ans_result.pkl")
     env, _, _ = create_environment(ans.scene)
     x_ref = ans.reference_trajectory
     predicted_traj_hw = ans.predicted_trajectory_hw
     executed_traj_hw = ans.executed_trajectory_hw
 
+    error = executed_traj_hw - x_ref
+    rmse = np.sqrt(error**2).mean()
+    r_2 = 1 - (error**2 / np.maximum((error**2).mean(), 10e-4)).mean()
     # Plot environment
     try:
         fig, ax = plot_environment(env, figsize=(16, 10))
@@ -237,9 +242,9 @@ def plot_mppi(data_folder, add_sw: bool = True, figname: str = "mppi_results"):
         if getattr(env, "control_points", None):
             cx = [c[0] for c in env.control_points]
             cy = [c[1] for c in env.control_points]
-            ax.plot(cx, cy, "ko", markersize=6, alpha=0.6, label="control points")
+            ax.plot(cx, cy, "ko", markersize=12, alpha=0.6, label="control points")
         if getattr(env, "start", None) is not None:
-            ax.plot([env.start[0]], [env.start[1]], "ro", label="start")
+            ax.plot([env.start[0]], [env.start[1]], "ro", label="start", markersize=12)
         if getattr(env, "goal_region", None):
             try:
                 gx = [g[0] for g in env.goal_region]
@@ -248,8 +253,10 @@ def plot_mppi(data_folder, add_sw: bool = True, figname: str = "mppi_results"):
             except Exception:
                 pass
     xs, ys = x_ref[:, 0], x_ref[:, 1]
-    ax.plot(xs, ys, "-o", alpha=0.8, markersize=3, color="blue")
-    plot_trajectory(ax, executed_traj_hw, predicted_traj_hw, "HW predicted trajectory", "r")
+    ax.plot(xs, ys, "-o", alpha=0.8, markersize=5, color="blue")
+    plot_trajectory(
+        ax, executed_traj_hw, predicted_traj_hw, f"HW predicted trajectory: RMSE={rmse}, R^2={r_2}", "#338000"
+    )
     if add_sw:
         plot_trajectory(
             ax, ans.executed_trajectory_sw, ans.predicted_trajectory_sw, "Simulated predicted trajectory", "g"
@@ -258,7 +265,7 @@ def plot_mppi(data_folder, add_sw: bool = True, figname: str = "mppi_results"):
     plt.xlabel("X Coordinate")
     plt.ylabel("Y Coordinate")
     plt.legend()
-    plt.savefig(data_folder / f"{figname}.pdf", dpi=300)
+    plt.savefig(data_folder / f"{figname}.svg", dpi=300)
 
 
 # ==== UTIL FUNCTIONS ====
@@ -272,10 +279,8 @@ def plot_trajectory(
         [x[1] for x in executed_traj],
         color=linecolor,
         marker="s",
-        alpha=0.5,
         label=label_name,
-        markersize=3,
-        linewidth=0.7,
+        markersize=5,
     )
     for coords in predicted_traj:
         coords = coords[:, :2]
@@ -297,3 +302,77 @@ def load_ans(folder: Path) -> Ans:
     ans = Ans()
     ans.load(folder / "ans.pkl")
     return ans
+
+
+def compute_BER(ans: Ans, data_folder: Path, delta_h_calculation: bool):
+    N = np.shape(ans.x_tilde)[0]
+    if ans.config.dummy_qam == 2:
+        r = 1
+        is_bpsk = True
+    else:
+        if ans.config.is_hamming_encoding:  # with hamming encoding
+            r = int(np.sqrt(ans.config.dummy_qam) - 1)
+        else:  # with binary encoding
+            r = int(np.ceil(np.log2(np.sqrt(ans.config.dummy_qam))))
+        is_bpsk = False
+    if ans.config.is_hamming_encoding:  # with hamming encoding
+        T = np.block([[np.eye(N) for _ in range(r)]])
+    else:  # with binary encoding
+        T = np.block([[2 ** (r - i) * np.eye(N) for i in range(1, r + 1)]])
+    nb_trials = len(ans.MIMO)
+    differences = np.zeros((N, nb_trials))
+    delta_h_str = "_deltah" if delta_h_calculation else ""
+    for trial in range(nb_trials):
+        lowest_id = 0
+        lowest_en = np.inf
+        for run in range(2):
+            en = np.loadtxt(data_folder / f"run_{trial}/hw_best_energy_{run + 1}{delta_h_str}")
+            if len(en.shape) == 1:
+                en = en[-1]
+            if en < lowest_en:
+                lowest_id = run
+                lowest_en = en
+        if is_bpsk:
+            xtilde = ans.x[:, trial]
+        else:
+            xtilde = np.block([np.real(ans.x[:, trial]), np.imag(ans.x[:, trial])])
+        state = np.loadtxt(data_folder / f"run_{trial}/hw_final_state_{lowest_id + 1}{delta_h_str}")
+        differences[:, trial] = compute_difference(state, T, r, xtilde, ans.config.dummy_qam, N)
+    if is_bpsk:
+        ber = np.mean(np.sum(np.abs(differences) / 2, axis=1) / (np.log2(ans.config.dummy_qam) * nb_trials))
+    else:
+        array_mid = differences.shape[0] // 2
+        diff_real_half = differences[0:array_mid, :]
+        diff_imag_half = differences[array_mid:, :]
+        diff_of_users = np.hstack((diff_real_half, diff_imag_half))
+        ber = np.mean(np.sum(np.abs(diff_of_users) / 2, axis=1) / (np.log2(ans.config.dummy_qam) * nb_trials))
+    return ber
+
+
+if __name__ == "__main__":
+    boxplot(
+        [
+            TOP_MEAS / "openising/Maxcut_experiment/pm1d_100",
+            TOP_MEAS / "openising/Maxcut_experiment/pm1s_100",
+            TOP_MEAS / "openising/Maxcut_experiment/pm1d_80",
+            TOP_MEAS / "openising/Maxcut_experiment/pm1s_80",
+        ],
+        False,
+    )
+    # boxplot(
+    #     [
+    #         TOP_MEAS / "openising/Maxcut_experiment/pm1d_100_1it",
+    #         TOP_MEAS / "openising/Maxcut_experiment/pm1s_100_1it",
+    #         TOP_MEAS / "openising/Maxcut_experiment/pm1d_80_1it",
+    #         TOP_MEAS / "openising/Maxcut_experiment/pm1s_80_1it",
+    #     ],
+    #     False,
+    #     "boxplot_1it"
+    # )
+    plot_mppi(TOP_MEAS / "openising/MPPI_experiment/model_0", False)
+    BPSK_folder = TOP_MEAS / "openising/MIMO_experiment/model_6"
+    ans_MIMO_BPSK = load_ans(BPSK_folder)
+    print("BER sw:" + str(ans_MIMO_BPSK.BER["Multiplicative"]))
+    BER = compute_BER(ans_MIMO_BPSK, BPSK_folder, True)
+    print("BER:" + str(BER))
+    plot_convergence_run(TOP_MEAS / "openising/convergence_run/run_0", False)

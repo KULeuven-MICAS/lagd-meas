@@ -1,0 +1,17 @@
+problem_type: Maxcut
+dummy_qam: 4
+dummy_snr: -2
+dummy_spacing: 1.0
+dummy_user_num: 128
+dummy_ant_num: 256
+dummy_case_num: 500
+initialization_seed: 42
+seed: 107
+dummy_seed: 49
+nb_trials: 500
+nb_runs: 100
+dummy_creator: false
+use_ZF: true
+logfile_discrimination: ""
+nb_flipping: 1
+benchmark: ./ising/benchmarks/biqmac/rudy/pm1d_80.0

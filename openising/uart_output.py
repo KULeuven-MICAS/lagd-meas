@@ -47,7 +47,7 @@ def main(argv=None):
             )
         elif interface == "spi":
             subprocess.run(
-                ["python", "sw/tools/spi_program_loader.py", f"{elf_file}"],
+                ["python", "sw/tests/chip_load_spi.py", f"{elf_file}"],
                 stderr=subprocess.STDOUT,
                 check=True,
             )

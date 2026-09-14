@@ -2,12 +2,12 @@
 dynamics: 'Bicycle'
 
 # General parameters
-delta_t: .2
+delta_t: .1
 velocity: 4.0
 
 # Trajectory generation seed
-seed: 38
-nb_control_points: 15
+seed: 42
+nb_control_points: 4
 
 # QUBO parameters (for bicycle riding)
 Q: null   # No full Q
