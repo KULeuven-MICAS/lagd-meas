@@ -194,39 +194,13 @@ def calibrate_smu(
         upper,
         response_fn,
         threshold=0.5,
-        max_iter=6,
+        max_iter=8,
     )
 
     fineStep=np.sign(low)*0.5e-6
     fine_currents = np.arange(low, high + fineStep, fineStep)
     print(fine_currents)
 
-    # new_min = None
-    # new_max = None
-    # for current in fine_currents:
-    #     value = measure_transition_metric(
-    #         smu=smu,
-    #         current=current,
-    #         complianceVoltage=complianceVoltage,
-    #         elf_file=elf_file,
-    #         output_file=output_file,
-    #         connect_to_host_commands=connect_to_host_commands,
-    #     )
-    #     if value >= 0.5 and new_min is None:
-    #         new_min = current
-    #     elif value < 0.5 and new_max is None:
-    #         new_max = current
-    #     if new_min is not None and new_max is not None:
-    #         break
-
-    # if new_min is None:
-    #     new_min = low
-    # if new_max is None:
-    #     new_max = high
-
-    # fineStep = 0.5e-6 * np.sign(new_min)
-
-    # currents = np.arange(new_min, new_max + fineStep, fineStep)
     compliances = []
 
 

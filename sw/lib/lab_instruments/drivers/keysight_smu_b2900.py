@@ -13,7 +13,7 @@ that are inappropriate for a connected DUT.
 
 import logging
 from typing import Tuple
-
+import time
 import pyvisa
 
 from sw.lib.lab_instruments import instrument as inst
@@ -43,7 +43,21 @@ class KeysightSMUB2900(inst.BaseInstrument):
         rm = pyvisa.ResourceManager()
         resource = f"TCPIP::{self.info.IP}::inst0::INSTR"
         logger.info("Reaching %s at: %s", self.info.name, resource)
-        return rm.open_resource(resource)
+        succes = False
+        max_count = 50
+        counter = 0
+        while(not succes and counter < max_count):
+            try:
+                ret = rm.open_resource(resource)
+                succes=True
+            except Exception as exc:
+                print(exc)
+                print("Retrying..., counter = " + str(counter))
+                counter += 1
+                time.sleep(1)
+        if not succes:
+            raise ValueError("could not connect to smu!")
+        return ret
 
     def _init_instrument(self):
         """Make a newly opened LAN session safe.
