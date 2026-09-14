@@ -84,4 +84,3 @@ source_measure_units:
     min_current: 0.000001 # 1uA
     max_current: 0.000050  # 100uA
     voltage_limit: 0.9
-
