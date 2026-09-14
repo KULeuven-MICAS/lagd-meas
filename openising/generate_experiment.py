@@ -109,7 +109,9 @@ if problem_type != "MPPI":
                 delta_h_calculation=not args.no_delta_h_calculation,
             )
         else:
-            compile_data(data_folders, args.nb_cores, core=args.core, delta_h_calculation=not args.no_delta_h_calculation)
+            compile_data(
+                data_folders, args.nb_cores, core=args.core, delta_h_calculation=not args.no_delta_h_calculation
+            )
     else:
         if args.convergence_mode:
             send_chip_convergence(
@@ -125,7 +127,7 @@ if problem_type != "MPPI":
                 smu_config_file=TOP_MEAS / args.smu_config,
                 rtscts=(not args.no_rtscts),
                 clock_speed=args.clock_speed,
-                delta_h_calculation=not args.no_delta_h_calculation
+                delta_h_calculation=not args.no_delta_h_calculation,
             )
         else:
             send_chip(
@@ -142,7 +144,7 @@ if problem_type != "MPPI":
                 smu_config_file=TOP_MEAS / args.smu_config,
                 nb_cores=args.nb_cores,
                 clock_speed=args.clock_speed,
-                delta_h_calculation=not args.no_delta_h_calculation
+                delta_h_calculation=not args.no_delta_h_calculation,
             )
 else:
     mppi_experiment(
@@ -156,6 +158,6 @@ else:
         remote_dir=default_remote_dir,
         plot_sw=args.plot_sw,
         chip=args.chip,
-        smu_config_file=TOP_MEAS/args.smu_config,
-        clock_speed=args.clock_speed
+        smu_config_file=TOP_MEAS / args.smu_config,
+        clock_speed=args.clock_speed,
     )

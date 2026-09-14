@@ -6,17 +6,13 @@
 
 from pathlib import Path
 import matplotlib.pyplot as plt
-from matplotlib.ticker import ScalarFormatter
 import numpy as np
-import pandas as pd
-import seaborn as sns
 
 from openising import TOP_MEAS
 from submodules.openising.ising.stages.model.MPPI.environment import create_environment, plot_environment
 from submodules.openising.ising.stages.model import IsingModel
 from submodules.openising.ising.stages.simulation_stage import Ans
 from submodules.openising.ising.utils.HDF5Logger import return_data
-from submodules.openising.ising.postprocessing.summarize_energies import relative_to_best_found
 
 
 def plot_convergence_run(data_folder: Path, add_sw: bool = True, figname: str = "energy_convergence"):
