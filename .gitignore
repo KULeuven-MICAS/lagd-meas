@@ -18,11 +18,15 @@ results/
 *.swp
 
 # data files
-**/config_experiment.yaml
 openising/**/run_*
 **.pkl
 **.out
 **.pdf
+**.csv
 
 # iclab key files
 **.key
+
+# Figures
+**.png
+**.svg

@@ -47,11 +47,11 @@ REMOTE_PYTHON = lab_config.get("measurement-host", "python")
 def run_elf(host, remote_dir, elf, device, extra_args, stdout=sys.stdout):
     """Load & run an ELF on the chip over UART from the measurement host."""
     tokens = [
-        REMOTE_PYTHON, "-m", "sw.uart.send_uart", elf,
+        REMOTE_PYTHON, "-m", "sw.uart.reset_plus_uart", elf,
         "--device", device,
         *extra_args,
     ]
-    remote_cmd = f"cd {shlex.quote(remote_dir)}/ && " + " ".join(shlex.quote(t) for t in tokens)
+    remote_cmd = f"cd {shlex.quote(remote_dir)}/ && source env.sh &&" + " ".join(shlex.quote(t) for t in tokens)
     subprocess.run(["ssh", "-t", host, remote_cmd], stdout=stdout, check=True)
 
 
