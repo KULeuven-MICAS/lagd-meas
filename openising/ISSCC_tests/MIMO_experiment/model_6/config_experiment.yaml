@@ -1,0 +1,17 @@
+problem_type: MIMO
+dummy_qam: 2
+dummy_snr: 20
+dummy_spacing: 1.0
+dummy_user_num: 24
+dummy_ant_num: 24
+dummy_case_num: 1000
+initialization_seed: 42
+seed: 107
+dummy_seed: 49
+nb_trials: 1000
+nb_runs: 2
+dummy_creator: true
+use_ZF: false
+logfile_discrimination: "chip_experiment"
+nb_flipping: 10
+benchmark: ./ising/benchmarks/MPPI/benchmark.yaml
