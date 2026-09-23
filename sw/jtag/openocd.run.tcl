@@ -33,9 +33,9 @@ if {![info exists EOC_ADDR]}    { set EOC_ADDR 0x03000008 }
 if {![info exists RUN_TIMEOUT]} { set RUN_TIMEOUT 30 }
 
 # Batch run: no lingering servers.
-gdb_port disabled
-telnet_port disabled
-tcl_port disabled
+gdb port disabled
+telnet port disabled
+tcl port disabled
 
 # Use the debug module's system bus for memory: matches the sim VIP, and lets us poll
 # the EOC register while the core RUNS without halting it. If SBA misbehaves on the
@@ -68,7 +68,13 @@ set found 0
 set eoc 0
 set deadline [expr {[clock seconds] + $RUN_TIMEOUT}]
 while {[clock seconds] < $deadline} {
-    set eoc [lindex [read_memory $EOC_ADDR 32 1] 0]
+    # EOC_ADDR is a physical MMIO address. The hart is running here, so software
+    # virtual-address translation cannot read its privilege register reliably.
+    # Force a physical SBA read and fail cleanly if the poll itself breaks.
+    if {[catch {set eoc [lindex [read_memory $EOC_ADDR 32 1 phys] 0]} err]} {
+        catch {halt}
+        bail "poll EOC via physical SBA" $err
+    }
     if {$eoc & 1} { set found 1; break }
     sleep 50
 }
