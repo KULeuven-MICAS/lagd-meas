@@ -16,7 +16,7 @@ PD_DEBUG_CFG.update(set_fb_mux=0b10, set_v_ctrl=0b10)
 PD_OFF_CFG = DEFAULT_CFG.copy()
 PD_OFF_CFG.update(pdown_PD=0b1, pdown_VCO=0b1, set_v_ctrl=0b10)
 VCO_CHARAC_CFG = DEFAULT_CFG.copy()
-VCO_CHARAC_CFG.update(pdown_PD=0b1, set_v_ctrl=0b11)
+VCO_CHARAC_CFG.update(pdown_PD=0b1, set_v_ctrl=0b11, clk_div_val=49, set_div_freq=0b000)
 SAFE_LOOP_CFG = DEFAULT_CFG.copy()
 SAFE_LOOP_CFG.update(set_current=0b001, set_c1=0b111, set_c2=0b111, set_r1=0b011, set_v_ctrl=0b00)  # Min BW
 COOKED_CFG = SAFE_LOOP_CFG.copy()
@@ -100,6 +100,49 @@ CFG_REF8_OUT512MHZ.update(
     set_div_freq=0b001,
 )
 
+# Fref = 18.75 MHz, Fvco = 2.4 GHz
+CFG_REF18_75 = DEFAULT_CFG.copy()
+CFG_REF18_75.update(
+    clk_div_val=49,
+    set_div_freq=0b000,
+    set_v_ctrl=0b00,
+    vco_tune_coarse=0b0011,
+    vco_current_max=0b1000,
+    vco_current_min=0b0100,
+)
+
+# Fref = [9.7, 18.3] MHz
+CFG_COARSE2 = DEFAULT_CFG.copy()
+CFG_COARSE2.update(
+        clk_div_val=49,
+        set_div_freq=0b000,
+        set_v_ctrl=0b00,
+        vco_tune_coarse=0b0010,
+        vco_current_max=0b1100,
+        vco_current_min=0b1000,
+    )
+
+# Fref = [11.3, 17.9] MHz
+CFG_COARSE1 = DEFAULT_CFG.copy()
+CFG_COARSE1.update(
+        clk_div_val=49,
+        set_div_freq=0b000,
+        set_v_ctrl=0b00,
+        vco_tune_coarse=0b0001,
+        vco_current_max=0b1110,
+        vco_current_min=0b1000,
+    )
+
+# Fref = [14.5, 17.6] MHz
+CFG_COARSE0 = DEFAULT_CFG.copy()
+CFG_COARSE0.update(
+        clk_div_val=49,
+        set_div_freq=0b000,
+        set_v_ctrl=0b00,
+        vco_tune_coarse=0b0000,
+        vco_current_max=0b1111,
+        vco_current_min=0b1000,
+    )
 
 # DEFAULT_CFG = {
 #     "fb_clk_oen": 0b1,  # ?
