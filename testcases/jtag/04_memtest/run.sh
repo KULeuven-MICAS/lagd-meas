@@ -10,6 +10,7 @@
 #   ./run.sh                                     # default 8 Kb at 0x80000000
 #   ./run.sh -c "set MEM_WORDS 16384"            # 64 Kb (more volume stress)
 #   ./run.sh -c "set ADAPTER_KHZ 4000"           # faster JTAG clock (after 01_idcode)
+#   ADAPTER_KHZ=4000 ./run.sh                     # equivalent environment form
 #   ./run.sh -c "set DEBUG_LEVEL 3"              # trace every access (see below)
 #
 # NOTE: at the 100 kHz bring-up clock this is slow; raise ADAPTER_KHZ once 01_idcode
@@ -28,5 +29,16 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../../.." && pwd)"
 
+# Accept ADAPTER_KHZ from the environment as a convenience. A later user-supplied
+# `-c "set ADAPTER_KHZ ..."` still wins because OpenOCD processes options in order.
+OPENOCD_ARGS=()
+if [ -n "${ADAPTER_KHZ:-}" ]; then
+    if ! [[ "${ADAPTER_KHZ}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "[ERROR] ADAPTER_KHZ must be a positive integer in kHz." >&2
+        exit 2
+    fi
+    OPENOCD_ARGS=(-c "set ADAPTER_KHZ ${ADAPTER_KHZ}")
+fi
+
 # User -c overrides must precede -f so the variables exist when the script runs.
-exec openocd "$@" -f "${REPO_ROOT}/sw/jtag/openocd.memtest.tcl"
+exec openocd "${OPENOCD_ARGS[@]}" "$@" -f "${REPO_ROOT}/sw/jtag/openocd.memtest.tcl"

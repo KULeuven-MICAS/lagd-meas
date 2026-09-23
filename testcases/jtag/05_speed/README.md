@@ -35,19 +35,23 @@ Defaults: `SPEEDS="100 500 1000 2000 4000 8000 12000 16000 20000 30000"` kHz,
 ```
 JTAG speed sweep  (mode=memtest)
 Logs: /tmp/tmp.XXXX
-SPEED/kHz  RESULT
-100        PASS
-500        PASS
-1000       PASS
+REQUEST/kHz  ACTUAL/kHz   RESULT
+100          100          PASS
+500          500          PASS
+1000         1000         PASS
 ...
-16000      PASS
-20000      FAIL   (/tmp/tmp.XXXX/speed_20000.log)
-30000      FAIL   (/tmp/tmp.XXXX/speed_30000.log)
+16000        15000        PASS
+20000        15000        PASS
+30000        30000        FAIL   (/tmp/tmp.XXXX/speed_30000.log)
 
-Highest reliable JTAG speed: 16000 kHz
-Use it via:  openocd -c "set ADAPTER_KHZ 16000" -f <script>
+Highest reliable JTAG speed: 15000 kHz
+Use it via:  openocd -c "set ADAPTER_KHZ 15000" -f <script>
 (For margin, operate a step below the first FAIL.)
 ```
+
+The FTDI clock divider can round a requested frequency. The `ACTUAL/kHz` column is
+parsed from OpenOCD's `clock speed ... kHz` message, and the final recommendation uses
+that actual value.
 
 ## Using the result
 

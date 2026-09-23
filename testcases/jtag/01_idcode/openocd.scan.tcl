@@ -8,14 +8,16 @@
 # is off or the hart can't be halted yet. Expected IDCODE: 0x1c5e5db3.
 #
 #   openocd -f openocd.scan.tcl
+#   openocd -c "set ADAPTER_KHZ 4000" -f openocd.scan.tcl
 #
 # Look for:  "tap/device found: 0x1c5e5db3"
 
 adapter driver ftdi
-adapter speed 100
+if {![info exists ADAPTER_KHZ]} { set ADAPTER_KHZ 100 }
+adapter speed $ADAPTER_KHZ
 transport select jtag
 
-ftdi vid_pid 0x0403 0x6011
+adapter usb vid_pid 0x0403 0x6011
 ftdi channel 0
 ftdi layout_init 0x0088 0x000b
 
