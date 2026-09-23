@@ -22,9 +22,10 @@
 #
 # See: fpga/src/verilog/chip_controller.sv and chip_command_api.sv
 
-import sys
-import random
+import argparse
 import logging
+import random
+import sys
 
 # import time
 import sw.tests.pll_test as pll_test
@@ -153,7 +154,7 @@ def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32,
             else:
                 raise ValueError("this reference clock is not supported (yet)")
 
-        pll_test.start_pll(cfg)
+        pll_test.start_pll(cfg, bypass_pll)
 
     # Set up the chip driver
     open_ports()
@@ -188,7 +189,18 @@ def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32,
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Set up the chip and optionally run the memory test.")
+    parser.add_argument(
+        "--mem-test",
+        "--mem_test",
+        action="store_true",
+        help="run the chip memory test (default: disabled)",
+    )
+    args = parser.parse_args()
+
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
-    sys.exit(setup_chip(ref_freq=8, pll_freq=512, bypass_pll=True))  # exit code 0 = success, 1 = failure
+    sys.exit(
+        setup_chip(ref_freq=8, pll_freq=512, mem_test=args.mem_test, bypass_pll=True)
+    )  # exit code 0 = success, 1 = failure
