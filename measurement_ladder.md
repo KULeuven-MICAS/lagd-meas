@@ -117,7 +117,7 @@ python sw/tests/chip_load_spi.py
 python sw/tests/chip_load_spi.py sw/inputs/lagd_dcompute.spm.elf
 ```
 
-- ✅ SPI speed upperlimit test (figure out the highest reliable SPI clock speed [12.5MHz]. The ones above are all on the default speed 12.5MHz)
+- ✅ SPI speed upper-limit test (figure out the highest reliable SPI clock speed [12.5MHz]. The ones above are all on the default speed 5MHz)
 
 ```[bash]
 python sw/tests/chip_diag.py --sck-sweep
@@ -143,7 +143,7 @@ openocd -f testcases/jtag/02_halt/openocd.halt.tcl
 ./testcases/jtag/03_load_run/run.sh
 ```
 
-- ✅ Memory volume stress test (same purpose as UART test) (mem-base: hex, mem-size: size in byte)
+- ✅ Memory volume stress test (same purpose as UART test) (mem-base: hex, mem-size: size in 32-bit words)
 
 ```[bash]
 ./testcases/jtag/04_memtest/run.sh \
@@ -159,7 +159,7 @@ openocd -f testcases/jtag/02_halt/openocd.halt.tcl
   -c "set MEM_BASE 0x90010000; set MEM_WORDS 16384; set ADAPTER_KHZ 4000"
 ```
 
-- ✅ JTAG speed upperlimit test (figure out the highest reliable JTAG clock speed [20MHz]. The ones above are all on 100 kHz)
+- ✅ JTAG speed upper-limit test (figure out the highest reliable JTAG clock speed [20MHz]. The ones above are all on 100 kHz)
 
 ```[bash]
 ./testcases/jtag/05_speed/speed_sweep.sh
