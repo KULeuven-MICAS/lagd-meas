@@ -174,17 +174,18 @@ def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32,
     # run a memory test
     if mem_test:
         # smoke test: test writeback loop
-        test_writeback()
+        assert test_writeback()
 
         # loopback-write check: data is echoed back for verification
         SCRATCH_0 = 0x80000000
         length = 50
         data = [random.randint(0, 0xFFFFFFFF) for _ in range(length)]
         logger.debug(f"Writing data: {[hex(d) for d in data]}")
-        test_verify_write_mem(SCRATCH_0, data)
+        assert test_verify_write_mem(SCRATCH_0, data)
 
         # read back check
         readback = chip.read_mem(SCRATCH_0, length=length)
+        assert readback == data, "Readback does not match written data"
         logger.info(f"Readback matches written data: {readback == data}")
 
 
