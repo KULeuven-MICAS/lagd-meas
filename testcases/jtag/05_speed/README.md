@@ -40,12 +40,12 @@ REQUEST/kHz  ACTUAL/kHz   RESULT
 500          500          PASS
 1000         1000         PASS
 ...
-16000        15000        PASS
-20000        15000        PASS
+16000        16000        PASS
+20000        20000        PASS
 30000        30000        FAIL   (/tmp/tmp.XXXX/speed_30000.log)
 
-Highest reliable JTAG speed: 15000 kHz
-Use it via:  openocd -c "set ADAPTER_KHZ 15000" -f <script>
+Highest reliable JTAG speed: 20000 kHz
+Use it via:  openocd -c "set ADAPTER_KHZ 20000" -f <script>
 (For margin, operate a step below the first FAIL.)
 ```
 
