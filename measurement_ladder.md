@@ -170,29 +170,3 @@ openocd -f testcases/jtag/02_halt/openocd.halt.tcl
 ```[bash]
 ./sw/jtag/run_elf.sh sw/inputs/lagd_dcompute.spm.elf -c "set ADAPTER_KHZ 4000"
 ```
-
-#### Galena Calibration
-
-- 🔳 How to calibrate galena's external bias?
-
-
-## Performance Measurement
-
-### Single case: 256x128 QAM4 MIMO @ 0.8V, 500 MHz
-
-#### Energy
-
-#### TTS
-
-```[bash]
-python sw/uart/send_uart.py sw/inputs/lagd_scompute.spm.elf --device /dev/ttyUSB2 --verify ─▶ Via UART (115200)
-./sw/jtag/run_elf.sh sw/inputs/lagd_scompute.spm.elf -c "set ADAPTER_KHZ 4000" ─▶ Via JTAG
-```
-
-### BER-SNR @ 24x24 BPSK MIMO
-
-### BER-SNR @ 256x128 QAM4 MIMO
-
-### MPC
-
-### MaxCut
