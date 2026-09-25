@@ -85,7 +85,7 @@ python sw/testcases/uart/00_loopback/loopback.py --device /dev/ttyUSB2
 ./testcases/uart/04_memtest/run.sh --mem-base 0x90010000 --mem-size 0x10000
 ```
 
-- ✅ IsingCore Reg test
+- ✅ IsingCore Reg test (UART)
 
 ```[bash]
 python sw/uart/send_uart.py sw/inputs/lagd_reg.spm.elf --device /dev/ttyUSB2 --verify
@@ -109,6 +109,11 @@ python sw/tests/chip_test.py --mem_test
 
 ```[bash]
 python sw/tests/chip_load_spi.py
+```
+
+- ✅ IsingCore Reg test (SPI)
+```[bash]
+python sw/tests/chip_load_spi.py sw/inputs/lagd_reg.spm.elf
 ```
 
 - ✅ IsingCore ELF test
@@ -159,7 +164,12 @@ openocd -f testcases/jtag/02_halt/openocd.halt.tcl
   -c "set MEM_BASE 0x90010000; set MEM_WORDS 16384; set ADAPTER_KHZ 4000"
 ```
 
-- ✅ JTAG speed upper-limit test (figure out the highest reliable JTAG clock speed [20MHz]. The ones above are all on 100 kHz)
+- ✅ IsingCore Reg test (JTAG)
+```[bash]
+./sw/jtag/run_elf.sh sw/inputs/lagd_reg.spm.elf -c "set ADAPTER_KHZ 4000"
+```
+
+- ✅ JTAG speed upper-limit test (figure out the highest reliable JTAG clock speed [20MHz]. The ones above are all on 100 kHz if not claimed)
 
 ```[bash]
 ./testcases/jtag/05_speed/speed_sweep.sh
