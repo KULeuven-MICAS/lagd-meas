@@ -15,7 +15,7 @@ adapter driver ftdi
 adapter speed 100
 transport select jtag
 
-ftdi vid_pid 0x0403 0x6011
+adapter usb vid_pid 0x0403 0x6011
 ftdi channel 0
 ftdi layout_init 0x0088 0x000b
 
@@ -30,8 +30,8 @@ target create $_TARGETNAME riscv -chain-position $_TARGETNAME -coreid 0
 
 # Keep timeouts short so bring-up fails fast (raise later for normal use).
 riscv set_command_timeout_sec 10
-riscv set_reset_timeout_sec 10
-riscv set_prefer_sba off
+# Prefer CPU program-buffer access, with system-bus access as a fallback.
+riscv set_mem_access progbuf sysbus
 
 proc fail_clock {stage err} {
     echo "=================================================================="
@@ -60,9 +60,9 @@ if {$state ne "halted"} {
 echo "=================================================================="
 echo "PASS: hart halted (debug module reachable, core clock running)."
 echo "--- register readout (proves debug abstract/register access) ---"
-reg mhartid
-reg misa
-reg pc
+echo [reg mhartid]
+echo [reg misa]
+echo [reg pc]
 echo "=================================================================="
 
 shutdown

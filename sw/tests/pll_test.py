@@ -239,16 +239,21 @@ def ctrl_voltage_transient():
     start_load_config(SAFE_LOOP_CFG)
 
 
-def start_pll(cfg):
+
+def start_pll(cfg: dict, bypass_pll: bool = False):
     start_load_config(cfg)
 
-    # Move the SoC onto the PLL
-    locked = pll.wait_lock(timeout=3)
-    if locked:
-        pll.select_pll()
-        logging.info("PLL lock = %s and selected as the SoC clock", pll.read_lock())
+    if bypass_pll:
+        logging.info("PLL bypassed; SoC is on the reference clock")
     else:
-        logging.error("PLL did not lock; SoC left on the reference clock")
+        # Move the SoC onto the PLL
+        logging.info("pll_lock: %s", pll.read_lock())
+        locked = pll.wait_lock(timeout=0.5)
+        if locked:
+            pll.select_pll()
+            logging.info("PLL lock = %s and selected as the SoC clock", pll.read_lock())
+        else:
+            logging.error("PLL did not lock; SoC left on the reference clock")
 
     return 0
 

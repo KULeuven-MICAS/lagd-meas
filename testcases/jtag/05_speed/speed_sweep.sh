@@ -34,23 +34,33 @@ best=""
 
 echo "JTAG speed sweep  (mode=${MODE})"
 echo "Logs: ${LOGDIR}"
-printf "%-10s %s\n" "SPEED/kHz" "RESULT"
+printf "%-12s %-12s %s\n" "REQUEST/kHz" "ACTUAL/kHz" "RESULT"
 
 for s in ${SPEEDS}; do
     log="${LOGDIR}/speed_${s}.log"
     if [ "${MODE}" = "idcode" ]; then
-        openocd -c "set ADAPTER_KHZ ${s}" -f "${SCAN_TCL}" >"${log}" 2>&1
-        if grep -qi "${IDCODE}" "${log}"; then ok=1; else ok=0; fi
+        if openocd -c "set ADAPTER_KHZ ${s}" -f "${SCAN_TCL}" >"${log}" 2>&1 \
+                && grep -qi "${IDCODE}" "${log}"; then
+            ok=1
+        else
+            ok=0
+        fi
     else
         if openocd -c "set ADAPTER_KHZ ${s}; set MEM_WORDS ${MEM_WORDS}" \
                    -f "${JTAG_DIR}/openocd.memtest.tcl" >"${log}" 2>&1; then
             ok=1; else ok=0; fi
     fi
 
+    # FTDI clock divisors can round a requested rate. Report the actual rate
+    # printed by OpenOCD rather than implying that every request is exact.
+    actual="$(awk '/clock speed [0-9]+ kHz/ {value=$(NF-1)} END {print value}' "${log}")"
+    actual="${actual:-unknown}"
+
     if [ "${ok}" -eq 1 ]; then
-        printf "%-10s PASS\n" "${s}"; best="${s}"
+        printf "%-12s %-12s PASS\n" "${s}" "${actual}"
+        best="${actual}"
     else
-        printf "%-10s FAIL   (%s)\n" "${s}" "${log}"
+        printf "%-12s %-12s FAIL   (%s)\n" "${s}" "${actual}" "${log}"
     fi
 done
 

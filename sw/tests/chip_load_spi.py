@@ -56,6 +56,7 @@ READ_DEV = '/dev/xillybus_read_32'
 # (sw/tests/ -> sw/) so it works from any cwd.
 DEFAULT_ELF = str(Path(__file__).resolve().parent.parent / 'inputs' / 'helloworld.spm.elf')
 
+
 # Default SPI clock frequency (Hz) for the load: 5 MHz
 DEFAULT_SCK_HZ = 5_000_000
 
