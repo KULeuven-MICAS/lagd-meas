@@ -44,3 +44,21 @@ power_analyzer_chip:
       name: "CH4" # VDD GALENA 2 + PLL
       voltage: 0.75
       current: 1.0
+
+# Waveform generator, test clocks / reference for the PLL
+function_generator:
+  name: "Keysight 33600A FG"
+  IP: "0.0.0.0" # TODO: set the instrument IP
+  args:
+    channels: 2
+
+# Source meter driving the external VCO control voltage (Vctrl pad)
+smu_vctrl:
+  name: "Keithley 2450 SMU - Vctrl"
+  IP: "10.91.16.51"
+  args:
+    v_min: 0.0
+    v_max: 0.75 # PLL VDD, never drive Vctrl above it
+    i_limit: 10.0e-6 # Vctrl is a gate: any real current means a fault
+    terminals: "FRON"
+    remote_sense: false

@@ -26,7 +26,15 @@
 import sys
 import logging
 import time
+from pathlib import Path
 
+import yaml
+
+from sw.lib.lab_instruments import instrument as inst
+from sw.lib.lab_instruments.drivers.keysight_fg_33600 import KeysightFG33600
+from sw.lib.lab_instruments.drivers.keithley_smu_2450 import KeithleySMU2450
+from sw.lib.os_utils.iclab_session import iclab_session
+from sw.lib.os_utils.parser import Parser
 from sw.lib.pll_driver import PllDriver
 from sw.lib.pll_command_api import (
     calculate_div_factor,
@@ -45,6 +53,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 # Device files for the PLL write/read ports (8-bit Xillybus stream).
 WRITE_DEV = "/dev/xillybus_write_8"
 READ_DEV = "/dev/xillybus_read_8"
+
+INSTR_CFG_PATH = Path(__file__).resolve().parent.parent / "lib" / "lab_instruments" / "config" / "meas_setup.yaml"
 
 # Populated by open_ports(); declared here so the interactive helpers below
 # (and `python -i tests/pll_test.py` sessions) can refer to it as a global.
@@ -239,6 +249,71 @@ def ctrl_voltage_transient():
     start_load_config(SAFE_LOOP_CFG)
 
 
+def load_instr_cfg():
+    """Load the lab instrument descriptions from meas_setup.yaml."""
+    with INSTR_CFG_PATH.open(encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def test_function_generator(channel=1, freqs=(1e6, 10e6, 20e6), vpp=0.75, offset=0.375):
+    """Equipment check: step the 33600A through a few square-wave frequencies.
+
+    The settings are read back from the instrument; check the waveform on the
+    scope (high-Z input, 0 -> 0.75 V square) at each step.
+    """
+    config = load_instr_cfg()
+    fg = KeysightFG33600(inst.BaseInstrumentData.from_mapping(config["function_generator"]))
+    fg.set_verbose(True)
+    ok = True
+    try:
+        fg.status()
+        fg.set_load(channel, "INF")
+        fg.set_square(channel, freqs[0], vpp, offset)
+        fg.output_on(channel)
+        for freq in freqs:
+            fg.set_frequency(channel, freq)
+            f_rb, vpp_rb, off_rb = fg.get_frequency(channel), fg.get_amplitude(channel), fg.get_offset(channel)
+            step_ok = abs(f_rb - freq) < 1e-6 * freq and abs(vpp_rb - vpp) < 1e-3 and abs(off_rb - offset) < 1e-3
+            ok &= step_ok
+            logging.info(
+                "%s: FG ch%d set %.3f MHz -> readback %.3f MHz, %.3f Vpp, offset %.3f V",
+                "PASS" if step_ok else "FAIL", channel, freq / 1e6, f_rb / 1e6, vpp_rb, off_rb,
+            )
+            input("Check the scope, press Enter for the next step...")
+    finally:
+        fg.close()
+    return ok
+
+
+def test_smu(voltages=(0.0, 0.375, 0.75), settle=0.2, v_tol=2e-3, i_max=1e-6):
+    """Equipment check: step the 2450 through a few Vctrl values and read V and I back.
+
+    Vctrl is a gate, so the measured current should be ~0 (leakage only). Check
+    the voltage at the pad with the scope or a DMM at each step.
+    """
+    config = load_instr_cfg()
+    smu = KeithleySMU2450(inst.BaseInstrumentData.from_mapping(config["smu_vctrl"]))
+    smu.set_verbose(True)
+    ok = True
+    try:
+        smu.status()
+        smu.output_on()
+        for v_set in voltages:
+            smu.set_voltage(v_set)
+            time.sleep(settle)
+            v_meas, i_meas = smu.measure()
+            step_ok = abs(v_meas - v_set) < v_tol and abs(i_meas) < i_max and not smu.in_compliance()
+            ok &= step_ok
+            logging.info(
+                "%s: SMU set %.4f V -> measured %.4f V, %.3e A",
+                "PASS" if step_ok else "FAIL", v_set, v_meas, i_meas,
+            )
+            input("Check the Vctrl pad, press Enter for the next step...")
+    finally:
+        smu.close()
+    return ok
+
+
 def start_pll(cfg):
     start_load_config(cfg)
 
@@ -254,6 +329,13 @@ def start_pll(cfg):
 
 
 if __name__ == "__main__":
-    cfg = CFG_REF4_OUT128MHZ.copy()
-    # Safer default config
-    sys.exit(start_pll(cfg))
+    # Equipment checks for the VCO characterization
+    # IC-LAB firewall login: opens the lab network to the instruments
+    parser = Parser()
+    with iclab_session(parser.get_credentials()):
+        # test_function_generator()  # TODO: set the FG IP in meas_setup.yaml first
+        test_smu()
+
+    # cfg = CFG_REF4_OUT128MHZ.copy()
+    # # Safer default config
+    # sys.exit(start_pll(cfg))
