@@ -48,6 +48,15 @@ class BaseOscilloscopeData(BaseInstrumentData):
     """
     channels: list = field(default_factory=list)
 
+@dataclass
+class BaseSpectrumAnalyzerData(BaseInstrumentData):
+    """
+    Data class for the base spectrum analyzer.
+    It contains the common information that all spectrum analyzers should have.
+    :traces: list: The list of traces/inputs of the spectrum analyzer.
+    """
+    traces: list = field(default_factory=list)
+
 class BaseInstrument:
     """
     Base class for all instruments.
@@ -358,4 +367,136 @@ class BaseOscilloscope(BaseInstrument):
 
     def _close(self):
         """Close the oscilloscope resource if needed."""
+        pass
+
+class BaseSpectrumAnalyzer(BaseInstrument):
+    """
+    Base class for spectrum analyzers.
+    It defines the common interface and methods that all spectrum analyzers should implement.
+    :data: BaseSpectrumAnalyzerData: The data class containing the instrument's information.
+    """
+    def __init__(self, data: BaseSpectrumAnalyzerData, verbose: bool = False):
+        super().__init__(data, verbose=verbose)
+        if not hasattr(self, '_num_traces'):
+            raise NotImplementedError(
+                "Trace count not set. Please set _num_traces in the subclass.")
+        if not hasattr(self, '_num_markers'):
+            raise NotImplementedError(
+                "Marker count not set. Please set _num_markers in the subclass.")
+        
+        self._selected_trace = None
+
+    def _validate_trace(self, trace: int) -> int:
+        """Validate a trace identifier for the analyzer."""
+        if isinstance(trace, int):
+            if trace < 1 or trace > self._num_traces:
+                raise ValueError(f"Invalid trace {trace}. Valid range is 1..{self._num_traces}.")
+            return trace
+        raise TypeError(f"Unsupported trace type: {type(trace).__name__}")
+
+    def _validate_marker(self, marker: int) -> int:
+        """Validate a marker identifier for the analyzer."""
+        if isinstance(marker, int):
+            if marker < 1 or marker > self._num_markers:
+                raise ValueError(f"Invalid marker {marker}. Valid range is 1..{self._num_markers}.")
+            return marker
+        raise TypeError(f"Unsupported marker type: {type(marker).__name__}")
+
+    def reset(self):
+        """Reset the spectrum analyzer to its default state."""
+        self.write('*RST')
+
+    # --- Frequency & Bandwidth Methods ---
+
+    def set_center_frequency(self, freq: float):
+        """Set the center frequency."""
+        self.write(f'FREQ:CENT {freq}')
+
+    def set_span(self, span: float):
+        """Set the frequency span."""
+        self.write(f'FREQ:SPAN {span}')
+
+    def set_rbw(self, rbw: float):
+        """Set the resolution bandwidth (RBW)."""
+        self.write(f'BAND:RES {rbw}')
+
+    def set_vbw(self, vbw: float):
+        """Set the video bandwidth (VBW)."""
+        self.write(f'BAND:VID {vbw}')
+
+    # --- Amplitude Methods ---
+
+    def set_reference_level(self, level: float):
+        """Set the reference level in dBm."""
+        self.write(f'DISP:WIND:TRAC:Y:RLEV {level}')
+
+    # --- Trace & Sweep Methods ---
+
+    def set_trace_mode(self, trace: int, mode: str):
+        """
+        Set the trace mode (e.g., 'WRITe', 'AVERage', 'MAXHold', 'MINHold').
+        """
+        trace = self._validate_trace(trace)
+        self.write(f'DISP:WIND:TRAC{trace}:MODE {mode.upper()}')
+
+    def set_sweep_mode(self, continuous: bool):
+        """Switch between continuous and single sweep modes."""
+        state = 'ON' if continuous else 'OFF'
+        self.write(f'INIT:CONT {state}')
+
+    def set_sweep_count(self, count: int):
+        """Set the number of sweeps for averaging."""
+        self.write(f'SWE:COUN {count}')
+
+    def trigger_single_sweep(self, wait: bool = True):
+        """
+        Trigger a single sweep or a full averaging sequence.
+        If wait is True, blocks execution until the sweep completes.
+        """
+        if wait:
+            self.write('INIT;*WAI')
+        else:
+            self.write('INIT')
+
+    # --- Marker & Measurement Methods ---
+
+    def set_marker_state(self, marker: int, state: bool):
+        """Turn a specific marker ON or OFF."""
+        marker = self._validate_marker(marker)
+        state_str = 'ON' if state else 'OFF'
+        self.write(f'CALC:MARK{marker}:STAT {state_str}')
+
+    def set_marker_frequency(self, marker: int, freq: float):
+        """Move a specific marker to a target frequency."""
+        marker = self._validate_marker(marker)
+        self.write(f'CALC:MARK{marker}:X {freq}')
+
+    def get_marker_y_value(self, marker: int) -> float:
+        """Query the amplitude or function result (e.g., phase noise) of a marker."""
+        marker = self._validate_marker(marker)
+        return float(self.query(f'CALC:MARK{marker}:Y?').strip())
+
+    def peak_search(self, marker: int = 1):
+        """Move the specified marker to the highest peak on the trace."""
+        marker = self._validate_marker(marker)
+        self.write(f'CALC:MARK{marker}:MAX')
+
+    def marker_to_center(self, marker: int = 1):
+        """Set the center frequency to the current marker frequency."""
+        marker = self._validate_marker(marker)
+        self.write(f'CALC:MARK{marker}:FUNC:CENT')
+
+    def marker_to_reference_level(self, marker: int = 1):
+        """Set the reference level to the current marker amplitude."""
+        marker = self._validate_marker(marker)
+        self.write(f'CALC:MARK{marker}:FUNC:REF')
+
+    def enable_phase_noise_marker(self, marker: int = 1, state: bool = True):
+        """Enable or disable the Phase Noise marker function (dBc/Hz)."""
+        marker = self._validate_marker(marker)
+        state_str = 'ON' if state else 'OFF'
+        self.write(f'CALC:MARK{marker}:FUNC:PNO {state_str}')
+
+    def _close(self):
+        """Close the spectrum analyzer resource if needed."""
         pass

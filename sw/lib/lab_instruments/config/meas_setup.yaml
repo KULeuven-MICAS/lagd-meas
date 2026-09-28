@@ -51,3 +51,7 @@ scope_pll:
   channels:
     -
       name: "CH1" # Output clock
+
+spectrum_analyzer:
+  name: "Rohde & Schwarz FSV Signal Analyzer"
+  IP: "10.91.16.56"
