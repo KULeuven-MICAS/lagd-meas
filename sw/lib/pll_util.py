@@ -25,7 +25,7 @@ def calculate_integrated_jitter(fc, offsets, L_f):
 
     if len(offsets) != len(L_f):
         raise ValueError("Offsets and phase noise arrays must be the same length.")
-    
+
     if np.any(offsets <= 0):
         raise ValueError("Offset frequencies must be strictly greater than zero.")
 
@@ -39,7 +39,7 @@ def calculate_integrated_jitter(fc, offsets, L_f):
         # Slope of the log-log segment (dB / decade)
         slope = (L2 - L1) / (np.log10(f2) - np.log10(f1))
         a = slope / 10.0
-        
+
         # Linear power at the start of the interval
         P1 = 10.0 ** (L1 / 10.0)
 
@@ -53,10 +53,10 @@ def calculate_integrated_jitter(fc, offsets, L_f):
 
     # Double sideband phase variance (multiply by 2)
     phi_variance = 2.0 * total_integral
-    
+
     # RMS Phase Jitter (in radians)
     rms_phase_radians = np.sqrt(phi_variance)
-    
+
     # RMS Time Jitter (in seconds)
     rms_time_seconds = rms_phase_radians / (2.0 * np.pi * fc)
 
@@ -64,17 +64,21 @@ def calculate_integrated_jitter(fc, offsets, L_f):
 
 
 if __name__ == "__main__":
-    carrier_freq = 0.1e9  # 1 GHz Clock
+    carrier_freq = 600e6  # 1 GHz Clock
 
     # Frequency offsets: 10 kHz, 100 kHz, 1 MHz, 10 MHz, 100 MHz
-    offsets_hz = [10e3, 100e3, 1e6, 10e6, 20e6]
-    
+    #offsets_hz = [10e3, 100e3, 532e3, 857e3, 1e6]
+    offsets_hz = [100, 1e3, 10e3, 100e3, 500e3, 1e6, 10e6]
+
     # Phase noise in dBc/Hz at the given offsets
-    phase_noise_dBc = [-140, -149, -153, -156, -157.0]
+    #phase_noise_dBc = [-106, -105, -94]
+    #phase_noise_dBc = [-106, -105, -107, -94,-95]
+    #phase_noise_dBc = [-104.11, -115.6, -120.2, -119.9, -132.1, -142.4]
+    phase_noise_dBc = [-62.3, -63.4, -62.6, -61.9, -69, -65.1, -81]
 
     t_jitter, phase_jitter = calculate_integrated_jitter(
-        carrier_freq, 
-        offsets_hz, 
+        carrier_freq,
+        offsets_hz,
         phase_noise_dBc
     )
 
