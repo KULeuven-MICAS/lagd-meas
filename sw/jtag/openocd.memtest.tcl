@@ -45,9 +45,9 @@ if {![info exists SEED]}        { set SEED 12648430 }
 if {![info exists MEM_ACCESS]}  { set MEM_ACCESS sysbus }
 if {![info exists DEBUG_LEVEL]} { set DEBUG_LEVEL 2 }
 
-gdb_port disabled
-telnet_port disabled
-tcl_port disabled
+gdb port disabled
+telnet port disabled
+tcl port disabled
 
 # Set verbosity before init so the examine/DMI traffic is traced too at level 3.
 debug_level $DEBUG_LEVEL

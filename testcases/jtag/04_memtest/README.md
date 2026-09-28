@@ -30,6 +30,7 @@ cd lagd-meas/testcases/jtag/04_memtest
 ./run.sh                              # default 8 Kb (2048 words) at 0x80000000
 ./run.sh -c "set MEM_WORDS 16384"     # 64 Kb -- more volume stress
 ./run.sh -c "set ADAPTER_KHZ 4000"    # faster JTAG clock
+ADAPTER_KHZ=4000 ./run.sh             # equivalent environment form
 ```
 
 To set **several variables**, either repeat `-c` or separate them with `;` inside one
@@ -44,6 +45,9 @@ Any variable you don't set keeps its default, and `run.sh` places your `-c` **be
 `-f` so the values are in place by the time the Tcl script reads them. The full list of
 variables and defaults is in the header of `sw/jtag/openocd.memtest.tcl` (`MEM_BASE`,
 `MEM_WORDS`, `SEED`, `ADAPTER_KHZ`, `MEM_ACCESS`, `DEBUG_LEVEL`).
+
+If both forms are present, the later command-line `-c "set ADAPTER_KHZ ..."` overrides
+the `ADAPTER_KHZ` environment value.
 
 ## Why the system bus, and how to verify it
 

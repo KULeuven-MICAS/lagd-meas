@@ -22,7 +22,7 @@ and JTAG debug work.
   `make`; simulate with `make sim`. See [`fpga/README.md`](fpga/README.md).
 - [`sw/`](sw/) — Python libraries, test scripts, ELF loaders, and UART/JTAG helpers
   that run on the Zynq Linux host. See [`sw/README.md`](sw/README.md).
-- [`testcases/`](testcases/) — runnable chip test sequences (UART, JTAG, soak scripts).
+- [`testcases/`](testcases/) — runnable chip test sequences (SPI, UART, JTAG, soak scripts).
 - [`tools/`](tools/) — lint and support tools.
 - [`target/`](target/) — target/board-specific files (e.g., `zcu102/`).
 - [`xillinux/`](xillinux/) — Xillinux root filesystem overlays and workspace files.

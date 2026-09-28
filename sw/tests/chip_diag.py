@@ -431,68 +431,90 @@ def test_g_switching_noise(chip, n=16, rounds=6):
 # ---------------------------------------------------------------------------
 # Test H: find the usable SCK ceiling empirically.
 # ---------------------------------------------------------------------------
-def test_h_sck_sweep(chip, freqs=None, n=32, rounds=3):
-    """Walk SCK upward and report the fastest rate that still passes.
+def test_h_sck_sweep(chip, freqs=None, n=32, rounds=3, safe_hz=5e6):
+    """Measure reads and writes separately against a verified baseline SCK.
 
-    The ceiling is set by the read turnaround (the master samples read data
-    half an SCK period after the chip launches it), which no static estimate
-    pins down well. Measure it.
-
-    Needs the runtime CONFIG_SCK divider (chip_command_api CONFIG_SCK = 0x04);
-    without it every data point would cost a Vivado rebuild.
-
-    Restores the starting frequency before returning, so a failed sweep does not
-    leave the link parked at an unusable rate.
+    A fast read includes its command/address phase at the trial SCK. A fast
+    write is checked with a baseline read. These are transaction-direction
+    tests, not a measurement of the chip's intrinsic maximum SPI frequency.
+    Returns per-rate results and baseline health; restores SCK even on error.
     """
     if freqs is None:
-        # Only EXACTLY reachable rates: SCK = 100 MHz / (2*N) for integer N, so
-        # asking for anything else just lands on the nearest divider anyway.
-        # Ends at 50 MHz (N=1), the architectural maximum of this divider - not
-        # a choice, nothing faster exists. The practical ceiling should be far
-        # lower: the master samples read data half an SCK period after the chip
-        # launches it, and the cable + IO round trip (~30-60 ns) alone caps SCK
-        # near 8-17 MHz. That is what this test is for.
-        freqs = (1e3, 10e3, 50e3, 100e3, 250e3, 500e3,      # N = 50000 .. 100
-                 1e6, 2e6, 2.5e6, 5e6,                       # N = 50, 25, 20, 10
-                 10e6, 12.5e6, 16.667e6, 25e6)               # N = 5, 4, 3, 2
-        # Stops at 25 MHz (N=2), the hardware clamp. N=1 (50 MHz) is reachable
-        # by the divider but broken - SCK would toggle every bus clock, leaving
-        # the data no setup against its own edge.
-    logger.info("=== H: SCK sweep - where does the link stop working? ===")
+        # SCK = 100 MHz / (2*N). N=2 is the FPGA's hardware clamp.
+        freqs = (1e3, 10e3, 50e3, 100e3, 250e3, 500e3,
+                 1e6, 2e6, 2.5e6, 5e6,
+                 10e6, 12.5e6, 100e6 / 6, 25e6)
+    freqs = tuple(freqs)
+    if not freqs or n < 1 or rounds < 1:
+        raise ValueError("H needs at least one frequency, one word and one round")
+    logger.info("=== H: separate read/write SCK sweeps ===")
+    logger.info("  SCK comes from the FPGA bus clock; the SoC clock is not measured here.")
 
     start_hz = chip.sck_hz
     addr = SCRATCH_BASE + 0xD000
     check_addr(addr, n, "H")
-    best = None
+    result = {"baseline_ok": True, "rates": []}
     try:
+        baseline = chip.set_sck_hz(safe_hz)
+        logger.info("  Baseline SCK: %.1f kHz; %d words x %d rounds per direction",
+                    baseline / 1e3, n, rounds)
         for f in freqs:
-            actual = chip.set_sck_hz(f)
-            ok = tot = 0
+            read_ok = write_ok = 0
+            read_pass = write_pass = True
             for _ in range(rounds):
-                data = [random.randint(0, 0xFFFFFFFF) for _ in range(n)]
+                data = [random.getrandbits(32) for _ in range(n)]
+                chip.set_sck_hz(baseline)
                 chip.write_mem(addr, data)
+                if chip.read_mem(addr, length=n) != data:
+                    result["baseline_ok"] = False
+                    break
+
+                actual = chip.set_sck_hz(f)
                 got = chip.read_mem(addr, length=n)
-                ok += sum(1 for g, e in zip(got, data) if g == e)
-                tot += n
-            frac = ok / tot
-            logger.info("  %9.1f kHz -> %4d/%4d words (%.1f%%) %s",
-                        actual / 1e3, ok, tot, 100 * frac,
-                        "OK" if frac == 1.0 else "FAIL")
-            if frac == 1.0:
-                best = actual
-            else:
-                break   # once it breaks it stays broken; no point going faster
+                read_ok += sum(g == e for g, e in zip(got, data))
+                read_pass &= got == data
+
+                # Verify complementary contents before the fast write, so a
+                # dropped write cannot pass using the preceding read fixture.
+                chip.set_sck_hz(baseline)
+                poison = [word ^ 0xFFFFFFFF for word in data]
+                chip.write_mem(addr, poison)
+                if chip.read_mem(addr, length=n) != poison:
+                    result["baseline_ok"] = False
+                    break
+                chip.set_sck_hz(f)
+                chip.write_mem(addr, data)
+                chip.set_sck_hz(baseline)
+                got = chip.read_mem(addr, length=n)
+                write_ok += sum(g == e for g, e in zip(got, data))
+                write_pass &= got == data
+
+            if not result["baseline_ok"]:
+                logger.error("  Baseline write/read failed during trial %.1f kHz; "
+                             "stopping. Direction limits are inconclusive.", f / 1e3)
+                break
+            total = n * rounds
+            result["rates"].append({"hz": actual, "read_ok": read_pass,
+                                    "write_ok": write_pass})
+            logger.info("  %9.1f kHz -> READ %d/%d %s; WRITE %d/%d %s",
+                        actual / 1e3, read_ok, total, "PASS" if read_pass else "FAIL",
+                        write_ok, total, "PASS" if write_pass else "FAIL")
+            # Continue after either direction fails: their limits can differ,
+            # and passing rates need not be monotonic.
     finally:
         chip.set_sck_hz(start_hz)
+        logger.info("  Restored SCK to %.1f kHz", start_hz / 1e3)
 
-    if best is None:
-        logger.error("  -> NOTHING passed, not even %.1f kHz. The link is broken "
-                     "independently of frequency.", freqs[0] / 1e3)
-    else:
-        logger.info("  -> Fastest fully-passing SCK: %.1f kHz", best / 1e3)
-        logger.info("     Use a safe margin below this, not the knee itself - the")
-        logger.info("     limit drifts with temperature and cable handling.")
-    return best
+    for direction in ("read", "write"):
+        passing = [row["hz"] for row in result["rates"] if row[direction + "_ok"]]
+        if passing:
+            logger.info("  Highest tested passing %s SCK: %.1f kHz",
+                        direction.upper(), max(passing) / 1e3)
+        else:
+            logger.info("  No completed %s trial passed.", direction.upper())
+    logger.info("  These are sampled link results, not certified maximum rates; "
+                "use margin and longer testing.")
+    return result
 
 
 def main():
@@ -500,7 +522,9 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--quick", action="store_true", help="tests A-C only")
     ap.add_argument("--sck-sweep", action="store_true",
-                    help="run test H: find the fastest usable SCK (needs CONFIG_SCK)")
+                    help="run test H: separate read/write SCK sweeps (needs CONFIG_SCK)")
+    ap.add_argument("--safe-sck-hz", type=float, default=5e6,
+                    help="baseline SCK for diagnostics and sweep verification (default: 5e6)")
     args = ap.parse_args()
 
     chip = ChipDriver(WRITE_DEV, READ_DEV)
@@ -512,7 +536,14 @@ def main():
     logger.info("Releasing chip reset (inert on a bitstream without ext_rst_ni routed)...")
     release_chip_reset(chip)
 
+    chip.set_sck_hz(args.safe_sck_hz)
     chip.init_spi()
+    baseline_hz = chip.sck_hz
+    if args.sck_sweep:
+        logger.info("Clock check: if using the PLL, keep its configuration process/ports "
+                    "open and verify the selected SoC clock during this test.")
+        logger.info("Current FPGA RTL selects the reference when both PLL ports close; "
+                    "this script does not configure or verify the PLL.")
 
     if not test_a_fpga_loopback(chip):
         logger.error("Aborting: the host<->FPGA path itself is broken.")
@@ -521,21 +552,29 @@ def main():
     read_ok = test_b_bootrom_read(chip)
     stable = test_c_read_stability(chip)
 
-    sweep = single_ok = burst_ok = None
+    sweep = single_ok = burst_ok = noise = sck_sweep = None
     if not args.quick:
         sweep = test_d_burst_sweep(chip)
         single_ok, burst_ok = test_e_single_vs_burst(chip)
-        test_g_switching_noise(chip)
+        noise = test_g_switching_noise(chip)
     if args.sck_sweep:
-        test_h_sck_sweep(chip)
+        sck_sweep = test_h_sck_sweep(chip, safe_hz=baseline_hz)
 
-    # Overall verdict from EVERY test, not just test B. Previously this was
-    # driven by test B alone, so a fully passing suite could still print
-    # "investigate the write path" - misleading once the link is healthy.
+    # Baseline diagnostics and intentional sweep failures have separate verdicts.
     all_pass = (read_ok is True and stable
                 and (args.quick or (sweep is not None
                                     and all(ok for ok, _ in sweep.values())
-                                    and single_ok and burst_ok)))
+                                    and single_ok and burst_ok
+                                    and all(ok == total for ok, total in noise.values()))))
+    if sck_sweep is not None:
+        if not sck_sweep["baseline_ok"]:
+            logger.error("SWEEP VERDICT: INCONCLUSIVE - baseline verification failed.")
+        elif any(not row["read_ok"] or not row["write_ok"] for row in sck_sweep["rates"]):
+            logger.info("SWEEP VERDICT: failures observed at trial rates; "
+                        "see separate READ/WRITE results above.")
+        else:
+            logger.info("SWEEP VERDICT: every tested rate passed in both directions; "
+                        "the link limit was not reached.")
 
     logger.info("==========================================================")
     if all_pass:
@@ -543,16 +582,15 @@ def main():
         if sweep:
             # write frame 10+8n SCK, read frame 43+8n SCK.
             edges = sum((10 + 8 * n) + (43 + 8 * n) for n in sweep)
-        logger.info("VERDICT: LINK HEALTHY - every test passed.")
-        logger.info("  The chip answers, bursts up to the longest tested length are")
-        logger.info("  intact, and quiet/noisy patterns behave identically.")
+        logger.info("BASELINE VERDICT: PASS at %.1f kHz SCK (%s).", baseline_hz / 1e3,
+                    "tests A-C" if args.quick else "tests A-E and G")
         if edges:
             logger.info("  Evidence: ~%d clean SCK edges in the burst sweep alone.", edges)
             logger.info("  NOTE: an ELF preload is ~100k edges. Before trusting this for a")
             logger.info("  real image, soak it - see write_mem_verified() in chip_driver.py,")
             logger.info("  which retries and reports the error rate.")
         logger.info("==========================================================")
-        return 0
+        return 0 if sck_sweep is None or sck_sweep["baseline_ok"] else 1
     logger.info("==========================================================")
     if read_ok is False:
         logger.info("VERDICT: the chip never answered usefully on the SPI bus.")
@@ -571,12 +609,12 @@ def main():
         logger.info("      even arrive, and at what swing?")
         logger.info("   3. Confirm VADJ_FMC is still 1.8 V under load.")
     elif read_ok is True:
-        logger.info("VERDICT: the read direction works; investigate the write path")
-        logger.info("  and whether the free-running CVA6 is overwriting 0x80000000.")
+        logger.info("BASELINE VERDICT: FAIL - boot ROM answered, but another baseline "
+                    "check failed; see the individual results above.")
     else:
         logger.info("VERDICT: inconclusive - see test B above.")
     logger.info("==========================================================")
-    return 0
+    return 1
 
 
 if __name__ == "__main__":

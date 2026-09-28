@@ -41,7 +41,7 @@ python sw/tests/perip_test.py
 
 #### PLL Test
 
-- 🔳 PLL Interface and PLL (PLL can start correctly)
+- ✅ PLL Interface and PLL (PLL can start correctly)
 
 ```[bash]
 python sw/tests/pll_test.py
@@ -57,7 +57,7 @@ python sw/tests/pll_test.py
 python sw/testcases/uart/00_loopback/loopback.py --device /dev/ttyUSB2
 ```
 
-- ✅ Find the chip's UART and confirm the bootrom answers the 0x06 handshake
+- ✅ Find the chip's UART and confirm the bootrom answers the 0x06 handshake (note the core clock frequency should be >32MHz; otherwise UART cannot be internally configured to 115200)
 
 ```[bash]
 ./sw/testcases/uart/01_portsweep/portsweep.py --scan
@@ -85,7 +85,7 @@ python sw/testcases/uart/00_loopback/loopback.py --device /dev/ttyUSB2
 ./testcases/uart/04_memtest/run.sh --mem-base 0x90010000 --mem-size 0x10000
 ```
 
-- ✅ IsingCore Reg test
+- ✅ IsingCore Reg test (UART)
 
 ```[bash]
 python sw/uart/send_uart.py sw/inputs/lagd_reg.spm.elf --device /dev/ttyUSB2 --verify
@@ -102,7 +102,7 @@ python sw/uart/send_uart.py sw/inputs/lagd_dcompute.spm.elf --device /dev/ttyUSB
 - ✅ Quad-SPI interface works and memory can be accessed (no ELF)
 
 ```[bash]
-python sw/tests/chip_test.py
+python sw/tests/chip_test.py --mem_test
 ```
 
 - ✅ HelloWorld ELF test
@@ -111,72 +111,72 @@ python sw/tests/chip_test.py
 python sw/tests/chip_load_spi.py
 ```
 
-- 🔳 IsingCore ELF test
+- ✅ IsingCore Reg test (SPI)
+```[bash]
+python sw/tests/chip_load_spi.py sw/inputs/lagd_reg.spm.elf
+```
+
+- ✅ IsingCore ELF test
 
 ```[bash]
 python sw/tests/chip_load_spi.py sw/inputs/lagd_dcompute.spm.elf
 ```
 
+- ✅ SPI speed upper-limit test (figure out the highest reliable SPI clock speed [12.5MHz]. The ones above are all on the default speed 5MHz)
+
+```[bash]
+python sw/tests/chip_diag.py --sck-sweep
+```
+
 #### JTAG (FT4232H JTAG channel, /dev/ttyUSB0)
 
-- 🔳 FT4232H' JTAG channel works and Chip JTAG (slave) returns the correct IDCODE (0x1c5e5db3)
+- ✅ FT4232H' JTAG channel works and Chip JTAG (slave) returns the correct IDCODE (0x1c5e5db3)
 
 ```[bash]
 openocd -f testcases/jtag/01_idcode/openocd.scan.tcl
 ```
 
-- 🔳 Chip is clocked and the bootrom works
+- ✅ Chip is clocked and the bootrom works
 
 ```[bash]
-openocd -f /testcases/jtag/02_halt/openocd.halt.tcl
+openocd -f testcases/jtag/02_halt/openocd.halt.tcl
 ```
 
-- 🔳 HelloWord ELF test
+- ✅ HelloWord ELF test
 
 ```[bash]
 ./testcases/jtag/03_load_run/run.sh
 ```
 
-- 🔳 Memory volume stress test (same purpose as UART test) (mem-base: hex, mem-size: size in bit)
+- ✅ Memory volume stress test (same purpose as UART test) (mem-base: hex, mem-size: size in 32-bit words)
 
 ```[bash]
-./testcases/jtag/04_memtest/run.sh -c "set MEM_WORDS 16384; set ADAPTER_KHZ 4000"
+./testcases/jtag/04_memtest/run.sh \
+  -c "set MEM_BASE 0x10000000; set MEM_WORDS 4082; set ADAPTER_KHZ 4000"
+
+./testcases/jtag/04_memtest/run.sh \
+  -c "set MEM_BASE 0x80000000; set MEM_WORDS 16384; set ADAPTER_KHZ 4000"
+
+./testcases/jtag/04_memtest/run.sh \
+  -c "set MEM_BASE 0x90000000; set MEM_WORDS 16384; set ADAPTER_KHZ 4000"
+
+./testcases/jtag/04_memtest/run.sh \
+  -c "set MEM_BASE 0x90010000; set MEM_WORDS 16384; set ADAPTER_KHZ 4000"
 ```
 
-- 🔳 JTAG speed upperlimit test (figure out the highest reliable JTAG clock speed. The ones above are all on 100 kHz)
+- ✅ IsingCore Reg test (JTAG)
+```[bash]
+./sw/jtag/run_elf.sh sw/inputs/lagd_reg.spm.elf -c "set ADAPTER_KHZ 4000"
+```
+
+- ✅ JTAG speed upper-limit test (figure out the highest reliable JTAG clock speed [20MHz]. The ones above are all on 100 kHz if not claimed)
 
 ```[bash]
 ./testcases/jtag/05_speed/speed_sweep.sh
 ```
 
-- 🔳 IsingCore ELF test
+- ✅ IsingCore ELF test
 
 ```[bash]
 ./sw/jtag/run_elf.sh sw/inputs/lagd_dcompute.spm.elf -c "set ADAPTER_KHZ 4000"
 ```
-
-#### Galena Calibration
-
-- 🔳 How to calibrate galena's external bias?
-
-
-## Performance Measurement
-
-### Single case: 256x128 QAM4 MIMO @ 0.8V, 500 MHz
-
-#### Energy
-
-#### TTS
-
-```[bash]
-python sw/uart/send_uart.py sw/inputs/lagd_scompute.spm.elf --device /dev/ttyUSB2 --verify ─▶ Via UART (115200)
-./sw/jtag/run_elf.sh sw/inputs/lagd_scompute.spm.elf -c "set ADAPTER_KHZ 4000" ─▶ Via JTAG
-```
-
-### BER-SNR @ 24x24 BPSK MIMO
-
-### BER-SNR @ 256x128 QAM4 MIMO
-
-### MPC
-
-### MaxCut

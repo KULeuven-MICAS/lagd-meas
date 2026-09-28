@@ -31,9 +31,11 @@ hart or touch memory, so it won't fail for reasons unrelated to the JTAG link.
 
 ```bash
 openocd -f testcases/jtag/01_idcode/openocd.scan.tcl
+openocd -c "set ADAPTER_KHZ 4000" -f testcases/jtag/01_idcode/openocd.scan.tcl
 ```
 
-The script runs at **100 kHz** (slow, for reliable first contact) and exits on its own.
+The script defaults to **100 kHz** (slow, for reliable first contact), honors an
+`ADAPTER_KHZ` override supplied before `-f`, and exits on its own.
 
 ## Expected output — PASS
 
