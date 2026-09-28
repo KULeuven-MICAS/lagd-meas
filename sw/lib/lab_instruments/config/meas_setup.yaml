@@ -48,7 +48,7 @@ power_analyzer_chip:
 # Waveform generator, test clocks / reference for the PLL
 function_generator:
   name: "Keysight 33600A FG"
-  IP: "0.0.0.0" # TODO: set the instrument IP
+  IP: "10.91.16.6"
   args:
     channels: 2
 
@@ -62,3 +62,10 @@ smu_vctrl:
     i_limit: 10.0e-6 # Vctrl is a gate: any real current means a fault
     terminals: "FRON"
     remote_sense: false
+
+# Oscilloscope measuring the (divided) PLL/VCO output clock
+scope:
+  name: "R&S RTB2004 Scope"
+  IP: "10.91.16.37"
+  args:
+    channels: 4

@@ -33,6 +33,7 @@ import yaml
 from sw.lib.lab_instruments import instrument as inst
 from sw.lib.lab_instruments.drivers.keysight_fg_33600 import KeysightFG33600
 from sw.lib.lab_instruments.drivers.keithley_smu_2450 import KeithleySMU2450
+from sw.lib.lab_instruments.drivers.rs_scope_rtb2000 import RSScopeRTB2000
 from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 from sw.lib.pll_driver import PllDriver
@@ -285,6 +286,56 @@ def test_function_generator(channel=1, freqs=(1e6, 10e6, 20e6), vpp=0.75, offset
     return ok
 
 
+def test_fg_to_scope(fg_ch=1, scope_ch=1, freqs=(1e6, 10e6, 20e6), vpp=0.75, offset=0.375,
+                     duty=50.0, f_tol=1e-3, vpp_tol=0.1, duty_tol=2.0):
+    """Equipment check: FG square wave into the scope, the scope measures it back.
+
+    FG channel `fg_ch` must be cabled to scope channel `scope_ch` (1 MOhm input).
+    Each step passes when the measured frequency is within `f_tol` (relative) and
+    the measured peak-to-peak within `vpp_tol` [V] and the duty cycle within
+    `duty_tol` [%] of the programmed values.
+    """
+    config = load_instr_cfg()
+    fg = KeysightFG33600(inst.BaseInstrumentData.from_mapping(config["function_generator"]))
+    scope = RSScopeRTB2000(inst.BaseInstrumentData.from_mapping(config["scope"]))
+    ok = True
+    try:
+        fg.status()
+        scope.status()
+        fg.set_load(fg_ch, "INF")
+        fg.set_square(fg_ch, freqs[0], vpp, offset, duty)
+        fg.output_on(fg_ch)
+
+        scope.set_probe_attenuation(scope_ch, 1)  # direct BNC cable from the FG
+        scope.autoscale()
+        scope.set_measurement(1, scope_ch, "FREQ")
+        scope.set_measurement(2, scope_ch, "PEAK")
+        scope.set_measurement(3, scope_ch, "MEAN")
+        scope.set_measurement(4, scope_ch, "PDCY")  # positive duty cycle [%]
+        scope.run()
+
+        for freq in freqs:
+            fg.set_frequency(fg_ch, freq)
+            time.sleep(1.0)  # let the acquisition and measurements settle
+            for _ in range(2):  # second pass refines on the settings of the first
+                scope.fit_to_signal(scope_ch, freq_slot=1, peak_slot=2, mean_slot=3)
+            f_mean, f_std, n = scope.measure_stats(1)
+            vpp_mean, _, _ = scope.measure_stats(2, n=3)
+            duty_mean, duty_std, _ = scope.measure_stats(4)
+            step_ok = (abs(f_mean - freq) < f_tol * freq and abs(vpp_mean - vpp) < vpp_tol
+                       and abs(duty_mean - duty) < duty_tol)
+            ok &= step_ok
+            logging.info(
+                "%s: FG %.3f MHz -> scope %.6f MHz (std %.3e Hz, n=%d), %.3f Vpp, duty %.2f %% (std %.2f)",
+                "PASS" if step_ok else "FAIL", freq / 1e6, f_mean / 1e6, f_std, n, vpp_mean,
+                duty_mean, duty_std,
+            )
+    finally:
+        fg.close()
+        scope.close()
+    return ok
+
+
 def test_smu(voltages=(0.0, 0.375, 0.75), settle=0.2, v_tol=2e-3, i_max=1e-6):
     """Equipment check: step the 2450 through a few Vctrl values and read V and I back.
 
@@ -333,8 +384,9 @@ if __name__ == "__main__":
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()):
-        # test_function_generator()  # TODO: set the FG IP in meas_setup.yaml first
-        test_smu()
+        # test_function_generator(freqs=(1e6,))  # 1 MHz, 0 -> 0.75 V square
+        test_fg_to_scope()
+        # test_smu()
 
     # cfg = CFG_REF4_OUT128MHZ.copy()
     # # Safer default config
