@@ -22,6 +22,6 @@ adapter speed $ADAPTER_KHZ
 
 # FT4232H: default USB PID; JTAG on channel 0 (ADBUS); standard MPSSE pinout
 # (TCK=AD0, TDI=AD1, TDO=AD2, TMS=AD3). AD4-7 unconnected.
-ftdi vid_pid 0x0403 0x6011
+adapter usb vid_pid 0x0403 0x6011
 ftdi channel 0
 ftdi layout_init 0x0088 0x000b
