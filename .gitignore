@@ -24,6 +24,9 @@ openising/**/run_*
 **.pdf
 **.csv
 
+# Temporary files
+**/no_backup
+
 # iclab key files
 **.key
 
