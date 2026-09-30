@@ -1,0 +1,1 @@
+This folder contains the configuration required to test 256-spin MIMO applications.
