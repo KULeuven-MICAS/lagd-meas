@@ -2,6 +2,8 @@
 # Licensed under the Apache License, Version 2.0, see LICENSE for details.
 # SPDX-License-Identifier: Apache-2.0
 
+# Author: Sofie De Weer <sofie.deweer@kuleuven.be>
+
 """Driver for the single-channel Keysight B2900B/BL source/measure units.
 
 The B2901BL installed in the lab is a one-channel SMU.  Unlike a bench power
