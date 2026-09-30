@@ -11,6 +11,22 @@ python sw/uart/send_uart.py sw/inputs/<test_name>.spm.elf
 ```
 On the board the files are also stored under `~/Workspace/finished_elfs/`.
 
+# HelloWorld test
+
+*helloworld.spm.elf:* tests on the bootrom and stack memory. It will prints out "Hello World!" in the terminal. If it finishes correctly, it proves the interface, bootrom, and the stack memory work.
+
+# Register sweep
+
+*lagd_reg.spm.elf:* tests all the cpu-writable registers within both Ising cores. If the chip does not have any stuck-at fault, it should report no error.
+
+# Ising single-core test
+
+*lagd_scompute.spm.elf:* tests the single-core's function and printf function.
+
+# Ising dual-core test
+
+*lagd_dcompute.spm.elf:* tests if the measurement setup can catch an error when an error code is returned. The program will return an error code (0x3) and print "FAIL" in the terminal.
+
 # Ferromagnetic flipping
 
 configuration file settings: 76 zeros, 180 ones, add_h = False, nb_flipping = 10. In the lagd_reg_params.h in lagd-im submodule change lines 19 and 20 to 0. In the base_experiment.yaml the cluster_choice = 'test' and the init_cluster_size: 0.0625.
