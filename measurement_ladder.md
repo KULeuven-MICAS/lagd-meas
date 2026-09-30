@@ -60,7 +60,7 @@ python sw/testcases/uart/00_loopback/loopback.py --device /dev/ttyUSB2
 - ✅ Find the chip's UART and confirm the bootrom answers the 0x06 handshake (note the core clock frequency should be >32MHz; otherwise UART cannot be internally configured to 115200)
 
 ```[bash]
-./sw/testcases/uart/01_portsweep/portsweep.py --scan
+./testcases/uart/01_portsweep/portsweep.py --scan
 ```
 
 - ✅ Chip is clocked and the bootrom works (via the real loader)
@@ -180,3 +180,45 @@ openocd -f testcases/jtag/02_halt/openocd.halt.tcl
 ```[bash]
 ./sw/jtag/run_elf.sh sw/inputs/lagd_dcompute.spm.elf -c "set ADAPTER_KHZ 4000"
 ```
+
+#### Galena Calibration
+
+- 🔳 How to calibrate galena's external bias?
+
+
+## Performance Measurement
+
+### Single case: 256x128 QAM4 MIMO @ 0.8V, 500 MHz
+
+#### Energy
+
+#### TTS
+
+```[bash]
+python sw/uart/send_uart.py sw/inputs/lagd_scompute.spm.elf --device /dev/ttyUSB2 --verify ─▶ Via UART (115200)
+./sw/jtag/run_elf.sh sw/inputs/lagd_scompute.spm.elf -c "set ADAPTER_KHZ 4000" ─▶ Via JTAG
+```
+
+### BER-SNR @ 24x24 BPSK MIMO
+
+To generate the data, run:
+```[bash]
+python openising/generate_experiment.py -config-file openising/MIMO_experiment/model_6 --simulate --nb-cores 2
+```
+Be sure the config_experiment.yaml file in the folder exists! To send the data to chip and retrieve all the data, run:
+
+```[bash]
+python openising/generate_experiment.py -config_file openising/MIMO_experiment/model_6 --nb-cores 2 --interface <interface> --host <host> --device <device>  --baud <baud> --timeout <timeout> --remote-dir <remote_dir>
+```
+With the interface set to either: uart, jtag, or spi. All other arguments are best to use when you want to change the default setting.
+
+### BER-SNR @ 256x128 QAM4 MIMO
+
+### MPC
+
+```[bash]
+python openising/generate_experiment.py -config-file openising/MPPI_experiment/model_0 --interface <interface> --host <host> --device <device>  --baud <baud> --timeout <timeout> --remote-dir <remote_dir>
+```
+With the interface set to either: uart, jtag, or spi. All other arguments are best to use when you want to change the default setting.
+
+### MaxCut

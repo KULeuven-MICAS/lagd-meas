@@ -18,9 +18,18 @@ results/
 *.swp
 
 # data files
-openising/**/run_*/**
+openising/**/run_*
 **.pkl
 **.out
+**.pdf
+**.csv
+
+# Temporary files
+**/no_backup
 
 # iclab key files
 **.key
+
+# Figures
+**.png
+**.svg

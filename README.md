@@ -26,6 +26,7 @@ and JTAG debug work.
 - [`tools/`](tools/) — lint and support tools.
 - [`target/`](target/) — target/board-specific files (e.g., `zcu102/`).
 - [`xillinux/`](xillinux/) — Xillinux root filesystem overlays and workspace files.
+- [`openising/`](openising/) — Application-level scripts (MaxCut/MIMO/MPC) for chip measurement.
 - `env.sh` — environment setup: `source env.sh` from the repo root before running any
   Python scripts.
 - `pyproject.toml` — Python linting configuration (Ruff targets Python 3.7 for the lab

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Author: Giuseppe M. Sarda <giuseppe.sarda@esat.kuleuven.be>
+# Author: Jiacong Sun <jiacong.sun@kuleuven.be>
 
 # This file contains the configuration for the lab instruments used in the project.
 
@@ -44,3 +45,42 @@ power_analyzer_chip:
       name: "CH4" # VDD GALENA 2 + PLL
       voltage: 0.75
       current: 1.0
+
+# Independent single-channel B2901BL SMUs for analog calibration.  These
+# values are the defaults consumed by sw.tests.smu_control; an output still
+# requires the command line's explicit --enable flag.
+source_measure_units:
+  smu_1:
+    name: "Keysight B2901BL SMU 4 - Analog Calibration"
+    IP: "10.91.16.108"
+    mode: "current"
+    calibration_mode: "base" # jdn
+    current: 0.000300 # 300 uA
+    voltage_limit: 0.75
+  smu_2:
+    name: "Keysight B2901BL SMU 1 - Analog Calibration"
+    IP: "10.91.16.78"
+    calibration_mode: "j" # jup
+    mode: "current"
+    current: -0.0006500 # 50 uA
+    min_current: -0.000600 # 1uA
+    max_current: -0.000700  # 50uA
+    voltage_limit: 0.75
+  smu_3:
+    name: "Keysight B2901BL SMU 2 - Analog Calibration"
+    IP: "10.91.16.77"
+    mode: "current"
+    calibration_mode: "hup"
+    current: -0.0000155 # 50 uA
+    min_current: -0.000005 # 1uA
+    max_current: -0.000000  # 100uA
+    voltage_limit: 0.9
+  smu_4:
+    name: "Keysight B2901BL SMU 3 - Analog Calibration"
+    IP: "10.91.16.79"
+    mode: "current"
+    calibration_mode: "hdn"
+    current: 0.0000115 # 50 uA
+    min_current: 0.000001 # 1uA
+    max_current: 0.000050  # 100uA
+    voltage_limit: 0.9

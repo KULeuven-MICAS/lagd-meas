@@ -58,7 +58,7 @@ DEFAULT_ELF = str(Path(__file__).resolve().parent.parent / 'inputs' / 'helloworl
 
 
 # Default SPI clock frequency (Hz) for the load: 5 MHz
-DEFAULT_SCK_HZ = 5_000_000
+DEFAULT_SCK_HZ = 15_000_000
 
 # Smoke-test pattern: an arbitrary, easily-recognizable 32-bit value. A clean
 # round-trip of this word proves the path works and the byte order is correct.

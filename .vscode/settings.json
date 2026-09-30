@@ -18,5 +18,8 @@
     "**/fpga/xsim.dir/**": true,
     "**/fpga/xillinux_template/**": true,
     "**/fpga/src/vivado_ip/**": true
-  }
+  },
+  // Auto-save
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000
 }

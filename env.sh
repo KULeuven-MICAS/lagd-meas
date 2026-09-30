@@ -27,6 +27,7 @@ esac
 
 export TOP_MEAS=$(git rev-parse --show-toplevel)
 export TOP_ISING=$TOP_MEAS/submodules/openising
+export TOP=$TOP_ISING
 export TOP_LAGD_IM=$TOP_MEAS/submodules/lagd-im
 
 echo "repo root on PYTHONPATH -> $_repo_root"
