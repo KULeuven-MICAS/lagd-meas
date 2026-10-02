@@ -6,6 +6,7 @@
 
 import logging
 import sys
+import argparse
 from getpass import getpass
 
 from crypto_utils import create_keyfile
@@ -17,22 +18,28 @@ logging_level = logging.INFO
 logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
 logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
 
-filename = input("Output key file [credentials.key]: ").strip()
-if filename == "":
-    filename = "credentials.key"
+def generate_passwordless_key(filename: str, creds):
+    create_keyfile(filename, creds.username, creds.password, "")
+    logger.info(f"Passwordless encrypted credential file written to '{filename}'.")
 
-credentials = prompt_for_credentials()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--passwordless", action="store_true", help="Generate a passwordless key silently")
+    args = parser.parse_args()
 
-master1 = getpass("Choose a master password: ")
-master2 = getpass("Repeat master password: ")
-if master1 != master2:
-    raise SystemExit("Master passwords do not match.")
+    filename = input("Output key file [credentials.key]: ").strip() if not args.passwordless else "credentials.key"
+    if filename == "":
+        filename = "credentials.key"
 
-create_keyfile(
-    filename,
-    credentials.username,
-    credentials.password,
-    master1,
-)
+    credentials = prompt_for_credentials()
 
-logger.info(f"Encrypted credential file written to '{filename}'.")
+    if args.passwordless:
+        generate_passwordless_key(filename, credentials)
+    else:
+        master1 = getpass("Choose a master password: ")
+        master2 = getpass("Repeat master password: ")
+        if master1 != master2:
+            raise SystemExit("Master passwords do not match.")
+
+        create_keyfile(filename, credentials.username, credentials.password, master1)
+        logger.info(f"Encrypted credential file written to '{filename}'.")

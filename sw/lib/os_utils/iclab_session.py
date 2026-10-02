@@ -10,7 +10,7 @@ import requests
 from contextlib import contextmanager
 from getpass import getpass
 
-from .crypto_utils import Credentials, decrypt_keyfile
+from sw.lib.os_utils.crypto_utils import Credentials, decrypt_keyfile, decrypt_passwordless_keyfile
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,12 @@ def get_credentials_from_keyfile(keyfile_path: str) -> Credentials:
     Returns:
         Credentials: An object containing the username and password.
     """
+    # Attempt silent decryption first
+    try:
+        return decrypt_passwordless_keyfile(keyfile_path)
+    except SystemExit:
+        pass
+
     credentials = None
     # Load credentials from the keyfile
     while credentials is None:
