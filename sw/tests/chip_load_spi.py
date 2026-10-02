@@ -9,14 +9,17 @@
 # Source env.sh once per shell (puts the repo root on PYTHONPATH), then:
 #   python3 sw/tests/chip_load_spi.py                      # default helloworld.spm.elf
 #   python3 sw/tests/chip_load_spi.py path/to/other.elf    # load a different ELF
+#   python3 sw/tests/chip_load_spi.py path/to/other.elf --verify
+#   python3 sw/tests/chip_load_spi.py path/to/other.elf --smoke-test
+#   python3 sw/tests/chip_load_spi.py path/to/other.elf --run-timeout 60
 #
 # This wires the reusable pieces together for the full flow:
 #   lib/chip_driver.py          -> ChipDriver (SPI transport via the FPGA)
 #   tools/elf_loader.py         -> parse the ELF into segments + entry
 #   tools/spi_program_loader.py -> write segments + scratch-register launch
 #
-# On startup it runs a SMOKE TEST first (a harmless SPI round-trip, no launch);
-# main() only runs if the smoke test passes. What main() does, end to end:
+# With --smoke-test it first runs a harmless SPI round-trip and only continues
+# if that passes. What main() does, end to end:
 #   1. open the chip write/read ports
 #   2. release the core (chip_clk_en=1, chip_rstn=1) so the Cheshire bootrom
 #      runs and spins in boot_passive() waiting on SCRATCH_2
@@ -25,7 +28,8 @@
 #   5. (verify) read each segment back and compare
 #   6. write the entry point to SCRATCH_0/1 and set SCRATCH_2 bit 1 -> the
 #      bootrom jumps to the entry, i.e. the program starts
-#   7. (wait) poll SCRATCH_2 for the program-exit flag + exit code
+#   7. poll SCRATCH_2 for the program-exit flag + exit code, keeping the
+#      Xillybus ports and FPGA-provided chip clock open while the program runs
 #
 # Prerequisite (hardware, NOT done here): boot_mode pins strapped to 0
 # (passive boot). See doc/spi_program_loading.md for the full background.
@@ -38,10 +42,16 @@
 import argparse
 import sys
 import logging
+import time
 from pathlib import Path
 
 from sw.lib.chip_driver import ChipDriver
-from sw.tools.spi_program_loader import SpiProgramLoader, SCRATCH_0
+from sw.tools.spi_program_loader import (
+    DEFAULT_EOC_TIMEOUT,
+    EocTimeoutError,
+    SCRATCH_0,
+    SpiProgramLoader,
+)
 
 # Configure logging: include timestamp and level (matches chip_test.py).
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -58,7 +68,7 @@ DEFAULT_ELF = str(Path(__file__).resolve().parent.parent / 'inputs' / 'helloworl
 
 
 # Default SPI clock frequency (Hz) for the load: 5 MHz
-DEFAULT_SCK_HZ = 15_000_000
+DEFAULT_SCK_HZ = 5_000_000
 
 # Smoke-test pattern: an arbitrary, easily-recognizable 32-bit value. A clean
 # round-trip of this word proves the path works and the byte order is correct.
@@ -120,26 +130,50 @@ def parse_args(argv=None):
                     help='path to the ELF to load (default: %(default)s)')
     ap.add_argument('--sck', type=float, default=DEFAULT_SCK_HZ, metavar='HZ',
                     help='target SPI clock frequency in Hz (default: %(default)s)')
+    ap.add_argument('--verify', action='store_true',
+                    help='verify writes and read back each segment before launching')
+    ap.add_argument('--smoke-test', action='store_true',
+                    help='run an SPI scratch-register round-trip before loading')
+    ap.add_argument('--run-timeout', type=float, default=DEFAULT_EOC_TIMEOUT,
+                    metavar='SECONDS',
+                    help='EOC wait limit; 0 waits forever (default: %(default)s)')
     args = ap.parse_args(argv)
     # Check the ELF here so a typo fails before the smoke test powers anything.
     if not Path(args.elf).is_file():
         ap.error(f"ELF not found: {args.elf}")
+    if args.run_timeout < 0:
+        ap.error('--run-timeout must be non-negative')
     return args
 
 
-def main(elf=DEFAULT_ELF, sck_hz=None):
+def main(elf=DEFAULT_ELF, sck_hz=None, verify=False,
+         run_timeout=DEFAULT_EOC_TIMEOUT):
     # Open the ports (caller owns the lifecycle; the loader never opens/closes).
     chip = ChipDriver(WRITE_DEV, READ_DEV)
-    with chip:
-        # Reset the chip and enable the clock
-        chip.reset_chip(hold=0.5, chip_clk_en=1)
+    try:
+        with chip:
+            setup_started = time.monotonic()
+            # Reset the chip and enable the clock.
+            chip.reset_chip(hold=0.001, chip_clk_en=1)
 
-        if sck_hz is not None:
-            chip.set_sck_hz(sck_hz) # takes effect on the next transaction
+            if sck_hz is not None:
+                chip.set_sck_hz(sck_hz)  # takes effect on the next transaction
+            logging.info(
+                "[spi-load] controller setup complete in %.3f s",
+                time.monotonic() - setup_started)
 
-        loader = SpiProgramLoader(chip)
-        # init_spi: enable Quad-SPI ; verify: read-back check ; wait: poll EOC.
-        loader.load_and_run(elf, init_spi=True, verify=True, wait=True)
+            loader = SpiProgramLoader(chip)
+            # init_spi: enable Quad-SPI; verify: read-back; wait: poll EOC.
+            loader.load_and_run(
+                elf,
+                init_spi=True,
+                verify=verify,
+                wait=True,
+                eoc_timeout=run_timeout,
+            )
+    except EocTimeoutError as error:
+        logging.error("%s", error)
+        return 1
 
     return 0
 
@@ -148,7 +182,7 @@ if __name__ == '__main__':
     # Parse first, so --help / a bad path fail before touching the hardware.
     args = parse_args()
     # Run the smoke test next; only proceed to the full load+launch if it passes.
-    if not smoke_test():
+    if args.smoke_test and not smoke_test():
         logging.error("aborting: smoke test did not pass, not loading the program")
         sys.exit(1)
-    sys.exit(main(args.elf, args.sck))
+    sys.exit(main(args.elf, args.sck, args.verify, args.run_timeout))

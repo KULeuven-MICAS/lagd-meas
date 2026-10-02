@@ -52,9 +52,8 @@ class PortDriver:
 
     # ---- low-level helpers ----
     def _send_words(self, words: List[int]) -> None:
-        """Send a list of 32-bit words to the write port."""
-        for word in words:
-            self.wp.sendInt(word)
+        """Send one command frame as a packed 32-bit Xillybus transfer."""
+        self.wp.sendIntArray(words)
 
     def read_word(self, timeout: float = 0.1) -> Optional[int]:
         """Poll the (non-blocking) read port until one 32-bit word arrives.

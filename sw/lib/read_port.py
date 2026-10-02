@@ -8,9 +8,11 @@ import os
 import struct
 import logging
 import time
-import numpy as np
 from types import TracebackType
-from typing import Optional, Tuple, Type, Union
+from typing import TYPE_CHECKING, Optional, Tuple, Type, Union
+
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +99,11 @@ class ReadPort:
             time.sleep(0.001)
         return struct.unpack("I", buf)[0]
 
-    def readIntArray(self, length: int) -> np.ndarray:
+    def readIntArray(self, length: int) -> "np.ndarray":
+        # Most users of ReadPort only read scalar words. NumPy is relatively
+        # expensive to import on the Zedboard, so load it only for this helper.
+        import numpy as np  # noqa: PLC0415
+
         buffer = bytearray(length * 4)
         offset = 0
         while offset < length * 4:
