@@ -70,3 +70,8 @@ scope:
   IP: "10.91.16.37"
   args:
     channels: 4
+
+spectrum_analyzer:
+  name: "Rohde & Schwarz FSV Signal Analyzer"
+  IP: "10.91.16.56"
+

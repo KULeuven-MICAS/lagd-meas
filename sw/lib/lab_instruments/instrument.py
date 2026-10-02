@@ -6,6 +6,7 @@
 
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from typing import List, Union
 
@@ -38,6 +39,24 @@ class BasePowerSupplyData(BaseInstrumentData):
     :channels: list: The list of channels of the power supply.
     """
     channels: list = field(default_factory=list)
+
+@dataclass
+class BaseOscilloscopeData(BaseInstrumentData):
+    """
+    Data class for the base oscilloscope.
+    It contains the common information that all oscilloscopes should have.
+    :channels: list: The list of channels of the oscilloscope.
+    """
+    channels: list = field(default_factory=list)
+
+@dataclass
+class BaseSpectrumAnalyzerData(BaseInstrumentData):
+    """
+    Data class for the base spectrum analyzer.
+    It contains the common information that all spectrum analyzers should have.
+    :traces: list: The list of traces/inputs of the spectrum analyzer.
+    """
+    traces: list = field(default_factory=list)
 
 class BaseInstrument:
     """
@@ -95,6 +114,10 @@ class BaseInstrument:
             ret = self.tool.query("SYST:ERR?")
             if self._ret_to_int(ret) != 0:
                 raise ValueError(f'Instrument {self.info.name} error: {ret}')
+
+    def read(self):
+        """ Read a response from the instrument."""
+        return self.tool.read()
 
     def query(self, command: str):
         """ Query the instrument and return the response."""
@@ -217,3 +240,307 @@ class BasePowerSupply(BaseInstrument):
             if self._channel_state[ch]:
                 self._select_channel(ch+1)
                 self.write('OUTP OFF')  # Turn off the output
+
+class BaseOscilloscope(BaseInstrument):
+    """
+    Base class for oscilloscopes.
+    It defines the common interface and methods that all oscilloscopes should implement.
+    :data: BaseOscilloscopeData: The data class containing the instrument's information.
+    """
+    def __init__(self, data: BaseOscilloscopeData, verbose: bool = False):
+        super().__init__(data, verbose=verbose)
+        if not hasattr(self, '_num_channels'):
+            raise NotImplementedError(
+                "Channel count not set. Please set _num_channels in the subclass.")
+        self._selected_channel = None
+        # Track the state of each channel (on/off)
+        self._channel_state = [False] * self._num_channels
+
+    def _validate_channel(self, channel: Union[int, str]) -> Union[int, str]:
+        """Validate a channel identifier for the oscilloscope."""
+        if isinstance(channel, int):
+            if channel < 1:
+                raise ValueError(f"Invalid channel {channel}. Valid range is 1..N.")
+            return channel
+        if isinstance(channel, str):
+            channel_name = channel.upper()
+            if not channel_name.startswith('CH'):
+                raise ValueError(f"Invalid channel '{channel}'. Expected names such as CH1 or CH2.")
+            return channel_name
+        raise TypeError(f"Unsupported channel type: {type(channel).__name__}")
+
+    def _set_channel_from_dict(self, channel: Union[int, str], settings: dict):
+        if 'scale' in settings:
+            self.set_vertical_scale(channel, settings['scale'])
+        if 'coupling' in settings:
+            self.set_coupling(channel, settings['coupling'])
+        if 'state' in settings:
+            self.set_channel_state(channel, settings['state'])
+        if 'position' in settings:
+            self.set_vertical_position(channel, settings['position'])
+        if 'probe_attenuation' in settings:
+            self.set_probe_attenuation(channel, settings['probe_attenuation'])
+
+    def reset(self):
+        """Reset the oscilloscope to its default state."""
+        self.write('*RST')
+
+    def autoscale(self):
+        """Perform an autoscale operation."""
+        self.write('AUToscale')
+
+    def set_vertical_scale(self, channel: Union[int, str], scale: float):
+        channel = self._validate_channel(channel)
+        self.write(f'CHAN{channel}:SCALe {scale}')
+
+    def set_coupling(self, channel: Union[int, str], coupling: str):
+        channel = self._validate_channel(channel)
+        self.write(f'CHAN{channel}:COUPling {coupling.upper()}')
+
+    def set_channel_state(self, channel: Union[int, str], state: Union[bool, str]):
+        channel = self._validate_channel(channel)
+        if isinstance(state, bool):
+            state_value = 'ON' if state else 'OFF'
+        else:
+            state_value = str(state).upper()
+        self.write(f'CHAN{channel}:STATe {state_value}')
+
+    def set_vertical_position(self, channel: Union[int, str], position: float):
+        channel = self._validate_channel(channel)
+        self.write(f'CHAN{channel}:POS {position}')
+
+    def set_probe_attenuation(self, channel: Union[int, str], attenuation: float):
+        channel = self._validate_channel(channel)
+        self.write(f'PROBe{channel}:SETup:ATT:MAN {attenuation}')
+
+    def set_channel(self, channel: Union[int, str], settings: dict = None):
+        channel = self._validate_channel(channel)
+        if settings is not None:
+            self._set_channel_from_dict(channel, settings)
+
+    def set_timebase_scale(self, scale: float):
+        self.write(f'TIM:SCAL {scale}')
+
+    def set_horizontal_position(self, position: float):
+        self.write(f'TIM:POS {position}')
+
+    def set_trigger(self, trigger_type: str = 'EDGE', source: str = 'CH1',
+                    mode: str = 'AUTO', slope: str = 'POS', level: float = 0.25):
+        self.write(f'TRIG:A:TYPE {trigger_type.upper()}')
+        self.write(f'TRIG:A:SOUR {source.upper()}')
+        self.write(f'TRIG:A:MODE {mode.upper()}')
+        self.write(f'TRIG:A:EDGE:SLOP {slope.upper()}')
+        self.write(f'TRIG:A:LEV1 {level}')
+
+    def set_measurement(self, measurement_id: int = 1, main: str = 'FREQ',
+                        source: str = 'CH1', enable: bool = True):
+        '''
+        Example measurements (main):
+        PEAK (Vpp), UPE (Vp+), LPE (Vp-), CYCR (RMS-Cyc), CYCM (MeanCyc),
+        PER (T), FREQ (f), RTIM (tr), FTIM (tf)
+        '''
+        enable_value = 'ON' if enable else 'OFF'
+        self.write(f'MEAS{measurement_id}:MAIN {main.upper()}')
+        self.write(f'MEAS{measurement_id}:SOUR {source.upper()}')
+        self.write(f'MEAS{measurement_id}:ENAB {enable_value}')
+
+    def set_measurement_statistics(self, measurement_id: int = 1, main: str = 'PER',
+                        source: str = 'CH1', enable: bool = True):
+        '''
+        Example measurements (main):
+        PEAK (Vpp), UPE (Vp+), LPE (Vp-), CYCR (RMS-Cyc), CYCM (MeanCyc),
+        PER (T), FREQ (f), RTIM (tr), FTIM (tf)
+        '''
+        enable_value = 'ON' if enable else 'OFF'
+        self.write(f'MEAS{measurement_id}:MAIN {main.upper()}')
+        self.write(f'MEAS{measurement_id}:SOUR {source.upper()}')
+        self.write(f'MEAS{measurement_id}:ENAB {enable_value}')
+        self.write(f'MEAS:STAT:ENAB {enable_value}')  # Enable statistics
+        self.write('MEAS:STAT:RES')
+
+    def get_measurement_result(self, measurement_id: int = 1):
+        return self.query(f'MEAS{measurement_id}:RES?').strip()
+
+    def get_measurement_mean(self, measurement_id: int = 1):
+        return self.query(f'MEAS{measurement_id}:STAT:MEAN?').strip()
+
+    def get_measurement_stddev(self, measurement_id: int = 1):
+        return self.query(f'MEAS{measurement_id}:STAT:STDD?').strip()
+
+    def get_timebase_scale(self):
+        return self.query('TIM:SCAL?').strip()
+
+    def _close(self):
+        """Close the oscilloscope resource if needed."""
+        pass
+
+class BaseSpectrumAnalyzer(BaseInstrument):
+    """
+    Base class for spectrum analyzers.
+    It defines the common interface and methods that all spectrum analyzers should implement.
+    :data: BaseSpectrumAnalyzerData: The data class containing the instrument's information.
+    """
+    def __init__(self, data: BaseSpectrumAnalyzerData, verbose: bool = False):
+        super().__init__(data, verbose=verbose)
+        if not hasattr(self, '_num_traces'):
+            raise NotImplementedError(
+                "Trace count not set. Please set _num_traces in the subclass.")
+        if not hasattr(self, '_num_markers'):
+            raise NotImplementedError(
+                "Marker count not set. Please set _num_markers in the subclass.")
+
+        self._selected_trace = None
+
+    def _validate_trace(self, trace: int) -> int:
+        """Validate a trace identifier for the analyzer."""
+        if isinstance(trace, int):
+            if trace < 1 or trace > self._num_traces:
+                raise ValueError(f"Invalid trace {trace}. Valid range is 1..{self._num_traces}.")
+            return trace
+        raise TypeError(f"Unsupported trace type: {type(trace).__name__}")
+
+    def _validate_marker(self, marker: int) -> int:
+        """Validate a marker identifier for the analyzer."""
+        if isinstance(marker, int):
+            if marker < 1 or marker > self._num_markers:
+                raise ValueError(f"Invalid marker {marker}. Valid range is 1..{self._num_markers}.")
+            return marker
+        raise TypeError(f"Unsupported marker type: {type(marker).__name__}")
+
+    def reset(self):
+        """Reset the spectrum analyzer to its default state."""
+        self.write('*RST')
+
+    # --- Frequency & Bandwidth Methods ---
+
+    def set_center_frequency(self, freq: float):
+        """Set the center frequency."""
+        self.write(f'FREQ:CENT {freq}')
+
+    def set_span(self, span: float):
+        """Set the frequency span."""
+        self.write(f'FREQ:SPAN {span}')
+
+    def set_rbw(self, rbw: float):
+        """Set the resolution bandwidth (RBW)."""
+        self.write(f'BAND:RES {rbw}')
+
+    def set_vbw(self, vbw: float):
+        """Set the video bandwidth (VBW)."""
+        self.write(f'BAND:VID {vbw}')
+
+    # --- Amplitude Methods ---
+
+    def set_reference_level(self, level: float):
+        """Set the reference level in dBm."""
+        self.write(f'DISP:WIND:TRAC:Y:RLEV {level}')
+
+    def set_display_range(self, range_db: float):
+        """Set the Y-axis display range in dB (e.g., for Log Manual range)."""
+        self.write(f'DISP:WIND:TRAC:Y {range_db}')
+
+    # --- Trace & Sweep Methods ---
+
+    def set_trace_mode(self, trace: int, mode: str):
+        """
+        Set the trace mode (e.g., 'WRITe', 'AVERage', 'MAXHold', 'MINHold').
+        """
+        trace = self._validate_trace(trace)
+        self.write(f'DISP:WIND:TRAC{trace}:MODE {mode.upper()}')
+
+    def set_sweep_mode(self, continuous: bool):
+        """Switch between continuous and single sweep modes."""
+        state = 'ON' if continuous else 'OFF'
+        self.write(f'INIT:CONT {state}')
+
+    def set_sweep_count(self, count: int):
+        """Set the number of sweeps for averaging."""
+        self.write(f'SWE:COUN {count}')
+
+    def trigger_single_sweep(self, wait: bool = True, timeout_ms: int = 120000):
+        """
+        Trigger a single sweep or a full averaging sequence.
+        If wait is True, blocks execution until the sweep completes by extending the
+        PyVISA timeout and waiting for the Operation Complete (*OPC?) flag.
+        """
+        if wait:
+            # Save the original PyVISA timeout to restore later
+            original_timeout = self.tool.timeout
+
+            try:
+                # Temporarily extend the timeout to allow long sweeps to finish
+                self.tool.timeout = timeout_ms
+
+                # *OPC? blocks Python until the instrument returns '1' when the sweep finishes.
+                # Using self.query bypasses the automatic immediate SYST:ERR? check in self.write.
+                self.query('INIT;*OPC?')
+
+                # Now that the sweep is complete, manually check for errors
+                ret = self.query("SYST:ERR?")
+                if self._ret_to_int(ret) != 0:
+                    raise ValueError(f'Instrument error after sweep: {ret}')
+
+            finally:
+                # Guarantee the timeout is restored even if an error is raised
+                self.tool.timeout = original_timeout
+        else:
+            self.write('INIT')
+
+    # --- Marker & Measurement Methods ---
+
+    def set_marker_state(self, marker: int, state: bool):
+        """Turn a specific marker ON or OFF."""
+        marker = self._validate_marker(marker)
+        state_str = 'ON' if state else 'OFF'
+        self.write(f'CALC:MARK{marker}:STAT {state_str}')
+
+    def set_marker_frequency(self, marker: int, freq: float):
+        """Move a specific marker to a target frequency."""
+        marker = self._validate_marker(marker)
+        self.write(f'CALC:MARK{marker}:X {freq}')
+
+    def get_marker_y_value(self, marker: int) -> float:
+        """Query the amplitude or function result (e.g., phase noise) of a marker."""
+        marker = self._validate_marker(marker)
+        return float(self.query(f'CALC:MARK{marker}:Y?').strip())
+
+    def set_delta_marker_state(self, marker: int, state: bool):
+        """Turn a specific delta marker ON or OFF."""
+        marker = self._validate_marker(marker)
+        state_str = 'ON' if state else 'OFF'
+        self.write(f'CALC:DELT{marker}:STAT {state_str}')
+
+    def set_delta_marker_x(self, marker: int, offset: float):
+        """Move a specific delta marker to a target offset frequency."""
+        marker = self._validate_marker(marker)
+        self.write(f'CALC:DELT{marker}:X {offset}')
+
+    def get_delta_marker_y(self, marker: int) -> float:
+        """Query the amplitude or function result (e.g., phase noise) of a delta marker."""
+        marker = self._validate_marker(marker)
+        return float(self.query(f'CALC:DELT{marker}:Y?').strip())
+
+    def peak_search(self, marker: int = 1):
+        """Move the specified marker to the highest peak on the trace."""
+        marker = self._validate_marker(marker)
+        self.write(f'CALC:MARK{marker}:MAX')
+
+    def marker_to_center(self, marker: int = 1):
+        """Set the center frequency to the current marker frequency."""
+        marker = self._validate_marker(marker)
+        self.write(f'CALC:MARK{marker}:FUNC:CENT')
+
+    def marker_to_reference_level(self, marker: int = 1):
+        """Set the reference level to the current marker amplitude."""
+        marker = self._validate_marker(marker)
+        self.write(f'CALC:MARK{marker}:FUNC:REF')
+
+    def enable_phase_noise_marker(self, marker: int = 2, state: bool = True):
+        """Enable or disable the Phase Noise marker function (dBc/Hz) on a delta marker."""
+        marker = self._validate_marker(marker)
+        state_str = 'ON' if state else 'OFF'
+        self.write(f'CALC:DELT{marker}:FUNC:PNO {state_str}')
+
+    def _close(self):
+        """Close the spectrum analyzer resource if needed."""
+        pass

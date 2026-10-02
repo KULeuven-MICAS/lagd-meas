@@ -109,3 +109,12 @@ def decrypt_keyfile(filename: str) -> Credentials:
     logger.info("Successfully decrypted credentials.")
     return Credentials(username=username, password=password)
 
+def decrypt_passwordless_keyfile(filename: str) -> Credentials:
+    """Load credentials silently using an empty master password."""
+    try:
+        username, password = load_credentials(filename, "")
+    except ValueError as e:
+        raise SystemExit("Passwordless decryption failed. Keyfile requires a master password.") from e
+
+    logger.info("Successfully decrypted credentials silently.")
+    return Credentials(username=username, password=password)
