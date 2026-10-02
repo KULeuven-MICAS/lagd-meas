@@ -58,8 +58,21 @@ class WritePort:
         logger.info("Closed write port to %s", self.devfile)
 
     def __sendData(self, data: bytes) -> bool:
-        logger.debug("Sending %d bytes, data: %s", len(data), data.hex())
-        os.write(self.portId, data)
+        """Write the complete buffer, retrying interruptions and short writes."""
+        logger.debug("Sending %d bytes", len(data))
+        self.totalBytesForTransmission += len(data)
+
+        view = memoryview(data)
+        offset = 0
+        while offset < len(view):
+            try:
+                written = os.write(self.portId, view[offset:])
+            except InterruptedError:
+                continue
+            if written == 0:
+                raise OSError("write returned zero bytes before the buffer was sent")
+            offset += written
+            self.totalBytesTransmitted += written
         return True
 
     def sendString(self, data: bytes) -> bool:
@@ -70,11 +83,15 @@ class WritePort:
         return self.__sendData(data)
 
     def sendInt(self, num: int) -> bool:
-        data = struct.pack("I", num)
+        data = struct.pack("<I", int(num) & 0xFFFFFFFF)
         return self.__sendData(data)
 
     def sendIntArray(self, array: List[int]) -> bool:
-        data = struct.pack(f"{len(array)}i", *array)
+        # Xillybus carries a little-endian stream of unsigned 32-bit words.
+        # Pack the complete frame once so the kernel/Xillybus DMA path can keep
+        # the FPGA input FIFO populated instead of receiving one syscall/word.
+        words = [int(num) & 0xFFFFFFFF for num in array]
+        data = struct.pack(f"<{len(words)}I", *words)
         return self.__sendData(data)
 
     def sendFloat(self, num: float) -> bool:
@@ -94,7 +111,7 @@ class WritePort:
         return self.__sendData(data)
 
     def sendHex(self, num: str) -> bool:
-        data = struct.pack("I", int(num, 0))
+        data = struct.pack("<I", int(num, 0) & 0xFFFFFFFF)
         return self.__sendData(data)
 
     def getBytesLost(self) -> int:
