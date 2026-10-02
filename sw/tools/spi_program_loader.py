@@ -104,12 +104,12 @@ class SpiProgramLoader:
             self.chip.write_mem((addr + off * 4) & 0xFFFFFFFF, chunk)
             off += len(chunk)
 
-    def load_image(self, img):
+    def load_image(self, img, verified=True):
         """Write every PT_LOAD segment of a parsed ELF image to the chip."""
         for seg in img.segments:
             words = bytes_to_words(seg.data)
             self._log(f"segment -> 0x{seg.addr & 0xFFFFFFFF:08X}  {len(seg.data)} bytes ({len(words)} words)")
-            self.write_segment(seg.addr & 0xFFFFFFFF, words)
+            self.write_segment(seg.addr & 0xFFFFFFFF, words, verified)
 
     def verify_image(self, img):
         """Read back every segment and compare. Returns True if all match.
@@ -165,7 +165,7 @@ class SpiProgramLoader:
             self._log("enabling Quad-SPI on the chip's SPI slave")
             self.chip.init_spi()
 
-        self.load_image(img)
+        self.load_image(img, verified=verify)
 
         if verify and not self.verify_image(img):
             raise RuntimeError("readback verification failed; not launching")

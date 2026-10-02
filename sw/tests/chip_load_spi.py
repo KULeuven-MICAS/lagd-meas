@@ -9,6 +9,8 @@
 # Source env.sh once per shell (puts the repo root on PYTHONPATH), then:
 #   python3 sw/tests/chip_load_spi.py                      # default helloworld.spm.elf
 #   python3 sw/tests/chip_load_spi.py path/to/other.elf    # load a different ELF
+#   python3 sw/tests/chip_load_spi.py path/to/other.elf --verify
+#   python3 sw/tests/chip_load_spi.py path/to/other.elf --smoke-test
 #
 # This wires the reusable pieces together for the full flow:
 #   lib/chip_driver.py          -> ChipDriver (SPI transport via the FPGA)
@@ -120,6 +122,10 @@ def parse_args(argv=None):
                     help='path to the ELF to load (default: %(default)s)')
     ap.add_argument('--sck', type=float, default=DEFAULT_SCK_HZ, metavar='HZ',
                     help='target SPI clock frequency in Hz (default: %(default)s)')
+    ap.add_argument('--verify', action='store_true',
+                    help='verify writes and read back each segment before launching')
+    ap.add_argument('--smoke-test', action='store_true',
+                    help='run an SPI scratch-register round-trip before loading')
     args = ap.parse_args(argv)
     # Check the ELF here so a typo fails before the smoke test powers anything.
     if not Path(args.elf).is_file():
@@ -127,7 +133,7 @@ def parse_args(argv=None):
     return args
 
 
-def main(elf=DEFAULT_ELF, sck_hz=None):
+def main(elf=DEFAULT_ELF, sck_hz=None, verify=False):
     # Open the ports (caller owns the lifecycle; the loader never opens/closes).
     chip = ChipDriver(WRITE_DEV, READ_DEV)
     with chip:
@@ -139,7 +145,7 @@ def main(elf=DEFAULT_ELF, sck_hz=None):
 
         loader = SpiProgramLoader(chip)
         # init_spi: enable Quad-SPI ; verify: read-back check ; wait: poll EOC.
-        loader.load_and_run(elf, init_spi=True, verify=True, wait=True)
+        loader.load_and_run(elf, init_spi=True, verify=verify, wait=True)
 
     return 0
 
@@ -148,7 +154,7 @@ if __name__ == '__main__':
     # Parse first, so --help / a bad path fail before touching the hardware.
     args = parse_args()
     # Run the smoke test next; only proceed to the full load+launch if it passes.
-    if not smoke_test():
+    if args.smoke_test and not smoke_test():
         logging.error("aborting: smoke test did not pass, not loading the program")
         sys.exit(1)
-    sys.exit(main(args.elf, args.sck))
+    sys.exit(main(args.elf, args.sck, args.verify))
