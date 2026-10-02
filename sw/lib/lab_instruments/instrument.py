@@ -6,6 +6,7 @@
 
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from typing import List, Union
 
@@ -113,6 +114,10 @@ class BaseInstrument:
             ret = self.tool.query("SYST:ERR?")
             if self._ret_to_int(ret) != 0:
                 raise ValueError(f'Instrument {self.info.name} error: {ret}')
+
+    def read(self):
+        """ Read a response from the instrument."""
+        return self.tool.read()
 
     def query(self, command: str):
         """ Query the instrument and return the response."""
@@ -383,7 +388,7 @@ class BaseSpectrumAnalyzer(BaseInstrument):
         if not hasattr(self, '_num_markers'):
             raise NotImplementedError(
                 "Marker count not set. Please set _num_markers in the subclass.")
-        
+
         self._selected_trace = None
 
     def _validate_trace(self, trace: int) -> int:
@@ -430,6 +435,10 @@ class BaseSpectrumAnalyzer(BaseInstrument):
         """Set the reference level in dBm."""
         self.write(f'DISP:WIND:TRAC:Y:RLEV {level}')
 
+    def set_display_range(self, range_db: float):
+        """Set the Y-axis display range in dB (e.g., for Log Manual range)."""
+        self.write(f'DISP:WIND:TRAC:Y {range_db}')
+
     # --- Trace & Sweep Methods ---
 
     def set_trace_mode(self, trace: int, mode: str):
@@ -448,13 +457,32 @@ class BaseSpectrumAnalyzer(BaseInstrument):
         """Set the number of sweeps for averaging."""
         self.write(f'SWE:COUN {count}')
 
-    def trigger_single_sweep(self, wait: bool = True):
+    def trigger_single_sweep(self, wait: bool = True, timeout_ms: int = 120000):
         """
         Trigger a single sweep or a full averaging sequence.
-        If wait is True, blocks execution until the sweep completes.
+        If wait is True, blocks execution until the sweep completes by extending the
+        PyVISA timeout and waiting for the Operation Complete (*OPC?) flag.
         """
         if wait:
-            self.write('INIT;*WAI')
+            # Save the original PyVISA timeout to restore later
+            original_timeout = self.tool.timeout
+
+            try:
+                # Temporarily extend the timeout to allow long sweeps to finish
+                self.tool.timeout = timeout_ms
+
+                # *OPC? blocks Python until the instrument returns '1' when the sweep finishes.
+                # Using self.query bypasses the automatic immediate SYST:ERR? check in self.write.
+                self.query('INIT;*OPC?')
+
+                # Now that the sweep is complete, manually check for errors
+                ret = self.query("SYST:ERR?")
+                if self._ret_to_int(ret) != 0:
+                    raise ValueError(f'Instrument error after sweep: {ret}')
+
+            finally:
+                # Guarantee the timeout is restored even if an error is raised
+                self.tool.timeout = original_timeout
         else:
             self.write('INIT')
 
@@ -476,6 +504,22 @@ class BaseSpectrumAnalyzer(BaseInstrument):
         marker = self._validate_marker(marker)
         return float(self.query(f'CALC:MARK{marker}:Y?').strip())
 
+    def set_delta_marker_state(self, marker: int, state: bool):
+        """Turn a specific delta marker ON or OFF."""
+        marker = self._validate_marker(marker)
+        state_str = 'ON' if state else 'OFF'
+        self.write(f'CALC:DELT{marker}:STAT {state_str}')
+
+    def set_delta_marker_x(self, marker: int, offset: float):
+        """Move a specific delta marker to a target offset frequency."""
+        marker = self._validate_marker(marker)
+        self.write(f'CALC:DELT{marker}:X {offset}')
+
+    def get_delta_marker_y(self, marker: int) -> float:
+        """Query the amplitude or function result (e.g., phase noise) of a delta marker."""
+        marker = self._validate_marker(marker)
+        return float(self.query(f'CALC:DELT{marker}:Y?').strip())
+
     def peak_search(self, marker: int = 1):
         """Move the specified marker to the highest peak on the trace."""
         marker = self._validate_marker(marker)
@@ -491,11 +535,11 @@ class BaseSpectrumAnalyzer(BaseInstrument):
         marker = self._validate_marker(marker)
         self.write(f'CALC:MARK{marker}:FUNC:REF')
 
-    def enable_phase_noise_marker(self, marker: int = 1, state: bool = True):
-        """Enable or disable the Phase Noise marker function (dBc/Hz)."""
+    def enable_phase_noise_marker(self, marker: int = 2, state: bool = True):
+        """Enable or disable the Phase Noise marker function (dBc/Hz) on a delta marker."""
         marker = self._validate_marker(marker)
         state_str = 'ON' if state else 'OFF'
-        self.write(f'CALC:MARK{marker}:FUNC:PNO {state_str}')
+        self.write(f'CALC:DELT{marker}:FUNC:PNO {state_str}')
 
     def _close(self):
         """Close the spectrum analyzer resource if needed."""
