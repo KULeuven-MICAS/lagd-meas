@@ -1,0 +1,2 @@
+swept,vco_tune_coarse,vco_current_min,vco_current_max,vctrl_set,vctrl_meas,i_ctrl,f_meas,f_std,n_valid,f_vco,set_div_freq,clk_div_val,total_div
+vco_current_max,0,15,0,0.0,-3.977591e-06,-1.06547e-09,13393.64,0.0,3,26787.28,0,0,2

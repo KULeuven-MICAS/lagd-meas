@@ -5,6 +5,7 @@
 # Author: Willem Vandesteene
 
 import logging
+import time
 
 import pyvisa
 from sw.lib.lab_instruments import instrument as inst
@@ -20,6 +21,9 @@ class KeithleySMU2450(inst.BaseInstrument):
     info.args: dict: Additional arguments for the instrument. Accepts
         v_min, v_max: float, software clamp on the source voltage [V] (default 0, 0.75).
         i_limit: float, current compliance [A] (default 10e-6).
+        i_range: float, fixed current measure range [A] (default 10e-6). A fixed range
+            keeps the source able to deliver up to i_limit; on autorange a near-zero
+            load drops it to the nA range and a capacitive node charges very slowly.
         terminals: str, 'FRON' or 'REAR' (default 'FRON').
         remote_sense: bool, 4-wire sensing (default False).
     """
@@ -48,7 +52,8 @@ class KeithleySMU2450(inst.BaseInstrument):
         self.write(':SOUR:VOLT 0')
         self.set_current_limit(args.get("i_limit", 10e-6))
         self.write(':SENS:FUNC "CURR"')
-        self.write(':SENS:CURR:RANG:AUTO ON')
+        self.write(':SENS:CURR:RANG:AUTO OFF')
+        self.write(f':SENS:CURR:RANG {args.get("i_range", 10e-6)}')
         self.write(f':SENS:CURR:RSEN {"ON" if args.get("remote_sense", False) else "OFF"}')
 
     def set_current_limit(self, i_limit: float):
@@ -72,6 +77,20 @@ class KeithleySMU2450(inst.BaseInstrument):
         ret = self.query(':READ? "defbuffer1", SOUR, READ')
         v, i = (float(x) for x in ret.strip().split(','))
         return v, i
+
+    def wait_settled(self, v_set: float, tol: float = 1e-3, timeout: float = 5.0, poll: float = 0.1) -> tuple:
+        """Measure until the output is within `tol` [V] of `v_set` or `timeout` [s] passes.
+        Returns the last (voltage, current); logs a warning when it did not settle."""
+        t_end = time.time() + timeout
+        while True:
+            v, i = self.measure()
+            if abs(v - v_set) <= tol:
+                return v, i
+            if time.time() > t_end:
+                logger.warning(f"{self.info.name}: not settled to {v_set} V after {timeout} s "
+                               f"(at {v:.4f} V, {i:.2e} A)")
+                return v, i
+            time.sleep(poll)
 
     def in_compliance(self) -> bool:
         """True when the source is limited by the current compliance."""

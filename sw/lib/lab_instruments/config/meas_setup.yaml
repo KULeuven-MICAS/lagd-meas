@@ -60,6 +60,7 @@ smu_vctrl:
     v_min: 0.0
     v_max: 0.75 # PLL VDD, never drive Vctrl above it
     i_limit: 10.0e-6 # Vctrl is a gate: any real current means a fault
+    i_range: 10.0e-6 # fixed measure range, see the driver docstring
     terminals: "FRON"
     remote_sense: false
 

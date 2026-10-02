@@ -1,3 +1,22 @@
+# Post-processing environment (plots, notebooks) for the workstation, managed by
+# uv: `uv sync`. The measurement code itself runs on the lab machines' Python 3.6
+# (pyvisa-env) and does not use this environment.
+[project]
+name = "lagd-meas"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "jupyter",
+    "kaleido",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "plotly",
+]
+
+[tool.uv]
+package = false  # not an installable package, only an environment
+
 [tool.ruff]
 line-length = 120
 indent-width = 4
