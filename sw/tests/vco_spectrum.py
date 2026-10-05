@@ -160,7 +160,7 @@ def measure_vco_spectrum(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=N
         f_out = find_carrier(spectrum, f_vco / total_div)
         row.update(f_out_meas=f_out, f_vco_meas=f_out * total_div, f_dev_pct=(f_out * total_div / f_vco - 1) * 100)
         row.update(pll_setup.measure_pll_supply(supply, label="%.1f MHz" % (f_vco / 1e6)))
-        logging.info("  carrier %.4f MHz on the pad -> f_vco %.2f MHz (%+.2f %% from the target)",
+        logging.info("  carrier on the pad (= PLL output) %.4f MHz -> VCO %.2f MHz (%+.2f %% from the target)",
                      f_out / 1e6, f_out * total_div / 1e6, row["f_dev_pct"])
 
         traces = []  # the averaged trace of every span (RohdeSchwarzFSVSpectrum.get_trace)
@@ -177,9 +177,10 @@ def measure_vco_spectrum(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=N
         for f, l in profile.items():
             row["L_out_{:.0f}".format(f)] = l
             row["L_vco_{:.0f}".format(f)] = l + 20 * np.log10(total_div)
-        logging.info("  phase noise (VCO-referred): %s", ", ".join(
+        logging.info("  phase noise referred to the VCO: %s", ", ".join(
             "{:g} Hz: {:.1f} dBc/Hz".format(f, l + 20 * np.log10(total_div)) for f, l in profile.items()))
-        logging.info("  RMS jitter %.0f-%.0f Hz: %.3f ps, %.3f mrad on the pad, %.3f mrad at the VCO",
+        logging.info("  RMS jitter %.0f-%.0f Hz: %.3f ps; phase %.3f mrad on the pad (= PLL output), %.3f mrad at "
+                     "the VCO",
                      min(offsets), max(offsets), t_jit * 1e12, phi_out * 1e3, phi_out * total_div * 1e3)
     except Exception:
         logging.exception("VCO spectrum measurement failed at %.1f MHz", f_vco / 1e6)
@@ -298,7 +299,7 @@ def capture_spectrum(f_vco, kvco=None, sample=None, lut_csv=None, center=None, s
                 [dict(setting, freq=f, level_dbm=l) for f, l in zip(t["freq"], t["level"])])
     i_max = int(np.argmax(t["level"]))
     logging.info("Spectrum: %d points, %d sweeps averaged, RBW %g Hz; peak %.1f dBm at %.4f MHz on the pad "
-                 "(f_vco %.2f MHz) -> %s", len(t["level"]), averages, t["rbw"], t["level"][i_max],
+                 "(= PLL output; VCO %.2f MHz) -> %s", len(t["level"]), averages, t["rbw"], t["level"][i_max],
                  t["freq"][i_max] / 1e6, t["freq"][i_max] * vco["total_div"] / 1e6, csv_path)
     return csv_path
 
