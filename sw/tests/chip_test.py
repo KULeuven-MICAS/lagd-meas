@@ -163,10 +163,10 @@ def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32,
     # SCK must stay at or below the chip clock: the slave's RX FIFO is 8 words
     # deep and cannot backpressure SPI, so an AXI side slower than the SPI silently drops words.
     # chip.set_chip_clk_hz(10e6) # 10 MHz (FPGA clock is not used for now. Use the on-PCB oscillator instead)
-    chip.set_sck_hz(5e6)  # 5 MHz
+    # chip.set_sck_hz(5e6)  # 5 MHz (SPI clock is not used for now. Use the external pulse generator instead)
 
     # enable the chip clock and reset the chip
-    chip.reset_chip(hold=0.5, chip_clk_en=1)
+    chip.reset_chip(hold=0.01, chip_clk_en=1)
 
     # init quad-spi
     chip.init_spi()
