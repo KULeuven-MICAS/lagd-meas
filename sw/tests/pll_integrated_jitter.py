@@ -11,6 +11,7 @@ import time
 import pyvisa
 from typing import Union, Dict, List
 import random
+import contextlib
 import csv
 import itertools
 import os
@@ -19,6 +20,7 @@ from datetime import datetime
 import yaml
 from pathlib import Path
 
+from sw.lib import pll_setup
 from sw.lib.pll_driver import PllDriver
 from sw.lib.pll_command_api import (
     calculate_div_factor,
@@ -137,6 +139,21 @@ def setup_spectrum_analyzer():
         return spectrum
 
 
+def reset_remote_timer():
+    """Workaround: open and close a dummy session to reset the analyzer's 300 s remote-control timer.
+    Both the extra instrument connection and the dummy session are closed again."""
+    tmp = None
+    try:
+        tmp = setup_spectrum_analyzer()
+        temp_session = tmp._open_resource()
+        temp_session.close()
+    except pyvisa.VisaIOError as e:
+        logging.warning("Failed to open/close dummy session: %s", e)
+    finally:
+        if tmp is not None:
+            tmp.close()
+
+
 def measure_integrated_jitter(spectrum: RohdeSchwarzFSVSpectrum, center_freq: float, n_averages: int = 10) -> Union[float, float]:
     """
     Measure the integrated jitter using the spectrum analyzer.
@@ -182,27 +199,23 @@ def measure_integrated_jitter(spectrum: RohdeSchwarzFSVSpectrum, center_freq: fl
 def jitter_statistic_variation():
     spectrum = setup_spectrum_analyzer()
     jitter_results = {}
-    for n_averages in (5, 10, 20):
-        measurements = []
-        for _ in range(5):
-    
-            # Workaround: Reset the 300s remote-control timer
-            try:
-                tmp = setup_spectrum_analyzer()
-                temp_session = tmp._open_resource()
-                temp_session.close()
-            except pyvisa.VisaIOError as e:
-                logging.warning("Failed to open/close dummy session: %s", e)
-    
-            measurements.append(
-                measure_integrated_jitter(
-                    spectrum,
-                    center_freq=37.5e6,
-                    n_averages=n_averages,
-                )
-            )
+    with contextlib.closing(spectrum):  # analyzer closed on exit, also on an error
+        for n_averages in (5, 10, 20):
+            measurements = []
+            for _ in range(5):
 
-        jitter_results[n_averages] = measurements
+                # Workaround: Reset the 300s remote-control timer
+                reset_remote_timer()
+
+                measurements.append(
+                    measure_integrated_jitter(
+                        spectrum,
+                        center_freq=37.5e6,
+                        n_averages=n_averages,
+                    )
+                )
+
+            jitter_results[n_averages] = measurements
     
     logging.info("Integrated jitter statistical variation results:")
     for n_avg, results in jitter_results.items():
@@ -222,7 +235,7 @@ def jitter_statistic_variation():
         logging.info(f"Time Jitter (ps)   - Mean: {time_mean * 1e12:.4f}, Stdev: {time_std * 1e12:.4f}")
         logging.info(f"Phase Jitter (mrad)- Mean: {phase_mean * 1e3:.4f}, Stdev: {phase_std * 1e3:.4f}")    
 
-def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25):
+def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25, supply=None):
     """
     Perform a random sweep of PLL filter configurations and measure integrated jitter.
     """
@@ -243,9 +256,10 @@ def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25):
     os.makedirs("results", exist_ok=True)
     csv_filename = f"results/jitter_sweep_{timestamp}.csv"
     
-    with open(csv_filename, mode='w', newline='') as f:
+    with open(csv_filename, mode='w', newline='') as f, contextlib.closing(spectrum):  # analyzer closed on exit
         writer = csv.writer(f)
-        writer.writerow(["set_current", "set_c1", "set_c2", "set_r1", "time_jitter_ps", "phase_jitter_mrad"])
+        writer.writerow(["set_current", "set_c1", "set_c2", "set_r1", "time_jitter_ps", "phase_jitter_mrad",
+                         "pll_vdd_v", "pll_i_ma", "pll_p_mw"])
         
         logging.info(f"Starting sweep of {n_configs} configurations (n_averages={n_averages}).")
         logging.info(f"Estimated time: {total_time_minutes:.1f} minutes.")
@@ -266,13 +280,12 @@ def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25):
             )
             config_pll(cfg)
             
+            # PLL supply current and power with this configuration (NaN without the supply SMU)
+            p = pll_setup.measure_pll_supply(supply, label=f"cfg {curr},{c1},{c2},{r1}")
+            supply_vals = [p["pll_vdd"], p["pll_i"] * 1e3, p["pll_p"] * 1e3]
+            
             # Workaround: Reset the 300s remote-control timer
-            try:
-                tmp = setup_spectrum_analyzer()
-                temp_session = tmp._open_resource()
-                temp_session.close()
-            except pyvisa.VisaIOError as e:
-                logging.warning("Failed to open/close dummy session: %s", e)
+            reset_remote_timer()
             
             # Measure
             try:
@@ -287,17 +300,20 @@ def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25):
                 
                 logging.info(f"Result: time = {time_jitter_ps:.3f} ps | phase = {phase_jitter_mrad:.3f} mrad")
                 
-                writer.writerow([curr, c1, c2, r1, time_jitter_ps, phase_jitter_mrad])
+                writer.writerow([curr, c1, c2, r1, time_jitter_ps, phase_jitter_mrad] + supply_vals)
                 f.flush()
                 
             except Exception as e:
+                if isinstance(e, pyvisa.errors.VisaIOError):
+                    raise  # instrument connection lost: stop the run, outputs off in the main block
                 logging.error(f"Measurement failed for config {curr},{c1},{c2},{r1}: {e}")
-                writer.writerow([curr, c1, c2, r1, "ERROR", "ERROR"])
+                writer.writerow([curr, c1, c2, r1, "ERROR", "ERROR"] + supply_vals)
                 f.flush()
 
     logging.info("Sweep complete!")
 
-def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, sweep_r1: list, n_averages: int = 10):
+def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, sweep_r1: list, n_averages: int = 10,
+                              supply=None):
     """
     Perform a grid sweep of specific PLL filter configurations and measure integrated jitter.
     """
@@ -317,9 +333,10 @@ def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, 
     os.makedirs("results", exist_ok=True)
     csv_filename = f"results/jitter_sweep_{timestamp}.csv"
     
-    with open(csv_filename, mode='w', newline='') as f:
+    with open(csv_filename, mode='w', newline='') as f, contextlib.closing(spectrum):  # analyzer closed on exit
         writer = csv.writer(f)
-        writer.writerow(["set_current", "set_c1", "set_c2", "set_r1", "time_jitter_ps", "phase_jitter_mrad"])
+        writer.writerow(["set_current", "set_c1", "set_c2", "set_r1", "time_jitter_ps", "phase_jitter_mrad",
+                         "pll_vdd_v", "pll_i_ma", "pll_p_mw"])
         
         logging.info(f"Starting grid sweep of {n_configs} configurations (n_averages={n_averages}).")
         logging.info(f"Estimated time: {total_time_minutes:.1f} minutes ({total_time_minutes/60:.2f} hours).")
@@ -338,15 +355,14 @@ def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, 
                 set_c2=c2,
                 set_r1=r1,
             )
-            start_pll_and_config(cfg)
+            config_pll(cfg)  # ports already open (main block); reopening them fails
+            
+            # PLL supply current and power with this configuration (NaN without the supply SMU)
+            p = pll_setup.measure_pll_supply(supply, label=f"cfg {curr},{c1},{c2},{r1}")
+            supply_vals = [p["pll_vdd"], p["pll_i"] * 1e3, p["pll_p"] * 1e3]
             
             # Workaround: Reset the 300s remote-control timer
-            try:
-                tmp = setup_spectrum_analyzer()
-                temp_session = tmp._open_resource()
-                temp_session.close()
-            except pyvisa.VisaIOError as e:
-                logging.warning("Failed to open/close dummy session: %s", e)
+            reset_remote_timer()
             
             # Measure
             try:
@@ -361,12 +377,14 @@ def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, 
                 
                 logging.info(f"Result: time = {time_jitter_ps:.3f} ps | phase = {phase_jitter_mrad:.3f} mrad")
                 
-                writer.writerow([curr, c1, c2, r1, time_jitter_ps, phase_jitter_mrad])
+                writer.writerow([curr, c1, c2, r1, time_jitter_ps, phase_jitter_mrad] + supply_vals)
                 f.flush()
                 
             except Exception as e:
+                if isinstance(e, pyvisa.errors.VisaIOError):
+                    raise  # instrument connection lost: stop the run, outputs off in the main block
                 logging.error(f"Measurement failed for config {curr},{c1},{c2},{r1}: {e}")
-                writer.writerow([curr, c1, c2, r1, "ERROR", "ERROR"])
+                writer.writerow([curr, c1, c2, r1, "ERROR", "ERROR"] + supply_vals)
                 f.flush()
 
     logging.info("Grid sweep complete!")
@@ -382,16 +400,36 @@ if __name__ == "__main__":
             set_r1=0b011,
     )
 
-    start_pll_and_config(cfg)
+    # Reference clock: 18.75 MHz (Fvco = 128 * Fref = 2.4 GHz -> 37.5 MHz on the pad with set_div_freq /64),
+    # 0 -> 1.8 V square, 50 % duty, 50 Ohm load. Stays on for the whole run, off when the generator is closed.
+    # PLL supply: 0.75 V from the 2450 SMU (smu_vdd_pll), on before the PLL is configured; its current and power
+    # are recorded per configuration.
+    with iclab_session(Parser().get_credentials()):
+        supply = pll_setup.start_pll_supply(0.75)
+        try:
+            fg = pll_setup.start_reference(18.75e6, vpp=1.8, channel=1, load=50)
+        except BaseException:
+            supply.close()
+            raise
+    try:
+        start_pll_and_config(cfg)
 
-    sweep_random_configurations(n_averages=10, n_configs=5)
+        sweep_random_configurations(n_averages=10, n_configs=5, supply=supply)
 
-    sweep_grid_configurations(
-        sweep_curr=[1, 3, 5, 7], 
-        sweep_c1=[0, 2, 5, 7], 
-        sweep_c2=[0, 2, 5, 7], 
-        sweep_r1=[0, 2, 5, 7], 
-        n_averages=10
-    )
+        sweep_grid_configurations(
+            sweep_curr=[1, 3, 5, 7],
+            sweep_c1=[0, 2, 5, 7],
+            sweep_c2=[0, 2, 5, 7],
+            sweep_r1=[0, 2, 5, 7],
+            n_averages=10,
+            supply=supply,
+        )
+    finally:
+        # Also on an error (a VISA error stops the sweeps): reference output off, FPGA ports closed, PLL supply
+        # off. The analyzer is closed by the sweep functions themselves.
+        fg.close()
+        if "pll" in globals():
+            pll.close()
+        supply.close()
 
     sys.exit(0)
