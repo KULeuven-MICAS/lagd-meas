@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sw.lib import vco_lut, vco_measure
+from sw.lib import pll_setup, vco_lut, vco_measure
 from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 from sw.lib.pll_settings import VCO_CHARAC_CFG
@@ -35,7 +35,8 @@ LOG_DIR = Path(__file__).resolve().parents[2] / "results" / "logs"
 # per-target verdict (f_vco = frequency at the predicted Vctrl, dev_pct = worst deviation from the table),
 # "unreachable" when the lookup table has no setting for the target.
 CHECK_COLUMNS = (["lut_csv", "f_target", "kvco_target", "vctrl_pred", "kvco_pred", "kvco_meas", "kind", "f_table",
-                  "dev_pct", "result"] + list(vco_lut.LUT_FIELDS) + list(vco_measure.POINT_COLUMNS))
+                  "dev_pct", "result"] + list(vco_lut.LUT_FIELDS) + list(vco_measure.POINT_COLUMNS)
+                 + list(pll_setup.SUPPLY_COLUMNS))
 # Default targets for test_lut_range: log-spaced over the VCO range, no Kvco preference (central Vctrl).
 LUT_TEST_TARGETS = [(f, None) for f in (50e6, 100e6, 200e6, 300e6, 500e6, 700e6, 1e9, 1.5e9, 2e9, 3e9, 5e9, 7e9,
                                         10e9)]
@@ -66,7 +67,7 @@ def append_rows(csv_path, rows):
 
 
 def test_lut_pick(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, dv=0.025, f_tol=0.03, kvco_tol=0.25,
-                  scope_ch=1, probe_att=10, settle=0.3, n_read=10):
+                  scope_ch=1, probe_att=10, settle=0.3, n_read=10, supply=None):
     """Check a lookup-table pick on the chip: configure_vco, then sweep Vctrl and compare with the table.
 
     Measured points: the table's Vctrl points of the picked setting, plus the predicted operating Vctrl and
@@ -74,6 +75,7 @@ def test_lut_pick(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, dv
     table (interpolated between table points), the frequency at the operating Vctrl within `f_tol` of
     `f_vco`, and the measured local |Kvco| within `kvco_tol` of the predicted one.
     Appends to `csv_path` (default a new results/vco/vco_lut_check_<sample>_<stamp>.csv); returns True on PASS.
+    `supply`: the PLL supply SMU (pll_setup.pll_supply); its voltage, current and power are recorded per point.
     """
     csv_path = csv_path or check_csv_path(sample)
     lut_csv = lut_csv or vco_lut.newest_lut(sample)
@@ -98,7 +100,7 @@ def test_lut_pick(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, dv
                  "sweeping %s V (table %s)", f_vco / 1e6, *key, v_op, pick["kvco"] / 1e6, list(vctrls),
                  Path(lut_csv).name)
 
-    measured, out = {}, []
+    measured, out, power_op = {}, [], pll_setup.measure_pll_supply(None)
     try:
         # The same config configure_vco loaded, with the start divider the measurement adapts from.
         cfg = dict(VCO_CHARAC_CFG, **codes)
@@ -114,7 +116,10 @@ def test_lut_pick(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, dv
                 dev = (point["f_vco"] / f_t - 1) * 100
                 kind = "operating" if v == v_op else ("table" if np.isclose(v_tab, v).any() else "kvco")
                 measured[v] = point["f_vco"]
-                out.append(dict(point, kind=kind, f_table=f_t, dev_pct=dev, **target))
+                power = pll_setup.measure_pll_supply(supply, n=5, label="  Vctrl %.3f V" % v)
+                if kind == "operating":
+                    power_op = power
+                out.append(dict(point, kind=kind, f_table=f_t, dev_pct=dev, **target, **power))
                 logging.info("  Vctrl %.3f V (%s): measured %.2f MHz, table %.2f MHz, %+.2f %%",
                              v, kind, point["f_vco"] / 1e6, f_t / 1e6, dev)
         finally:
@@ -139,7 +144,7 @@ def test_lut_pick(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, dv
     logging.info("%s: local |Kvco| %.0f MHz/V vs predicted %.0f MHz/V (%+.0f %%, tolerance %.0f %%)",
                  "PASS" if ok_kvco else "FAIL", kvco_meas / 1e6, pick["kvco"] / 1e6,
                  (kvco_meas / pick["kvco"] - 1) * 100, 100 * kvco_tol)
-    out.append(dict(target, kind="summary", vctrl_set=v_op, f_vco=f_op, kvco_meas=kvco_meas,
+    out.append(dict(target, **power_op, kind="summary", vctrl_set=v_op, f_vco=f_op, kvco_meas=kvco_meas,
                     dev_pct=100 * max(devs) if devs else np.nan, result="PASS" if ok else "FAIL"))
     for r in out:
         r["kvco_meas"] = kvco_meas
@@ -183,7 +188,8 @@ def main():
 
         # Lookup-table check over the whole VCO range (LUT_TEST_TARGETS: 50 MHz .. 10 GHz, central Vctrl),
         # plotted in sw/tools/notebooks/LUT_test.ipynb
-        test_lut_range(sample="S5")
+        with pll_setup.pll_supply() as supply:  # PLL VDD 0.75 V from the 2450 (smu_vdd_pll), off afterwards
+            test_lut_range(sample="S5", supply=supply)
 
 
 if __name__ == "__main__":

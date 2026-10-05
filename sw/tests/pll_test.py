@@ -223,7 +223,9 @@ def ctrl_voltage_transient():
     start_load_config(SAFE_LOOP_CFG)
 
 
-def start_pll(cfg):
+def start_pll(cfg, supply=None):
+    """Load `cfg`, wait for lock and move the SoC onto the PLL; logs the PLL supply current and power when the
+    supply SMU (pll_setup.pll_supply) is given."""
     start_load_config(cfg)
 
     # Move the SoC onto the PLL
@@ -234,6 +236,7 @@ def start_pll(cfg):
     else:
         logging.error("PLL did not lock; SoC left on the reference clock")
 
+    pll_setup.measure_pll_supply(supply, label="PLL locked" if locked else "PLL not locked")
     return 0
 
 
@@ -252,29 +255,31 @@ def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()):
-        # Equipment checks for the VCO measurements (lib/vco_measure.py)
-        # vco_measure.test_function_generator(freqs=(1e6,))  # 1 MHz, 0 -> 0.75 V square
-        # vco_measure.test_fg_to_scope()
-        # vco_measure.test_smu()
+        # PLL VDD 0.75 V from the 2450 SMU (smu_vdd_pll) for the whole run, off afterwards (also on an error)
+        with pll_setup.pll_supply() as supply:
+            # Equipment checks for the VCO measurements (lib/vco_measure.py)
+            # vco_measure.test_function_generator(freqs=(1e6,))  # 1 MHz, 0 -> 0.75 V square
+            # vco_measure.test_fg_to_scope()
+            # vco_measure.test_smu()
 
-        # VCO tuning curve for the CFG_REF8 settings (locked at ~1 GHz with an 8 MHz ref)
-        # vco_measure.vctrl_sweep(CFG_REF8)
+            # VCO tuning curve for the CFG_REF8 settings (locked at ~1 GHz with an 8 MHz ref)
+            # vco_measure.vctrl_sweep(CFG_REF8)
 
-        # Full: Vctrl curves for every current setting per coarse code, for the plots in
-        # sw/tools/notebooks/calibrate_vco.ipynb (this sample only)
-        # vco_measure.vco_current_families(coarse_codes=range(16))  # all coarse codes, overnight
+            # Full: Vctrl curves for every current setting per coarse code, for the plots in
+            # sw/tools/notebooks/calibrate_vco.ipynb (this sample only)
+            # vco_measure.vco_current_families(coarse_codes=range(16))  # all coarse codes, overnight
 
-        # Quick check of the lookup-table measurement (lib/vco_lut.py): one coarse code, two min codes, three Vctrl
-        # points (+ VDD), default max codes, drift references before and after -> ~70 points, ~3 min
-        # vco_lut.vco_lut_measure(sample="debug", coarse_codes=(8,), min_codes=(0, 8), vctrls=(0.0, 0.4, 0.7))
+            # Quick check of the lookup-table measurement (lib/vco_lut.py): one coarse code, two min codes, three
+            # Vctrl points (+ VDD), default max codes, drift references before and after -> ~70 points, ~3 min
+            # vco_lut.vco_lut_measure(sample="debug", coarse_codes=(8,), min_codes=(0, 8), vctrls=(0.0, 0.4, 0.7))
 
-        # Lookup table (overnight), then set the VCO for a frequency and Kvco from it
-        vco_lut.vco_lut_measure(sample="S5")  # LUT_VCTRLS / LUT_MIN_CODES / LUT_MAX_CODES: ~13 h at ~3.3 s/point
-        # pick, pll_link = vco_lut.configure_vco(1.0e9, 1.0e9, sample="S5")  # 1 GHz, |Kvco| ~1 GHz/V
+            # Lookup table (overnight), then set the VCO for a frequency and Kvco from it
+            vco_lut.vco_lut_measure(sample="S5")  # LUT_VCTRLS / LUT_MIN_CODES / LUT_MAX_CODES: ~13 h at ~3.3 s/point
+            # pick, pll_link = vco_lut.configure_vco(1.0e9, 1.0e9, sample="S5")  # 1 GHz, |Kvco| ~1 GHz/V
+            # pll_setup.measure_pll_supply(supply, label="configure_vco 1 GHz")
 
-    # cfg = CFG_REF4_OUT128MHZ.copy()
-    # # Safer default config
-    # sys.exit(start_pll(cfg))
+            # Safer default config: lock, then the PLL supply current and power
+            # start_pll(CFG_REF4_OUT128MHZ.copy(), supply=supply)
 
 
 if __name__ == "__main__":

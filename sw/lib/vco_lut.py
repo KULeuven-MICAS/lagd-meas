@@ -37,7 +37,7 @@ RESULTS_DIR = Path(__file__).resolve().parents[2] / "results" / "vco"  # results
 CODES = tuple(range(16))
 HOLD_MIN = 15  # vco_current_min while the max setting is swept (vco_current_families)
 HOLD_MAX = 0  # vco_current_max while the min setting is swept / at VDD (vco_current_families, vco_lut_measure)
-VCTRL_WINDOW = (0.0, 0.75)  # [V] Vctrl range the PLL operates in: 0 V to VDD
+VCTRL_WINDOW = (0.5, 0.7)  # [V] Vctrl range the PLL operates in: the steep (high Kvco) part of the curves
 LUT_FIELDS = ("vco_tune_coarse", "vco_current_min", "vco_current_max")
 
 # Lookup-table grid (vco_lut_measure defaults): Vctrl coarse where the curves are flat (PMOS fully on), 50 mV
