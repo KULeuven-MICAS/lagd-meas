@@ -23,6 +23,7 @@
 # See: fpga/src/verilog/chip_controller.sv and chip_command_api.sv
 
 import argparse
+import subprocess
 import logging
 import random
 import sys
@@ -170,6 +171,9 @@ def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32,
 
     # init quad-spi
     chip.init_spi()
+
+    # set FDTI channel a to JTAG mode and scan the IDCODE
+    subprocess.Popen("openocd -f testcases/jtag/01_idcode/openocd.scan.tcl > /dev/null 2>&1 &", shell=True)
 
     # run a memory test
     if mem_test:
