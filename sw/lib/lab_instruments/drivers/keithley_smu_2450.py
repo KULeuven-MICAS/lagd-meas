@@ -78,6 +78,14 @@ class KeithleySMU2450(inst.BaseInstrument):
         v, i = (float(x) for x in ret.strip().split(','))
         return v, i
 
+    def measure_stats(self, n: int = 10) -> tuple:
+        """`n` measurements; returns (mean voltage [V], mean current [A], current standard deviation [A])."""
+        readings = [self.measure() for _ in range(n)]
+        v = sum(r[0] for r in readings) / n
+        i = sum(r[1] for r in readings) / n
+        i_std = (sum((r[1] - i) ** 2 for r in readings) / (n - 1)) ** 0.5 if n > 1 else 0.0
+        return v, i, i_std
+
     def wait_settled(self, v_set: float, tol: float = 1e-3, timeout: float = 5.0, poll: float = 0.1) -> tuple:
         """Measure until the output is within `tol` [V] of `v_set` or `timeout` [s] passes.
         Returns the last (voltage, current); logs a warning when it did not settle."""
