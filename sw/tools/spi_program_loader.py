@@ -68,6 +68,11 @@ VERIFY_CHUNK_WORDS = 64
 # Xillybus ports -- and therefore the FPGA-provided chip clock -- open.
 DEFAULT_EOC_TIMEOUT = 60.0
 
+# Preserve the historical immediate-poll behavior unless a caller explicitly
+# requests a quiet interval after launch. This is useful for separating program
+# execution from SPI/AXI traffic during hardware diagnosis.
+DEFAULT_EOC_INITIAL_DELAY = 0.0
+
 
 class EocTimeoutError(TimeoutError):
     """The launched program did not signal completion before the deadline."""
@@ -172,15 +177,21 @@ class SpiProgramLoader:
         """Set SCRATCH_2 bit 1; the bootrom jumps to SCRATCH_1:SCRATCH_0."""
         self.chip.write_mem(SCRATCH_2, SCRATCH2_GO_BIT)
 
-    def wait_for_eoc(self, timeout=DEFAULT_EOC_TIMEOUT, poll_interval=0.05):
+    def wait_for_eoc(self, timeout=DEFAULT_EOC_TIMEOUT, poll_interval=0.05,
+                     initial_delay=DEFAULT_EOC_INITIAL_DELAY):
         """Poll SCRATCH_2 for the program-exit flag; return the exit code.
 
         Returns the exit code (>=0) once SCRATCH_2 bit 0 is set, or None on
         timeout. The bootrom's _exit writes (retval << 1) | 1, so the exit code
-        is value >> 1. A timeout of 0 or None waits indefinitely.
+        is value >> 1. A timeout of 0 or None waits indefinitely. ``initial_delay``
+        keeps SPI idle after launch; the timeout starts after that delay.
         """
         if timeout is not None and timeout < 0:
             raise ValueError("EOC timeout must be non-negative or None")
+        if initial_delay < 0:
+            raise ValueError("EOC initial delay must be non-negative")
+        if initial_delay:
+            time.sleep(initial_delay)
         deadline = None if timeout in (None, 0) else time.monotonic() + timeout
         while deadline is None or time.monotonic() < deadline:
             vals = self.chip.read_mem(SCRATCH_2, length=1)
@@ -190,7 +201,8 @@ class SpiProgramLoader:
         return None
 
     def load_and_run(self, elf_path, init_spi=True, verify=False, wait=False,
-                     eoc_timeout=DEFAULT_EOC_TIMEOUT):
+                     eoc_timeout=DEFAULT_EOC_TIMEOUT,
+                     eoc_initial_delay=DEFAULT_EOC_INITIAL_DELAY):
         """Full flow: parse -> (init_spi) -> load -> (verify) -> set entry -> go.
 
         Returns the parsed ElfImage. If `wait`, also polls for end-of-computation
@@ -237,11 +249,16 @@ class SpiProgramLoader:
 
         if wait:
             wait_started = time.monotonic()
+            if eoc_initial_delay:
+                self._log(
+                    f"keeping SPI idle for {eoc_initial_delay:g} s before "
+                    "the first EOC read")
             if eoc_timeout in (None, 0):
                 self._log("waiting indefinitely for end-of-computation")
             else:
                 self._log(f"waiting up to {eoc_timeout:g} s for end-of-computation")
-            code = self.wait_for_eoc(timeout=eoc_timeout)
+            code = self.wait_for_eoc(
+                timeout=eoc_timeout, initial_delay=eoc_initial_delay)
             wait_seconds = time.monotonic() - wait_started
             if code is None:
                 raise EocTimeoutError(
@@ -282,9 +299,16 @@ def _main():
     ap.add_argument("--run-timeout", type=float, default=DEFAULT_EOC_TIMEOUT,
                     metavar="SECONDS",
                     help="EOC wait limit; 0 waits forever (default: %(default)s)")
+    ap.add_argument(
+        "--eoc-initial-delay", type=float, default=DEFAULT_EOC_INITIAL_DELAY,
+        metavar="SECONDS",
+        help="keep SPI idle this long after launch before polling EOC "
+             "(default: %(default)s)")
     args = ap.parse_args()
     if args.run_timeout < 0:
         ap.error("--run-timeout must be non-negative")
+    if args.eoc_initial_delay < 0:
+        ap.error("--eoc-initial-delay must be non-negative")
 
     try:
         with ChipDriver(args.write_dev, args.read_dev) as chip:
@@ -298,6 +322,7 @@ def _main():
                 verify=args.verify,
                 wait=args.wait,
                 eoc_timeout=args.run_timeout,
+                eoc_initial_delay=args.eoc_initial_delay,
             )
     except EocTimeoutError as error:
         logger.error("%s", error)
