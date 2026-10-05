@@ -12,6 +12,7 @@
 #   python3 sw/tests/chip_load_spi.py path/to/other.elf --verify
 #   python3 sw/tests/chip_load_spi.py path/to/other.elf --smoke-test
 #   python3 sw/tests/chip_load_spi.py path/to/other.elf --run-timeout 60
+#   python3 sw/tests/chip_load_spi.py path/to/other.elf --eoc-initial-delay 0.5
 #
 # This wires the reusable pieces together for the full flow:
 #   lib/chip_driver.py          -> ChipDriver (SPI transport via the FPGA)
@@ -47,6 +48,7 @@ from pathlib import Path
 
 from sw.lib.chip_driver import ChipDriver
 from sw.tools.spi_program_loader import (
+    DEFAULT_EOC_INITIAL_DELAY,
     DEFAULT_EOC_TIMEOUT,
     EocTimeoutError,
     SCRATCH_0,
@@ -137,17 +139,25 @@ def parse_args(argv=None):
     ap.add_argument('--run-timeout', type=float, default=DEFAULT_EOC_TIMEOUT,
                     metavar='SECONDS',
                     help='EOC wait limit; 0 waits forever (default: %(default)s)')
+    ap.add_argument(
+        '--eoc-initial-delay', type=float, default=DEFAULT_EOC_INITIAL_DELAY,
+        metavar='SECONDS',
+        help='keep SPI idle this long after launch before polling EOC '
+             '(default: %(default)s)')
     args = ap.parse_args(argv)
     # Check the ELF here so a typo fails before the smoke test powers anything.
     if not Path(args.elf).is_file():
         ap.error(f"ELF not found: {args.elf}")
     if args.run_timeout < 0:
         ap.error('--run-timeout must be non-negative')
+    if args.eoc_initial_delay < 0:
+        ap.error('--eoc-initial-delay must be non-negative')
     return args
 
 
 def main(elf=DEFAULT_ELF, sck_hz=None, verify=False,
-         run_timeout=DEFAULT_EOC_TIMEOUT):
+         run_timeout=DEFAULT_EOC_TIMEOUT,
+         eoc_initial_delay=DEFAULT_EOC_INITIAL_DELAY):
     # Open the ports (caller owns the lifecycle; the loader never opens/closes).
     chip = ChipDriver(WRITE_DEV, READ_DEV)
     try:
@@ -170,6 +180,7 @@ def main(elf=DEFAULT_ELF, sck_hz=None, verify=False,
                 verify=verify,
                 wait=True,
                 eoc_timeout=run_timeout,
+                eoc_initial_delay=eoc_initial_delay,
             )
     except EocTimeoutError as error:
         logging.error("%s", error)
@@ -185,4 +196,10 @@ if __name__ == '__main__':
     if args.smoke_test and not smoke_test():
         logging.error("aborting: smoke test did not pass, not loading the program")
         sys.exit(1)
-    sys.exit(main(args.elf, args.sck, args.verify, args.run_timeout))
+    sys.exit(main(
+        args.elf,
+        args.sck,
+        args.verify,
+        args.run_timeout,
+        args.eoc_initial_delay,
+    ))

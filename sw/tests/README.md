@@ -37,6 +37,7 @@ python3 sw/tests/chip_load_spi.py                    # raw load + launch; wait u
 python3 sw/tests/chip_load_spi.py path/to/other.elf  # a different program
 python3 sw/tests/chip_load_spi.py path/to/other.elf --smoke-test --verify
 python3 sw/tests/chip_load_spi.py path/to/other.elf --run-timeout 0  # wait forever
+python3 sw/tests/chip_load_spi.py path/to/other.elf --eoc-initial-delay 0.5
 python3 -i sw/tests/chip_load_spi.py                 # interactive: open_ports(); loader.load_and_run(...)
 ```
 
@@ -54,7 +55,12 @@ Run:
 ```
 python sw/tests/chip_load_spi_repeat.py
 python sw/tests/chip_load_spi_repeat.py --runs 10 --sck 12500000
+python sw/tests/chip_load_spi_repeat.py --runs 100 --verify --eoc-initial-delay 0.5
 ```
+
+`--eoc-initial-delay` keeps SPI idle after launch before the first EOC read.
+Use it to test whether SPI/AXI traffic during program execution triggers a
+failure; the Xillybus ports and chip clock remain open during the delay.
 
 The final summary reports the minimum, median, mean, and maximum per-run time.
 Python startup, port opening, and the one-time SCK configuration are excluded
