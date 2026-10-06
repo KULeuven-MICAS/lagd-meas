@@ -125,7 +125,7 @@ field-level `pack_pll_cfg()` from `pomelo_pll_wrap_cfg.yml` -- lives in `lib/pll
 
 ## directory and file description
 The lib folder contains the reusable building blocks:
-- port_driver.py: PortDriver -- shared base owning a read+write port (open/close as a context manager, word send, read polling, writeback loopback); subclassed by the two drivers below
+- port_driver.py: PortDriver -- shared base owning a read+write port (open/close as a context manager, packed word-frame send, read polling, writeback loopback); subclassed by the two drivers below
 - chip_driver.py: ChipDriver -- exposes the chip command set (init_spi, config_clk_rst, write_mem, read_mem, writeback)
 - chip_command_api.py: chip controller ISA (command-word builders + opcodes); the software mirror of `chip_command_api.sv` and must stay in sync with it
 - perip_driver.py: PeripDriver -- exposes the periphery command set for both devices on the stream: the DAC (dac_write, dac_reset, writeback, AD8802 channel/voltage helpers backed by a host-side cache) and the HV9308 S2P (s2p_write, s2p_readback, s2p_verify, s2p_output_enable, and s2p_reconfigure which blanks->writes->re-enables)
@@ -133,11 +133,11 @@ The lib folder contains the reusable building blocks:
 - pll_driver.py: PllDriver -- exposes the PLL serial-config command set over the 8-bit stream (load/load_cfg, verify_load, reset, clk_sel, writeback, plus a `bring_up` helper that configures+switches the SoC onto the PLL); keeps a host-side cache of the last config word
 - pll_command_api.py: PLL controller ISA (byte-frame builders + opcodes + the `pack_pll_cfg`/`rst_pll_cfg` field layout); the software mirror of `pll_command_api.sv` / `pomelo_pll_wrap_cfg.yml` and must stay in sync with them
 - read_port.py: ReadPort -- handles the readports
-- write_port.py: WritePort -- handles the writeports
+- write_port.py: WritePort -- handles complete/partial writes and packed unsigned little-endian word arrays
 
 The tools folder contains the program loader (load an ELF onto the chip and run it):
 - tools/elf_loader.py: transport-agnostic ELF reader (pure stdlib `struct`, no pyelftools). Parses PT_LOAD segments + entry point; reusable by SPI/JTAG/UART loaders. Run standalone to inspect an ELF: `python3 tools/elf_loader.py tests/helloworld.spm.elf`
-- tools/spi_program_loader.py: SPI-specific loader. Writes each segment over SPI via a ChipDriver, hands the entry point to the bootrom via the SCRATCH registers, and launches. Run: `python3 tools/spi_program_loader.py tests/helloworld.spm.elf [--verify] [--wait]` (boot_mode must be 0; the loader drives chip_clk_en/rstn unless `--no-clk-rst`).
+- tools/spi_program_loader.py: SPI-specific loader. Writes each segment over SPI via a ChipDriver, hands the entry point to the bootrom via the SCRATCH registers, and launches. Run: `python3 sw/tools/spi_program_loader.py sw/inputs/helloworld.spm.elf [--verify] [--wait] [--run-timeout SECONDS]` (0 waits forever; boot_mode must be 0; the loader drives chip_clk_en/rstn unless `--no-clk-rst`).
 - tests/: prebuilt ELFs (e.g. helloworld.spm.elf) copied from the lagd-im SW build, plus their .dump disassembly for reference.
 
 See `doc/spi_program_loading.md` for the full SPI load-and-launch background.

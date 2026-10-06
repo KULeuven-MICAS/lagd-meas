@@ -24,9 +24,11 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from sw.tools.elf_loader import parse_elf, bytes_to_words, ElfImage, Segment
 from sw.tools.spi_program_loader import (
+    DEFAULT_EOC_INITIAL_DELAY, DEFAULT_EOC_TIMEOUT, EocTimeoutError,
     SpiProgramLoader,
     SCRATCH_0, SCRATCH_1, SCRATCH_2,
     SCRATCH2_GO_BIT, SCRATCH2_DONE_BIT,
@@ -209,6 +211,48 @@ class TestSpiProgramLoader(unittest.TestCase):
     def test_wait_for_eoc_timeout_returns_none(self):
         self.chip.read_overrides[SCRATCH_2] = [0]  # done bit never set
         self.assertIsNone(self.loader.wait_for_eoc(timeout=0.05, poll_interval=0.01))
+
+    def test_wait_for_eoc_zero_timeout_waits_indefinitely(self):
+        # Immediate completion exercises the no-deadline branch without hanging.
+        self.chip.read_overrides[SCRATCH_2] = [(3 << 1) | SCRATCH2_DONE_BIT]
+        self.assertEqual(self.loader.wait_for_eoc(timeout=0), 3)
+
+    @mock.patch("sw.tools.spi_program_loader.time.sleep")
+    def test_wait_for_eoc_honors_initial_quiet_delay(self, sleep):
+        self.chip.read_overrides[SCRATCH_2] = [SCRATCH2_DONE_BIT]
+        self.assertEqual(
+            self.loader.wait_for_eoc(timeout=0.1, initial_delay=0.25), 0)
+        sleep.assert_called_once_with(0.25)
+
+    def test_wait_for_eoc_rejects_negative_initial_delay(self):
+        with self.assertRaises(ValueError):
+            self.loader.wait_for_eoc(initial_delay=-0.1)
+
+    def test_load_and_run_forwards_eoc_controls(self):
+        seen = []
+
+        def done(timeout, initial_delay):
+            seen.append((timeout, initial_delay))
+            return 0
+
+        self.loader.wait_for_eoc = done
+        self.loader.load_and_run(
+            ELF_PATH, init_spi=False, verify=False, wait=True,
+            eoc_timeout=12.5, eoc_initial_delay=0.5)
+        self.assertEqual(seen, [(12.5, 0.5)])
+
+    def test_load_and_run_raises_on_eoc_timeout(self):
+        self.loader.wait_for_eoc = lambda timeout, initial_delay: None
+        with self.assertRaises(EocTimeoutError):
+            self.loader.load_and_run(
+                ELF_PATH, init_spi=False, verify=False, wait=True,
+                eoc_timeout=0.01)
+
+    def test_default_eoc_timeout_is_sixty_seconds(self):
+        self.assertEqual(DEFAULT_EOC_TIMEOUT, 60.0)
+
+    def test_default_eoc_initial_delay_preserves_immediate_poll(self):
+        self.assertEqual(DEFAULT_EOC_INITIAL_DELAY, 0.0)
 
 
 class TestBurstChunking(unittest.TestCase):
