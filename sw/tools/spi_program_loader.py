@@ -63,6 +63,20 @@ MAX_BURST_WORDS = 0xFFFF
 # MAX_BURST_WORDS here - a 65535-word read-back is enormous at any SCK.
 VERIFY_CHUNK_WORDS = 64
 
+# Default time allowed for the launched program to signal completion. A value of
+# 0 (or None in the Python API) means wait indefinitely while keeping the
+# Xillybus ports -- and therefore the FPGA-provided chip clock -- open.
+DEFAULT_EOC_TIMEOUT = 60.0
+
+# Preserve the historical immediate-poll behavior unless a caller explicitly
+# requests a quiet interval after launch. This is useful for separating program
+# execution from SPI/AXI traffic during hardware diagnosis.
+DEFAULT_EOC_INITIAL_DELAY = 0.0
+
+
+class EocTimeoutError(TimeoutError):
+    """The launched program did not signal completion before the deadline."""
+
 
 class SpiProgramLoader:
     """Load + launch an ELF over SPI using a ChipDriver.
@@ -104,12 +118,12 @@ class SpiProgramLoader:
             self.chip.write_mem((addr + off * 4) & 0xFFFFFFFF, chunk)
             off += len(chunk)
 
-    def load_image(self, img):
+    def load_image(self, img, verified=True):
         """Write every PT_LOAD segment of a parsed ELF image to the chip."""
         for seg in img.segments:
             words = bytes_to_words(seg.data)
             self._log(f"segment -> 0x{seg.addr & 0xFFFFFFFF:08X}  {len(seg.data)} bytes ({len(words)} words)")
-            self.write_segment(seg.addr & 0xFFFFFFFF, words)
+            self.write_segment(seg.addr & 0xFFFFFFFF, words, verified)
 
     def verify_image(self, img):
         """Read back every segment and compare. Returns True if all match.
@@ -128,6 +142,32 @@ class SpiProgramLoader:
                 self._log(f"verify OK -> 0x{seg.addr & 0xFFFFFFFF:08X} ({len(expected)} words)")
         return ok
 
+    def _load_fence_timeout(self, img):
+        """Timeout for a read queued behind all unverified segment writes.
+
+        Xillybus writes are asynchronous: a packed os.write() can return while
+        the FPGA is still streaming the frame. The fence read below completes
+        only after all earlier commands, so include their ideal wire time plus
+        the same 3x + 0.5 s margin used by ChipDriver's read timeouts.
+        """
+        sck_hz = float(getattr(self.chip, "sck_hz", 0.0))
+        if sck_hz <= 0.0:
+            return None
+        words = sum((len(seg.data) + 3) // 4 for seg in img.segments)
+        write_sck = 10 * len(img.segments) + 8 * words
+        fence_read_sck = 43 + 8
+        return (write_sck + fence_read_sck) / sck_hz * 3.0 + 0.5
+
+    def _wait_for_load_completion(self, img):
+        """Queue a harmless SCRATCH_0 read as a completion fence."""
+        timeout = self._load_fence_timeout(img)
+        if timeout is None:
+            values = self.chip.read_mem(SCRATCH_0, length=1)
+        else:
+            values = self.chip.read_mem(SCRATCH_0, length=1, timeout=timeout)
+        if not values:
+            raise OSError("timed out waiting for queued SPI writes to complete")
+
     def set_entry(self, entry):
         """Write the 64-bit entry point into SCRATCH_0/SCRATCH_1."""
         self.chip.write_mem(SCRATCH_0, entry & 0xFFFFFFFF)
@@ -137,49 +177,94 @@ class SpiProgramLoader:
         """Set SCRATCH_2 bit 1; the bootrom jumps to SCRATCH_1:SCRATCH_0."""
         self.chip.write_mem(SCRATCH_2, SCRATCH2_GO_BIT)
 
-    def wait_for_eoc(self, timeout=5.0, poll_interval=0.05):
+    def wait_for_eoc(self, timeout=DEFAULT_EOC_TIMEOUT, poll_interval=0.05,
+                     initial_delay=DEFAULT_EOC_INITIAL_DELAY):
         """Poll SCRATCH_2 for the program-exit flag; return the exit code.
 
         Returns the exit code (>=0) once SCRATCH_2 bit 0 is set, or None on
         timeout. The bootrom's _exit writes (retval << 1) | 1, so the exit code
-        is value >> 1.
+        is value >> 1. A timeout of 0 or None waits indefinitely. ``initial_delay``
+        keeps SPI idle after launch; the timeout starts after that delay.
         """
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        if timeout is not None and timeout < 0:
+            raise ValueError("EOC timeout must be non-negative or None")
+        if initial_delay < 0:
+            raise ValueError("EOC initial delay must be non-negative")
+        if initial_delay:
+            time.sleep(initial_delay)
+        deadline = None if timeout in (None, 0) else time.monotonic() + timeout
+        while deadline is None or time.monotonic() < deadline:
             vals = self.chip.read_mem(SCRATCH_2, length=1)
             if vals and (vals[0] & SCRATCH2_DONE_BIT):
                 return vals[0] >> 1
             time.sleep(poll_interval)
         return None
 
-    def load_and_run(self, elf_path, init_spi=True, verify=False, wait=False):
+    def load_and_run(self, elf_path, init_spi=True, verify=False, wait=False,
+                     eoc_timeout=DEFAULT_EOC_TIMEOUT,
+                     eoc_initial_delay=DEFAULT_EOC_INITIAL_DELAY):
         """Full flow: parse -> (init_spi) -> load -> (verify) -> set entry -> go.
 
         Returns the parsed ElfImage. If `wait`, also polls for end-of-computation
-        and prints the exit code.
+        and prints the exit code. Raises EocTimeoutError when a finite EOC wait
+        expires.
         """
         img = parse_elf(elf_path)
         self._log(f"{elf_path}: entry 0x{img.entry:08X}, {len(img.segments)} segment(s), {img.total_bytes} bytes")
 
         if init_spi:
             self._log("enabling Quad-SPI on the chip's SPI slave")
+            init_started = time.monotonic()
             self.chip.init_spi()
+            self._log(f"SPI initialization queued in {time.monotonic() - init_started:.3f} s")
 
-        self.load_image(img)
+        load_started = time.monotonic()
+        self.load_image(img, verified=verify)
 
-        if verify and not self.verify_image(img):
-            raise RuntimeError("readback verification failed; not launching")
+        # Verified writes already wait for readback after every chunk. Raw writes
+        # need one explicit fence so this phase ends when the SPI wire is done,
+        # rather than merely when Linux has accepted the DMA buffer.
+        if not verify:
+            self._wait_for_load_completion(img)
+        load_seconds = time.monotonic() - load_started
+        rate_kib_s = img.total_bytes / max(load_seconds, 1e-9) / 1024.0
+        mode = "verified writes" if verify else "raw writes"
+        self._log(
+            f"write phase complete: {img.total_bytes} bytes in {load_seconds:.3f} s "
+            f"({rate_kib_s:.1f} KiB/s, {mode})")
+
+        if verify:
+            verify_started = time.monotonic()
+            if not self.verify_image(img):
+                raise RuntimeError("readback verification failed; not launching")
+            self._log(
+                f"full-image verification complete in "
+                f"{time.monotonic() - verify_started:.3f} s")
 
         self._log(f"setting entry 0x{img.entry:08X} and launching")
+        launch_started = time.monotonic()
         self.set_entry(img.entry)
         self.launch()
+        self._log(f"launch commands queued in {time.monotonic() - launch_started:.3f} s")
 
         if wait:
-            code = self.wait_for_eoc()
-            if code is None:
-                self._log("timed out waiting for end-of-computation")
+            wait_started = time.monotonic()
+            if eoc_initial_delay:
+                self._log(
+                    f"keeping SPI idle for {eoc_initial_delay:g} s before "
+                    "the first EOC read")
+            if eoc_timeout in (None, 0):
+                self._log("waiting indefinitely for end-of-computation")
             else:
-                self._log(f"program finished, exit code = {code}")
+                self._log(f"waiting up to {eoc_timeout:g} s for end-of-computation")
+            code = self.wait_for_eoc(
+                timeout=eoc_timeout, initial_delay=eoc_initial_delay)
+            wait_seconds = time.monotonic() - wait_started
+            if code is None:
+                raise EocTimeoutError(
+                    f"timed out waiting for end-of-computation after {wait_seconds:.3f} s")
+            self._log(
+                f"program finished in {wait_seconds:.3f} s, exit code = {code}")
         return img
 
 
@@ -211,19 +296,37 @@ def _main():
                     help="read back each segment and compare before launching")
     ap.add_argument("--wait", action="store_true",
                     help="poll for end-of-computation and print the exit code")
+    ap.add_argument("--run-timeout", type=float, default=DEFAULT_EOC_TIMEOUT,
+                    metavar="SECONDS",
+                    help="EOC wait limit; 0 waits forever (default: %(default)s)")
+    ap.add_argument(
+        "--eoc-initial-delay", type=float, default=DEFAULT_EOC_INITIAL_DELAY,
+        metavar="SECONDS",
+        help="keep SPI idle this long after launch before polling EOC "
+             "(default: %(default)s)")
     args = ap.parse_args()
+    if args.run_timeout < 0:
+        ap.error("--run-timeout must be non-negative")
+    if args.eoc_initial_delay < 0:
+        ap.error("--eoc-initial-delay must be non-negative")
 
-    with ChipDriver(args.write_dev, args.read_dev) as chip:
-        if not args.no_clk_rst:
-            # Release the core so the bootrom runs and polls SCRATCH_2.
-            chip.config_clk_rst(chip_clk_en=1, chip_rstn=1)
-        loader = SpiProgramLoader(chip)
-        loader.load_and_run(
-            args.elf,
-            init_spi=not args.no_init_spi,
-            verify=args.verify,
-            wait=args.wait,
-        )
+    try:
+        with ChipDriver(args.write_dev, args.read_dev) as chip:
+            if not args.no_clk_rst:
+                # Release the core so the bootrom runs and polls SCRATCH_2.
+                chip.config_clk_rst(chip_clk_en=1, chip_rstn=1)
+            loader = SpiProgramLoader(chip)
+            loader.load_and_run(
+                args.elf,
+                init_spi=not args.no_init_spi,
+                verify=args.verify,
+                wait=args.wait,
+                eoc_timeout=args.run_timeout,
+                eoc_initial_delay=args.eoc_initial_delay,
+            )
+    except EocTimeoutError as error:
+        logger.error("%s", error)
+        return 1
     return 0
 
 
