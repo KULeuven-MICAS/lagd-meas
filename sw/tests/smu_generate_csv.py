@@ -14,9 +14,9 @@ from openising import TOP_MEAS
 CONFIG_FILE = TOP_MEAS / "sw/lib/lab_instruments/config/meas_setup.yaml"
 
 
-def get_calibration_field_order(calibrateH: bool = False):
-    fieldnames = ["base", "j"]
-    scaling_factors = list(range(1, 32)) if calibrateH else [1]
+def get_calibration_field_order():
+    fieldnames = []
+    scaling_factors = list(range(1, 32))
     for factor in scaling_factors:
         fieldnames.extend([f"hup_sf{factor}", f"hdn_sf{factor}"])
     return fieldnames
@@ -56,13 +56,13 @@ def write_calibration_values(csv_path, fieldnames, values):
         writer.writerow({field: values.get(field, "") for field in fieldnames})
 
 
-def generate_calibration_files(chip: int, core: int, calibrateH: bool = False):
+def generate_calibration_files(chip: int, core: int):
 
     with CONFIG_FILE.open(encoding="utf-8") as config_file:
         config = yaml.safe_load(config_file)
         config = config["source_measure_units"]
 
-    fieldnames = get_calibration_field_order(calibrateH)
+    fieldnames = get_calibration_field_order()
     csv_file = TOP_MEAS / f"openising/calibration_currents/currents_chip{chip}_core{core}.csv"
     currents = load_calibration_values(csv_file, fieldnames)
     if not currents.get("base"):
@@ -75,39 +75,39 @@ def generate_calibration_files(chip: int, core: int, calibrateH: bool = False):
         instruments[smu] = setup_smu(smu, True, "current", CONFIG_FILE)
         print(instruments[smu].measure())
 
-    calibration_smu = ["smu_2", "smu_3", "smu_4"]
-    scaling_factors = list(range(1, 32)) if calibrateH else [1]
+    calibration_smu = ["smu_3", "smu_4"]
+    scaling_factors = list(range(1, 32))
     for smu in calibration_smu:
         mode = config[smu].get("calibration_mode")
-        if mode == "j":
-            if currents.get("j", "") in (None, ""):
-                currents["j"] = calibrate_smu(
+        # if mode == "j":
+        #     if currents.get("j", "") in (None, ""):
+        #         currents["j"] = calibrate_smu(
+        #             instruments[smu],
+        #             "j",
+        #             config[smu]["min_current"],
+        #             config[smu]["max_current"],
+        #             (config[smu]["max_current"] - config[smu]["min_current"]) / 10,
+        #             config[smu]["voltage_limit"],
+        #             core=core,
+        #         )
+        #         write_calibration_values(csv_file, fieldnames, currents)
+        #     else:
+        #         instruments[smu].set_current_source(float(currents["j"]), config[smu]["voltage_limit"])
+        # else:
+        for factor in scaling_factors:
+            key = f"{mode}_sf{factor}"
+            if currents.get(key, "") in (None, ""):
+                currents[key] = calibrate_smu(
                     instruments[smu],
-                    "j",
+                    mode,
                     config[smu]["min_current"],
                     config[smu]["max_current"],
                     (config[smu]["max_current"] - config[smu]["min_current"]) / 10,
                     config[smu]["voltage_limit"],
+                    scalingFactor=factor,
                     core=core,
                 )
                 write_calibration_values(csv_file, fieldnames, currents)
-            else:
-                instruments[smu].set_current_source(float(currents["j"]), config[smu]["voltage_limit"])
-        else:
-            for factor in scaling_factors:
-                key = f"{mode}_sf{factor}"
-                if currents.get(key, "") in (None, ""):
-                    currents[key] = calibrate_smu(
-                        instruments[smu],
-                        mode,
-                        config[smu]["min_current"],
-                        config[smu]["max_current"],
-                        (config[smu]["max_current"] - config[smu]["min_current"]) / 10,
-                        config[smu]["voltage_limit"],
-                        scalingFactor=factor,
-                        core=core,
-                    )
-                    write_calibration_values(csv_file, fieldnames, currents)
 
     for instrument in instruments.values():
         instrument.disable_output()
