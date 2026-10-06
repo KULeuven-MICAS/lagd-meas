@@ -1,0 +1,46 @@
+problem_type: Maxcut
+dummy_qam: 4
+dummy_snr: 10
+dummy_spacing: 1.0
+dummy_user_num: 128
+dummy_ant_num: 256
+dummy_case_num: 1
+initialization_seed: 42
+seed: 107
+dummy_seed: 49
+nb_trials: 1
+nb_runs: 1000
+dummy_creator: false
+use_ZF: false
+logfile_discrimination: ""
+nb_flipping: 100
+benchmark: 
+  - ./ising/benchmarks/biqmac/rudy/pm1d_100.0
+  - ./ising/benchmarks/biqmac/rudy/pm1s_100.0
+  - ./ising/benchmarks/biqmac/rudy/pm1d_80.0
+  - ./ising/benchmarks/biqmac/rudy/pm1s_80.0
+test: "Annealing_experiment"
+
+# Multiplicative parameters
+num_iterations_Multiplicative: 1000
+cluster_threshold: 0.3
+init_cluster_size: 0.9
+end_cluster_size: 0.1
+exponent: 
+  - 1.0
+cluster_choice: "random"
+size_function: "exponential"
+bestx: 
+  - 1
+  - 2
+  - 5
+  - 10
+  - 50
+  - 100
+current: 1.0
+capacitance: 1
+accumulation_delay: 0.
+broadcast_delay: 0.
+delay_offset: 0.0
+# sigma_J: -1.0
+stop_criterion: 1e-6  # 1uV
