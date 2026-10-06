@@ -56,6 +56,14 @@ def load_config(pll, cfg):
     return word
 
 
+def open_pll(cfg):
+    """Connect to the PLL controller and load `cfg` (connect + load_config); returns the PllDriver.
+    pll.close() closes the FPGA ports only; the config stays on the chip."""
+    pll = connect()
+    load_config(pll, cfg)
+    return pll
+
+
 def start_reference(freq, vpp=1.8, channel=1, load=50, duty=50.0):
     """Reference clock for the PLL from the Keysight 33600A (meas_setup.yaml `function_generator`): a 0 -> `vpp`
     square wave at `freq` [Hz], `duty` [%], amplitude programmed for a `load` [Ohm] termination. Output on.

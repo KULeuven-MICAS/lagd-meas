@@ -7,10 +7,10 @@
 #
 # Top script for the open-loop VCO tests of the Pomelo PLL. The measurement bench lives in lib/vco_measure.py
 # (SMU on the Vctrl pad, scope on the divided output, adaptive divider) and the lookup table with
-# configure_vco(f, kvco) in lib/vco_lut.py; this file only runs tests on top of them.
+# VcoLUT in lib/vco_lut.py; this file only runs tests on top of them.
 #
 # Tests:
-#   test_lut_pick(f, kvco, sample)       # configure_vco from the lookup table, sweep Vctrl, compare with the table
+#   test_lut_pick(f, kvco, sample)       # VCO codes from the lookup table, sweep Vctrl, compare with the table
 #   test_lut_range(targets, sample)      # the same for a list of (f, kvco) targets, one CSV for all
 #                                        # (plotted in sw/tools/notebooks/LUT_test.ipynb)
 #
@@ -42,14 +42,6 @@ LUT_TEST_TARGETS = [(f, None) for f in (50e6, 100e6, 200e6, 300e6, 500e6, 700e6,
                                         10e9)]
 
 
-def table_curve(rows, key):
-    """(vctrl, f_vco) arrays of one (coarse, min, max) setting in the lookup table, sorted by Vctrl, with clock."""
-    pts = sorted((r["vctrl"], r["f_vco"]) for r in rows
-                 if tuple(r[k] for k in vco_lut.LUT_FIELDS) == key and not np.isnan(r["f_vco"]))
-    v, f = (np.array(x) for x in zip(*pts)) if pts else (np.array([]), np.array([]))
-    return v, f
-
-
 def check_csv_path(sample):
     vco_lut.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     return vco_lut.RESULTS_DIR / "vco_lut_check_{}_{}.csv".format(
@@ -66,9 +58,9 @@ def append_rows(csv_path, rows):
         writer.writerows(rows)
 
 
-def test_lut_pick(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, dv=0.025, f_tol=0.03, kvco_tol=0.25,
+def test_lut_pick(f_vco, kvco=None, sample=None, lut=None, csv_path=None, dv=0.025, f_tol=0.03, kvco_tol=0.25,
                   scope_ch=1, probe_att=10, settle=0.3, n_read=10, supply=None):
-    """Check a lookup-table pick on the chip: configure_vco, then sweep Vctrl and compare with the table.
+    """Check a lookup-table pick on the chip: set the VCO codes from the table, then sweep Vctrl and compare.
 
     Measured points: the table's Vctrl points of the picked setting, plus the predicted operating Vctrl and
     `dv` either side of it (for the local Kvco). PASS when every point is within `f_tol` (relative) of the
@@ -76,36 +68,33 @@ def test_lut_pick(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, dv
     `f_vco`, and the measured local |Kvco| within `kvco_tol` of the predicted one.
     Appends to `csv_path` (default a new results/vco/vco_lut_check_<sample>_<stamp>.csv); returns True on PASS.
     `supply`: the PLL supply SMU (pll_setup.pll_supply); its voltage, current and power are recorded per point.
+    `lut`: the lookup table (vco_lut.VcoLUT); None = the newest table of `sample`.
     """
     csv_path = csv_path or check_csv_path(sample)
-    lut_csv = lut_csv or vco_lut.newest_lut(sample)
-    rows = vco_lut.read_lut(lut_csv)
-    target = dict(lut_csv=Path(lut_csv).name, f_target=f_vco, kvco_target=kvco)
+    lut = lut or vco_lut.VcoLUT(sample=sample)
+    target = dict(lut_csv=lut.path.name, f_target=f_vco, kvco_target=kvco)
     try:
-        pick, pll = vco_lut.configure_vco(f_vco, kvco, sample=sample, lut_csv=lut_csv)
+        cfg = lut.update_config(VCO_CHARAC_CFG, f_vco, kvco)
     except ValueError as e:  # no setting reaches f_vco
         logging.warning("LUT check %.1f MHz: %s", f_vco / 1e6, e)
         append_rows(csv_path, [dict(target, kind="unreachable", result="UNREACHABLE")])
         return False
-    key = tuple(pick[k] for k in vco_lut.LUT_FIELDS)
-    codes = dict(zip(vco_lut.LUT_FIELDS, key))
-    target.update(vctrl_pred=pick["vctrl"], kvco_pred=pick["kvco"], **codes)
-    v_tab, f_tab = table_curve(rows, key)
+    vco_measure.reset_divider(cfg)  # start divider, the measurement adapts it
+    op = lut.predict(cfg, f_vco)
+    target.update(vco_lut.vco_codes(cfg), **op)
+    v_tab, f_tab = lut.curve(cfg)
     vdd = vco_measure.load_instr_cfg()["smu_vctrl"]["args"]["v_max"]
-    v_op = round(pick["vctrl"], 4)
+    v_op = round(op["vctrl_pred"], 4)
     v_lo, v_hi = round(max(v_op - dv, 0.0), 4), round(min(v_op + dv, vdd), 4)  # for the local Kvco
-    vctrls = sorted(set(float(v) for v in np.round(v_tab, 4)) | {v_op, v_lo, v_hi})
+    vctrls = sorted(set(round(v, 4) for v in v_tab) | {v_op, v_lo, v_hi})
 
     logging.info("LUT check: %.1f MHz -> coarse %d, min %d, max %d, predicted Vctrl %.3f V, |Kvco| %.0f MHz/V; "
-                 "sweeping %s V (table %s)", f_vco / 1e6, *key, v_op, pick["kvco"] / 1e6, list(vctrls),
-                 Path(lut_csv).name)
+                 "sweeping %s V (table %s)", f_vco / 1e6, *vco_lut.vco_codes(cfg).values(), v_op,
+                 op["kvco_pred"] / 1e6, vctrls, lut.path.name)
 
     measured, out, power_op = {}, [], pll_setup.measure_pll_supply(None)
+    pll = pll_setup.open_pll(cfg)
     try:
-        # The same config configure_vco loaded, with the start divider the measurement adapts from.
-        cfg = dict(VCO_CHARAC_CFG, **codes)
-        vco_measure.reset_divider(cfg)
-        vco_measure.load_vco(pll, cfg)
         smu, scope = vco_measure.open_vco_instruments(vctrls[0], scope_ch, probe_att)
         try:
             for i, v in enumerate(vctrls):
@@ -134,7 +123,7 @@ def test_lut_pick(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, dv
     kvco_meas = abs(measured[v_hi] - measured[v_lo]) / (v_hi - v_lo)  # NaN when either point had no clock
     ok_points = bool(devs) and max(devs) <= f_tol and len(devs) == len(vctrls)
     ok_op = abs(f_op / f_vco - 1) <= f_tol
-    ok_kvco = abs(kvco_meas / pick["kvco"] - 1) <= kvco_tol
+    ok_kvco = abs(kvco_meas / op["kvco_pred"] - 1) <= kvco_tol
     ok = ok_points and ok_op and ok_kvco
     logging.info("%s: table vs measured, worst %.2f %% over %d/%d points (tolerance %.0f %%)",
                  "PASS" if ok_points else "FAIL", 100 * max(devs) if devs else np.nan, len(devs), len(vctrls),
@@ -142,8 +131,8 @@ def test_lut_pick(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, dv
     logging.info("%s: at the predicted Vctrl %.3f V: %.2f MHz vs target %.2f MHz (%+.2f %%)",
                  "PASS" if ok_op else "FAIL", v_op, f_op / 1e6, f_vco / 1e6, (f_op / f_vco - 1) * 100)
     logging.info("%s: local |Kvco| %.0f MHz/V vs predicted %.0f MHz/V (%+.0f %%, tolerance %.0f %%)",
-                 "PASS" if ok_kvco else "FAIL", kvco_meas / 1e6, pick["kvco"] / 1e6,
-                 (kvco_meas / pick["kvco"] - 1) * 100, 100 * kvco_tol)
+                 "PASS" if ok_kvco else "FAIL", kvco_meas / 1e6, op["kvco_pred"] / 1e6,
+                 (kvco_meas / op["kvco_pred"] - 1) * 100, 100 * kvco_tol)
     out.append(dict(target, **power_op, kind="summary", vctrl_set=v_op, f_vco=f_op, kvco_meas=kvco_meas,
                     dev_pct=100 * max(devs) if devs else np.nan, result="PASS" if ok else "FAIL"))
     for r in out:
@@ -153,15 +142,15 @@ def test_lut_pick(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, dv
     return ok
 
 
-def test_lut_range(targets=LUT_TEST_TARGETS, sample=None, lut_csv=None, **kwargs):
-    """test_lut_pick for every (f_vco, kvco) in `targets`, all into one CSV; logs a PASS/FAIL overview."""
+def test_lut_range(targets=LUT_TEST_TARGETS, sample=None, lut=None, **kwargs):
+    """test_lut_pick for every (f_vco, kvco) in `targets`, all into one CSV; logs a PASS/FAIL overview.
+    `lut`: the lookup table (vco_lut.VcoLUT); None = the newest table of `sample`."""
     csv_path = check_csv_path(sample)
-    lut_csv = lut_csv or vco_lut.newest_lut(sample)
+    lut = lut or vco_lut.VcoLUT(sample=sample)
     results = []
     for f_vco, kvco in targets:
-        results.append((f_vco, test_lut_pick(f_vco, kvco, sample=sample, lut_csv=lut_csv, csv_path=csv_path,
-                                             **kwargs)))
-    logging.info("LUT check overview (%s):", Path(lut_csv).name)
+        results.append((f_vco, test_lut_pick(f_vco, kvco, sample=sample, lut=lut, csv_path=csv_path, **kwargs)))
+    logging.info("LUT check overview (%s):", lut.path.name)
     for f_vco, ok in results:
         logging.info("  %8.1f MHz: %s", f_vco / 1e6, "PASS" if ok else "FAIL or unreachable")
     logging.info("%d/%d targets passed; results in %s", sum(ok for _, ok in results), len(results), csv_path)

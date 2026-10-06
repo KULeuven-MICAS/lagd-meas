@@ -23,7 +23,7 @@
 #
 #
 # The open-loop VCO measurements (bench, equipment checks, sweeps) live in lib/vco_measure.py and the VCO
-# lookup table with configure_vco(f, kvco) in lib/vco_lut.py; main() below only calls into them.
+# lookup table (VcoLUT) in lib/vco_lut.py; main() below only calls into them.
 #
 # Related to: fpga/src/verilog/pll_controller.sv and pll_command_api.sv
 
@@ -275,8 +275,10 @@ def main():
 
             # Lookup table (overnight), then set the VCO for a frequency and Kvco from it
             vco_lut.vco_lut_measure(sample="S5")  # LUT_VCTRLS / LUT_MIN_CODES / LUT_MAX_CODES: ~13 h at ~3.3 s/point
-            # pick, pll_link = vco_lut.configure_vco(1.0e9, 1.0e9, sample="S5")  # 1 GHz, |Kvco| ~1 GHz/V
-            # pll_setup.measure_pll_supply(supply, label="configure_vco 1 GHz")
+            # lut = vco_lut.VcoLUT(sample="S5")
+            # cfg = lut.update_config(VCO_CHARAC_CFG, 1.0e9, 1.0e9)  # 1 GHz, |Kvco| ~1 GHz/V
+            # pll_link = pll_setup.open_pll(cfg)
+            # pll_setup.measure_pll_supply(supply, label="VCO 1 GHz")
 
             # Safer default config: lock, then the PLL supply current and power
             # start_pll(CFG_REF4_OUT128MHZ.copy(), supply=supply)

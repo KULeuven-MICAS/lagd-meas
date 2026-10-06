@@ -5,7 +5,7 @@
 # Author: Willem Vandesteene
 
 #
-# Open-loop VCO spectrum, phase noise and jitter: configure_vco (lib/vco_lut.py) sets the VCO for a frequency
+# Open-loop VCO spectrum, phase noise and jitter: VcoLUT (lib/vco_lut.py) sets the VCO codes for a frequency
 # and Kvco from the lookup table, the SMU holds Vctrl at the predicted operating point, and the R&S FSV signal
 # analyzer measures the output pad (same phase-noise measurement as tests/pll_integrated_jitter.py:
 # phase-noise marker at a set of offsets, integrated with pll_util.calculate_integrated_jitter). The averaged
@@ -118,41 +118,41 @@ def find_carrier(spectrum, f_est, rel_span=0.3, steps=(1e-2, 1e-4)):
     return float(spectrum.query("FREQ:CENT?").strip())
 
 
-def measure_vco_spectrum(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=None, n_averages=10,
+def measure_vco_spectrum(f_vco, kvco=None, sample=None, lut=None, csv_path=None, n_averages=10,
                          offset_span_map=None, out_f_max=OUT_F_MAX, settle=2.0, spectrum=None, supply=None):
     """Configure the VCO for `f_vco` [Hz] / |Kvco| `kvco` [Hz/V] from the lookup table, hold Vctrl at the
     predicted operating point and measure the spectrum, phase noise and integrated jitter on the output pad.
 
+    `lut`: the lookup table (vco_lut.VcoLUT); None = the newest table of `sample`.
     Appends one row to `csv_path` (default a new results/vco/vco_spectrum_<sample>_<stamp>.csv) and the
     traces to <csv_path stem>_traces.csv; returns the row.
     """
     offset_span_map = offset_span_map or VCO_OFFSET_SPAN_MAP
     csv_path = csv_path or spectrum_csv_path(sample)
-    lut_csv = lut_csv or vco_lut.newest_lut(sample)
-    row = dict(time=datetime.now().isoformat(timespec="seconds"), lut_csv=Path(lut_csv).name, f_target=f_vco,
+    lut = lut or vco_lut.VcoLUT(sample=sample)
+    row = dict(time=datetime.now().isoformat(timespec="seconds"), lut_csv=lut.path.name, f_target=f_vco,
                kvco_target=kvco, n_averages=n_averages, offset_min=min(offset_span_map),
                offset_max=max(offset_span_map))
-    cfg = spectrum_cfg(f_vco, out_f_max)
     try:
-        pick, pll = vco_lut.configure_vco(f_vco, kvco, cfg=cfg, sample=sample, lut_csv=lut_csv)
+        cfg = lut.update_config(spectrum_cfg(f_vco, out_f_max), f_vco, kvco)
     except ValueError as e:  # no setting reaches f_vco
         logging.warning("VCO spectrum %.1f MHz: %s", f_vco / 1e6, e)
         append_rows(csv_path, SPECTRUM_COLUMNS, [dict(row, status="unreachable")])
         return row
+    op = lut.predict(cfg, f_vco)
     _, total_div = calculate_div_factor(cfg)
-    row.update({k: pick[k] for k in vco_lut.LUT_FIELDS}, vctrl_pred=pick["vctrl"], kvco_pred=pick["kvco"],
-               set_div_freq=cfg["set_div_freq"], total_div=total_div)
-    logging.info("VCO spectrum: %.1f MHz on c%d min %d max %d at Vctrl %.3f V (|Kvco| %.0f MHz/V), "
-                 "output / %d -> %.2f MHz expected", f_vco / 1e6, *(pick[k] for k in vco_lut.LUT_FIELDS),
-                 pick["vctrl"], pick["kvco"] / 1e6, total_div, f_vco / total_div / 1e6)
+    row.update(vco_lut.vco_codes(cfg), **op, set_div_freq=cfg["set_div_freq"], total_div=total_div)
+    logging.info("VCO spectrum: %.1f MHz, Vctrl %.3f V, output / %d -> %.2f MHz expected", f_vco / 1e6,
+                 op["vctrl_pred"], total_div, f_vco / total_div / 1e6)
 
+    pll = pll_setup.open_pll(cfg)
     own_spectrum = spectrum is None
     smu = None
     try:
         smu = KeithleySMU2450(inst.BaseInstrumentData.from_mapping(vco_measure.load_instr_cfg()["smu_vctrl"]))
-        smu.set_voltage(pick["vctrl"])
+        smu.set_voltage(op["vctrl_pred"])
         smu.output_on()
-        vco_measure.set_vctrl(smu, pick["vctrl"], settle)
+        vco_measure.set_vctrl(smu, op["vctrl_pred"], settle)
         row["vctrl_meas"] = smu.measure()[0]
 
         spectrum = spectrum or open_spectrum()
@@ -196,36 +196,38 @@ def measure_vco_spectrum(f_vco, kvco=None, sample=None, lut_csv=None, csv_path=N
     return row
 
 
-def set_vco(f_vco, kvco=None, sample=None, lut_csv=None, out_f_max=OUT_F_MAX, settle=2.0):
+def set_vco(f_vco, kvco=None, sample=None, lut=None, out_f_max=OUT_F_MAX, settle=2.0):
     """Set the VCO for `f_vco` / `kvco` from the lookup table (direct output, see spectrum_cfg) and drive Vctrl
-    with the SMU at the predicted operating point.
+    with the SMU at the predicted operating point. `lut`: vco_lut.VcoLUT; None = the newest table of `sample`.
 
-    Returns dict(pick, cfg, total_div, f_out (expected pad frequency), smu, vctrl_meas); the SMU is left on
-    (smu.close() turns it off). On an error the SMU output is switched off and every connection closed.
+    Returns dict(cfg, op (lut.predict: vctrl_pred, kvco_pred), total_div, f_out (expected pad frequency), smu,
+    vctrl_meas); the SMU is left on (smu.close() turns it off). On an error the SMU output is switched off and
+    every connection closed.
     """
-    cfg = spectrum_cfg(f_vco, out_f_max)
-    pick, pll = vco_lut.configure_vco(f_vco, kvco, cfg=cfg, sample=sample, lut_csv=lut_csv)
+    lut = lut or vco_lut.VcoLUT(sample=sample)
+    cfg = lut.update_config(spectrum_cfg(f_vco, out_f_max), f_vco, kvco)
+    op = lut.predict(cfg, f_vco)
+    pll = pll_setup.open_pll(cfg)
     pll.close()  # closes the FPGA ports only; the config stays on the chip
     _, total_div = calculate_div_factor(cfg)
     smu = None
     try:
         smu = KeithleySMU2450(inst.BaseInstrumentData.from_mapping(vco_measure.load_instr_cfg()["smu_vctrl"]))
-        smu.set_voltage(pick["vctrl"])
+        smu.set_voltage(op["vctrl_pred"])
         smu.output_on()
-        vco_measure.set_vctrl(smu, pick["vctrl"], settle)
+        vco_measure.set_vctrl(smu, op["vctrl_pred"], settle)
         v_meas = smu.measure()[0]
     except BaseException:
         if smu is not None:
             smu.close()  # instrument error: Vctrl back to 0 V, output off
         raise
-    logging.info("VCO set: %.1f MHz on c%d min %d max %d, Vctrl %.3f V (SMU on, measured %.4f V), "
-                 "|Kvco| %.0f MHz/V; output / %d (set_div_freq %d, pll_clk_o_en 1) -> %.4f MHz expected",
-                 f_vco / 1e6, *(pick[k] for k in vco_lut.LUT_FIELDS), pick["vctrl"], v_meas, pick["kvco"] / 1e6,
-                 total_div, cfg["set_div_freq"], f_vco / total_div / 1e6)
-    return dict(pick=pick, cfg=cfg, total_div=total_div, f_out=f_vco / total_div, smu=smu, vctrl_meas=v_meas)
+    logging.info("VCO set: %.1f MHz, Vctrl %.3f V (SMU on, measured %.4f V); output / %d (set_div_freq %d, "
+                 "pll_clk_o_en 1) -> %.4f MHz expected", f_vco / 1e6, op["vctrl_pred"], v_meas, total_div,
+                 cfg["set_div_freq"], f_vco / total_div / 1e6)
+    return dict(cfg=cfg, op=op, total_div=total_div, f_out=f_vco / total_div, smu=smu, vctrl_meas=v_meas)
 
 
-def view_vco(f_vco, kvco=None, sample=None, lut_csv=None, rel_span=0.3, out_f_max=OUT_F_MAX, settle=2.0,
+def view_vco(f_vco, kvco=None, sample=None, lut=None, rel_span=0.3, out_f_max=OUT_F_MAX, settle=2.0,
              supply=None):
     """set_vco, then point the analyzer at the expected pad frequency and leave everything running for manual
     evaluation: the SMU stays on at the predicted Vctrl, the config stays loaded, and the analyzer sweeps
@@ -236,7 +238,7 @@ def view_vco(f_vco, kvco=None, sample=None, lut_csv=None, rel_span=0.3, out_f_ma
     """
     vco = None
     try:
-        vco = set_vco(f_vco, kvco, sample=sample, lut_csv=lut_csv, out_f_max=out_f_max, settle=settle)
+        vco = set_vco(f_vco, kvco, sample=sample, lut=lut, out_f_max=out_f_max, settle=settle)
         pll_setup.measure_pll_supply(supply, label="%.1f MHz" % (f_vco / 1e6))
     except BaseException:
         if vco is not None:
@@ -264,7 +266,7 @@ def view_vco(f_vco, kvco=None, sample=None, lut_csv=None, rel_span=0.3, out_f_ma
                  rel_span * vco["f_out"] / 1e6)
 
 
-def capture_spectrum(f_vco, kvco=None, sample=None, lut_csv=None, center=None, span=5e6, averages=20, rbw=None,
+def capture_spectrum(f_vco, kvco=None, sample=None, lut=None, center=None, span=5e6, averages=20, rbw=None,
                      vbw=None, out_f_max=OUT_F_MAX, settle=2.0, note="", supply=None):
     """Reproducible averaged spectrum: set_vco (codes + Vctrl from the lookup table), one averaged analyzer trace
     around `center` (None: the expected pad frequency) over `span`, then Vctrl off and every connection closed.
@@ -273,7 +275,7 @@ def capture_spectrum(f_vco, kvco=None, sample=None, lut_csv=None, center=None, s
     row. `rbw`/`vbw` None: the analyzer's auto coupling. `supply`: the PLL supply SMU (pll_setup.pll_supply), its
     voltage, current and power are recorded. Returns the CSV path.
     """
-    vco = set_vco(f_vco, kvco, sample=sample, lut_csv=lut_csv, out_f_max=out_f_max, settle=settle)
+    vco = set_vco(f_vco, kvco, sample=sample, lut=lut, out_f_max=out_f_max, settle=settle)
     spectrum = None
     try:
         spectrum = open_spectrum()
@@ -289,10 +291,9 @@ def capture_spectrum(f_vco, kvco=None, sample=None, lut_csv=None, center=None, s
     vco_lut.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = vco_lut.RESULTS_DIR / "vco_capture_{}_{}.csv".format(
         sample or "nosample", datetime.now().strftime("%Y%m%d_%H%M%S"))
-    pick = vco["pick"]
     setting = dict(time=datetime.now().isoformat(timespec="seconds"), note=note, f_target=f_vco, kvco_target=kvco,
-                   **{k: pick[k] for k in vco_lut.LUT_FIELDS}, vctrl_pred=pick["vctrl"],
-                   vctrl_meas=vco["vctrl_meas"], kvco_pred=pick["kvco"], set_div_freq=vco["cfg"]["set_div_freq"],
+                   **vco_lut.vco_codes(vco["cfg"]), **vco["op"], vctrl_meas=vco["vctrl_meas"],
+                   set_div_freq=vco["cfg"]["set_div_freq"],
                    total_div=vco["total_div"], center=t["center"], span=t["span"], rbw=t["rbw"], averages=averages,
                    **power)
     append_rows(csv_path, CAPTURE_COLUMNS,
@@ -304,14 +305,15 @@ def capture_spectrum(f_vco, kvco=None, sample=None, lut_csv=None, center=None, s
     return csv_path
 
 
-def vco_spectrum_sweep(targets, sample=None, lut_csv=None, **kwargs):
-    """measure_vco_spectrum for every (f_vco, kvco) in `targets`, one analyzer session, all into one CSV pair."""
+def vco_spectrum_sweep(targets, sample=None, lut=None, **kwargs):
+    """measure_vco_spectrum for every (f_vco, kvco) in `targets`, one analyzer session, all into one CSV pair.
+    `lut`: the lookup table (vco_lut.VcoLUT); None = the newest table of `sample`."""
     csv_path = spectrum_csv_path(sample)
-    lut_csv = lut_csv or vco_lut.newest_lut(sample)
+    lut = lut or vco_lut.VcoLUT(sample=sample)
     spectrum = open_spectrum()
     try:
-        rows = [measure_vco_spectrum(f, k, sample=sample, lut_csv=lut_csv, csv_path=csv_path, spectrum=spectrum,
-                                     **kwargs) for f, k in targets]
+        rows = [measure_vco_spectrum(f, k, sample=sample, lut=lut, csv_path=csv_path, spectrum=spectrum, **kwargs)
+                for f, k in targets]
     finally:
         spectrum.close()
     logging.info("VCO spectrum overview:")

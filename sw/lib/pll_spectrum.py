@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sw.lib import vco_lut, vco_measure
+from sw.lib import vco_measure
 from sw.lib.lab_instruments import instrument as inst
 from sw.lib.lab_instruments.drivers.rohde_schwarz_fsv_spectrum import RohdeSchwarzFSVSpectrum
 from sw.lib.pll_util import (LOG_AVG_CORR_DB, calculate_integrated_jitter, integrate_phase_noise,
@@ -110,17 +110,14 @@ def offsets_for(f_out, offset_span_map=None, out_offset_ratio=OUT_OFFSET_RATIO):
     return {o: s for o, s in offset_span_map.items() if o * out_offset_ratio <= f_out}
 
 
-def kvco_target_for(rows, f_vco, kvco):
-    """|Kvco| to request: `kvco` as is, or for "middle" the geometric middle of the |Kvco| range the lookup table
-    offers at f_vco (inside the Vctrl window). Returns (target, kvco_min, kvco_max)."""
-    best, _ = vco_lut.choose_vco(rows, f_vco, None, log=False)
-    if best is None:
-        raise ValueError(f"no VCO setting reaches {f_vco / 1e6:.1f} MHz inside the Vctrl window")
-    target = math.sqrt(best["kvco_min"] * best["kvco_max"]) if kvco == "middle" else kvco
-    logger.info("%.1f MHz: possible |Kvco| %.0f-%.0f MHz/V (%d settings) -> requesting %.0f MHz/V%s", f_vco / 1e6,
-                best["kvco_min"] / 1e6, best["kvco_max"] / 1e6, best["n_options"], target / 1e6,
-                " (geometric middle)" if kvco == "middle" else "")
-    return target, best["kvco_min"], best["kvco_max"]
+def kvco_target_for(lut, f_vco, kvco):
+    """|Kvco| to request from the lookup table `lut` (vco_lut.VcoLUT): `kvco` as is, or for "middle" the geometric
+    middle of the |Kvco| range it offers at f_vco (inside the Vctrl window). Returns (target, kvco_min, kvco_max)."""
+    kvco_min, kvco_max = lut.kvco_range(f_vco)  # raises when f_vco is unreachable
+    target = math.sqrt(kvco_min * kvco_max) if kvco == "middle" else kvco
+    logger.info("%.1f MHz: possible |Kvco| %.0f-%.0f MHz/V -> requesting %.0f MHz/V%s", f_vco / 1e6,
+                kvco_min / 1e6, kvco_max / 1e6, target / 1e6, " (geometric middle)" if kvco == "middle" else "")
+    return target, kvco_min, kvco_max
 
 
 def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, spectrum_averages=20,

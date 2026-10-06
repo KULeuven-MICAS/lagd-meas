@@ -27,13 +27,12 @@ from sw.lib.lab_instruments.drivers.keithley_smu_2450 import KeithleySMU2450
 from sw.lib.lab_instruments.drivers.rs_scope_rtb2000 import RSScopeRTB2000
 from sw.lib.pll_command_api import calculate_div_factor, pack_pll_cfg
 from sw.lib.pll_settings import VCO_CHARAC_CFG
-from sw.lib.vco_lut import CODES, HOLD_MAX, HOLD_MIN, RESULTS_DIR
+from sw.lib.vco_lut import CODES, HOLD_MAX, HOLD_MIN, LUT_FIELDS, RESULTS_DIR
 
 logger = logging.getLogger(__name__)
 
 INSTR_CFG_PATH = Path(__file__).resolve().parent / "lab_instruments" / "config" / "meas_setup.yaml"
 
-VCO_FIELDS = ("vco_tune_coarse", "vco_current_min", "vco_current_max")
 # Columns of one measured VCO point (see measure_vco_point).
 POINT_COLUMNS = ("vctrl_set", "vctrl_meas", "i_ctrl", "f_meas", "f_std", "n_valid", "f_vco", "clock",
                  "set_div_freq", "clk_div_val", "total_div")
@@ -70,13 +69,6 @@ def load_instr_cfg():
         return yaml.safe_load(f)
 
 
-def open_pll(cfg):
-    """Connect to the PLL controller and load `cfg`; returns the PllDriver."""
-    pll = pll_setup.connect()
-    pll_setup.load_config(pll, cfg)
-    return pll
-
-
 def open_vco_instruments(vctrl, scope_ch=1, probe_att=10):
     """Open the SMU (output on at `vctrl`) and the scope (measurements on `scope_ch`)."""
     config = load_instr_cfg()
@@ -101,7 +93,7 @@ def set_vctrl(smu, v, settle=0.3):
 
 
 def load_vco(pll, cfg):
-    """LOAD a config on already opened ports (see open_pll) and check the readback."""
+    """LOAD a config on already opened ports (see pll_setup.open_pll) and check the readback."""
     word = pack_pll_cfg(**cfg)
     pll.load(word)
     readback = pll.readback()
@@ -338,7 +330,7 @@ def test_smu(voltages=(0.0, 0.375, 0.75), settle=0.2, v_tol=2e-3, i_max=1e-6):
 def vctrl_sweep(vco_settings, vctrls=None, scope_ch=1, probe_att=10, settle=0.3, csv_path=None):
     """Open-loop VCO tuning curve: sweep Vctrl with the SMU, measure f on the scope.
 
-    `vco_settings` is a dict with the VCO_FIELDS (other keys are ignored, so a
+    `vco_settings` is a dict with the LUT_FIELDS (other keys are ignored, so a
     config from pll_settings can be passed as-is). They are applied on top of
     VCO_CHARAC_CFG: phase detector off, Vctrl from the pad, output divided by
     calculate_div_factor (divider adapted per point, see measure_vco). Scope
@@ -348,26 +340,26 @@ def vctrl_sweep(vco_settings, vctrls=None, scope_ch=1, probe_att=10, settle=0.3,
     if vctrls is None:
         vctrls = [round(0.025 * i, 4) for i in range(31)]  # 0 -> 0.75 V, 25 mV steps
     cfg = VCO_CHARAC_CFG.copy()
-    cfg.update({k: vco_settings[k] for k in VCO_FIELDS})
+    cfg.update({k: vco_settings[k] for k in LUT_FIELDS})
     reset_divider(cfg)
     _, total_div = calculate_div_factor(cfg)
     if csv_path is None:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         csv_path = RESULTS_DIR / "vctrl_sweep_c{}_min{}_max{}_{}.csv".format(
-            *(cfg[k] for k in VCO_FIELDS), stamp)
+            *(cfg[k] for k in LUT_FIELDS), stamp)
 
-    pll = open_pll(cfg)
-    logger.info("VCO %s, output divided by %d", {k: cfg[k] for k in VCO_FIELDS}, total_div)
+    pll = pll_setup.open_pll(cfg)
+    logger.info("VCO %s, output divided by %d", {k: cfg[k] for k in LUT_FIELDS}, total_div)
 
     smu, scope = open_vco_instruments(vctrls[0], scope_ch, probe_att)
     try:
         with open(csv_path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=list(VCO_FIELDS) + list(POINT_COLUMNS))
+            writer = csv.DictWriter(f, fieldnames=list(LUT_FIELDS) + list(POINT_COLUMNS))
             writer.writeheader()
             for v in vctrls:
                 set_vctrl(smu, v, settle)
-                row = {k: cfg[k] for k in VCO_FIELDS}
+                row = {k: cfg[k] for k in LUT_FIELDS}
                 row.update(measure_vco(pll, smu, scope, scope_ch, cfg, v, settle))
                 writer.writerow(row)
                 f.flush()  # keep what was measured if the sweep is interrupted
@@ -398,14 +390,14 @@ def vco_current_families(coarse_codes=(6, 7, 8, 9), vctrls=None, hold_min=HOLD_M
 
     cfg = VCO_CHARAC_CFG.copy()
     cfg.update(vco_tune_coarse=coarse_codes[0], vco_current_min=hold_min, vco_current_max=hold_max)
-    pll = open_pll(cfg)
+    pll = pll_setup.open_pll(cfg)
 
     n_curves = len(coarse_codes) * 2 * len(CODES)
     smu, scope = open_vco_instruments(vctrls[0], scope_ch, probe_att)
     t_start, i_curve = time.time(), 0  # after the instrument setup, so the ETA counts curves only
     try:
         with open(csv_path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["swept"] + list(VCO_FIELDS) + list(POINT_COLUMNS))
+            writer = csv.DictWriter(f, fieldnames=["swept"] + list(LUT_FIELDS) + list(POINT_COLUMNS))
             writer.writeheader()
             for coarse in coarse_codes:
                 for field, held in (("vco_current_max", {"vco_current_min": hold_min}),
@@ -416,11 +408,11 @@ def vco_current_families(coarse_codes=(6, 7, 8, 9), vctrls=None, hold_min=HOLD_M
                         set_vctrl(smu, vctrls[0], settle)
                         load_vco(pll, cfg)
                         i_curve += 1
-                        logger.info("Curve %d/%d: %s", i_curve, n_curves, {k: cfg[k] for k in VCO_FIELDS})
+                        logger.info("Curve %d/%d: %s", i_curve, n_curves, {k: cfg[k] for k in LUT_FIELDS})
                         for i, v in enumerate(vctrls):
                             set_vctrl(smu, v, settle)
                             row = {"swept": field}
-                            row.update({k: cfg[k] for k in VCO_FIELDS})
+                            row.update({k: cfg[k] for k in LUT_FIELDS})
                             # Two fits on the first point: the config change moves f a lot.
                             row.update(measure_vco(pll, smu, scope, scope_ch, cfg, v, settle, n_read=n_read,
                                                    fit_passes=2 if i == 0 else 1))

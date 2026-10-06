@@ -67,42 +67,41 @@ def divider_label(div):
     return "ext /{} x /{}".format(2 ** div["set_div_freq"], 2 * (div["clk_div_val"] + 1))
 
 
-def divider_sweep(f_vco=1e9, kvco="middle", sample=None, lut_csv=None, supply=None, dividers=None, n_averages=10,
+def divider_sweep(f_vco=1e9, kvco="middle", sample=None, lut=None, supply=None, dividers=None, n_averages=10,
                   span=5e6, spectrum_averages=20, lock_timeout=3.0, common_band=COMMON_BAND):
     """Lock the PLL at `f_vco` [Hz] (VCO codes from the lookup table for |Kvco| `kvco` [Hz/V] or "middle", reference
     f_vco / FB_DIV from the 33600A), then for every output divider in `dividers` (default DIVIDERS): load the config,
     wait for lock and measure the pad with measure_output (offsets up to f_out / OUT_OFFSET_RATIO, jitter also over
     `common_band`). The PLL supply `supply` (pll_setup.pll_supply) must already be on; its current is recorded per
     divider. A divider that fails is recorded and the sweep continues; a VISA error stops it. The reference and the
-    FPGA link are closed at the end, also on an error. Returns the CSV path.
+    FPGA link are closed at the end, also on an error. `lut`: the lookup table (vco_lut.VcoLUT); None = the newest
+    table of `sample`. Returns the CSV path.
     """
     dividers = dividers or DIVIDERS
-    lut_csv = lut_csv or vco_lut.newest_lut(sample)
-    target, _, _ = kvco_target_for(vco_lut.read_lut(lut_csv), f_vco, kvco)
+    lut = lut or vco_lut.VcoLUT(sample=sample)
+    target, _, _ = kvco_target_for(lut, f_vco, kvco)
+    vco_cfg = lut.update_config(CFG_REF8, f_vco, target)  # the same VCO codes for every divider below
+    op = lut.predict(vco_cfg, f_vco)
     f_ref = f_vco / FB_DIV
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = RESULTS_DIR / "pll_spectrum_div_{}_{}.csv".format(sample or "nosample",
                                                                  datetime.now().strftime("%Y%m%d_%H%M%S"))
+    logging.info("Divider sweep at %.1f MHz (ref %.4f MHz x %d), |Kvco| %.0f MHz/V, %d dividers",
+                 f_vco / 1e6, f_ref / 1e6, FB_DIV, op["kvco_pred"] / 1e6, len(dividers))
 
     fg = pll = None
     try:
         fg = pll_setup.start_reference(f_ref, vpp=1.8, channel=1, load=50)
-        # Operating point with the first divider; the same codes for every divider below
-        pick, pll = vco_lut.configure_vco(f_vco, target, cfg=dict(CFG_REF8, **dividers[0]), sample=sample,
-                                          lut_csv=lut_csv)
-        codes = {k: pick[k] for k in vco_lut.LUT_FIELDS}
-        logging.info("Divider sweep at %.1f MHz (ref %.4f MHz x %d): c%d min %d max %d, |Kvco| %.0f MHz/V, %d dividers",
-                     f_vco / 1e6, f_ref / 1e6, FB_DIV, *codes.values(), pick["kvco"] / 1e6, len(dividers))
+        pll = pll_setup.connect()  # one link; every divider loads its own config on it
 
         for i, div in enumerate(dividers, 1):
-            cfg = dict(CFG_REF8, **codes, **div)
+            cfg = dict(vco_cfg, **div)
             _, total_div = calculate_div_factor(cfg)
             label = divider_label(div)
-            row = dict(time=datetime.now().isoformat(timespec="seconds"), lut_csv=Path(lut_csv).name, divider=label,
+            row = dict(time=datetime.now().isoformat(timespec="seconds"), lut_csv=lut.path.name, divider=label,
                        pll_clk_o_en=cfg["pll_clk_o_en"], clk_div_en=cfg["clk_div_en"],
                        set_div_freq=cfg["set_div_freq"], clk_div_val=cfg["clk_div_val"], total_div=total_div,
-                       f_vco=f_vco, kvco_target=target, vctrl_pred=pick["vctrl"], kvco_pred=pick["kvco"], f_ref=f_ref,
-                       status="error", **codes)
+                       f_vco=f_vco, kvco_target=target, f_ref=f_ref, status="error", **vco_lut.vco_codes(cfg), **op)
             traces = []
             logging.info("=== Divider %d/%d: %s (total /%d) -> %.4f MHz on the pad ===", i, len(dividers), label,
                          total_div, f_vco / total_div / 1e6)
