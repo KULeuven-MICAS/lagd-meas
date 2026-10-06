@@ -35,6 +35,7 @@ from sw.lib.pll_settings import *
 
 from sw.lib.lab_instruments import instrument as inst
 from sw.lib.lab_instruments.drivers.rohde_schwarz_fsv_spectrum import RohdeSchwarzFSVSpectrum
+from sw.lib.lab_instruments.drivers.keysight_fg_33600 import KeysightFG33600
 from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 from sw.lib.pll_util import calculate_integrated_jitter
@@ -101,11 +102,11 @@ def config_pll(cfg):
         logging.info("Division factor on chip clock: %d, total: %d", *calculate_div_factor(cfg))
     else:
         logging.error("config check FAILED: 0x%012X", word)
-    
+
     readback = pll.readback()
     logging.info("readback = 0x%012X", readback)
     assert readback == word
-    
+
     # Move the SoC onto the PLL
     locked = pll.wait_lock(timeout=3)
     if locked:
@@ -113,7 +114,7 @@ def config_pll(cfg):
         logging.info("PLL lock = %s and selected as the SoC clock", pll.read_lock())
     else:
         logging.error("PLL did not lock; SoC left on the reference clock")
-    
+
     return 0
 
 def start_pll_and_config(cfg):
@@ -124,6 +125,19 @@ def start_pll_and_config(cfg):
 
     return 0
 
+
+def setup_function_generator():
+    parser = Parser()
+    # Load the instrument configuration from a YAML file.
+    logging.info(f"Loading instrument config from: {INSTR_CFG_PATH}")
+
+    with INSTR_CFG_PATH.open(encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+
+    with iclab_session(parser.get_credentials()):
+        # Create an instance of the KeysightFG33600 class with the loaded configuration.
+        spectrum = KeysightFG33600(inst.BaseInstrumentData.from_mapping(config["function_generator"]))
+        return spectrum
 
 def setup_spectrum_analyzer():
     parser = Parser()
@@ -216,24 +230,24 @@ def jitter_statistic_variation():
                 )
 
             jitter_results[n_averages] = measurements
-    
+
     logging.info("Integrated jitter statistical variation results:")
     for n_avg, results in jitter_results.items():
         # Separate the time and phase jitter tuples returned by the measurement function
         time_jitters = [res[0] for res in results]
         phase_jitters = [res[1] for res in results]
-        
+
         # Calculate means and standard deviations
         time_mean = statistics.mean(time_jitters)
         time_std = statistics.stdev(time_jitters)
-        
+
         phase_mean = statistics.mean(phase_jitters)
         phase_std = statistics.stdev(phase_jitters)
-        
+
         # Log the results (scaling to ps and mrad to match your previous measurement logs)
         logging.info(f"--- {n_avg} Sweeps/Averages ---")
         logging.info(f"Time Jitter (ps)   - Mean: {time_mean * 1e12:.4f}, Stdev: {time_std * 1e12:.4f}")
-        logging.info(f"Phase Jitter (mrad)- Mean: {phase_mean * 1e3:.4f}, Stdev: {phase_std * 1e3:.4f}")    
+        logging.info(f"Phase Jitter (mrad)- Mean: {phase_mean * 1e3:.4f}, Stdev: {phase_std * 1e3:.4f}")
 
 def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25, supply=None):
     """
@@ -242,7 +256,7 @@ def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25, suppl
     # Time estimation based on ~1m45s for 10 averages (10.5s per average)
     acq_time_seconds = 10.5 * n_averages
     total_time_minutes = (acq_time_seconds * n_configs) / 60.0
-    
+
     # Define the full 4D parameter space and sample
     parameter_space = list(itertools.product(range(8), repeat=4))
     random.seed(42)
@@ -253,21 +267,22 @@ def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25, suppl
 
     # Prepare CSV for incremental saving
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs("results", exist_ok=True)
-    csv_filename = f"results/jitter_sweep_{timestamp}.csv"
-    
+
+    os.makedirs("results/jitter", exist_ok=True)
+    csv_filename = f"results/jitter/jitter_sweep_random_{timestamp}.csv"
+
     with open(csv_filename, mode='w', newline='') as f, contextlib.closing(spectrum):  # analyzer closed on exit
         writer = csv.writer(f)
         writer.writerow(["set_current", "set_c1", "set_c2", "set_r1", "time_jitter_ps", "phase_jitter_mrad",
                          "pll_vdd_v", "pll_i_ma", "pll_p_mw"])
-        
+
         logging.info(f"Starting sweep of {n_configs} configurations (n_averages={n_averages}).")
         logging.info(f"Estimated time: {total_time_minutes:.1f} minutes.")
         logging.info(f"Data will be saved to {csv_filename}")
-        
+
         for idx, (curr, c1, c2, r1) in enumerate(sampled_configs, 1):
             logging.info(f"[{idx}/{n_configs}] Testing cfg: current={curr}, c1={c1}, c2={c2}, r1={r1}")
-            
+
             # Apply configuration
             cfg = CFG_COARSE2.copy()
             cfg.update(
@@ -279,14 +294,14 @@ def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25, suppl
                 set_r1=r1,
             )
             config_pll(cfg)
-            
+
             # PLL supply current and power with this configuration (NaN without the supply SMU)
             p = pll_setup.measure_pll_supply(supply, label=f"cfg {curr},{c1},{c2},{r1}")
             supply_vals = [p["pll_vdd"], p["pll_i"] * 1e3, p["pll_p"] * 1e3]
-            
+
             # Workaround: Reset the 300s remote-control timer
             reset_remote_timer()
-            
+
             # Measure
             try:
                 time_jitter, phase_jitter = measure_integrated_jitter(
@@ -294,15 +309,15 @@ def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25, suppl
                     center_freq=37.5e6,
                     n_averages=n_averages,
                 )
-                
+
                 time_jitter_ps = time_jitter * 1e12
                 phase_jitter_mrad = phase_jitter * 1e3
-                
+
                 logging.info(f"Result: time = {time_jitter_ps:.3f} ps | phase = {phase_jitter_mrad:.3f} mrad")
-                
+
                 writer.writerow([curr, c1, c2, r1, time_jitter_ps, phase_jitter_mrad] + supply_vals)
                 f.flush()
-                
+
             except Exception as e:
                 if isinstance(e, pyvisa.errors.VisaIOError):
                     raise  # instrument connection lost: stop the run, outputs off in the main block
@@ -320,31 +335,32 @@ def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, 
     # Generate the full grid of combinations from the provided lists
     parameter_space = list(itertools.product(sweep_curr, sweep_c1, sweep_c2, sweep_r1))
     n_configs = len(parameter_space)
-    
+
     # Time estimation based on ~1m45s for 10 averages (10.5s per average)
     acq_time_seconds = 10.5 * n_averages
     total_time_minutes = (acq_time_seconds * n_configs) / 60.0
-    
+
     # Main spectrum analyzer session
     spectrum = setup_spectrum_analyzer()
 
     # Prepare CSV for incremental saving
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs("results", exist_ok=True)
-    csv_filename = f"results/jitter_sweep_{timestamp}.csv"
-    
+
+    os.makedirs("results/jitter", exist_ok=True)
+    csv_filename = f"results/jitter/jitter_sweep_grid_{timestamp}.csv"
+
     with open(csv_filename, mode='w', newline='') as f, contextlib.closing(spectrum):  # analyzer closed on exit
         writer = csv.writer(f)
         writer.writerow(["set_current", "set_c1", "set_c2", "set_r1", "time_jitter_ps", "phase_jitter_mrad",
                          "pll_vdd_v", "pll_i_ma", "pll_p_mw"])
-        
+
         logging.info(f"Starting grid sweep of {n_configs} configurations (n_averages={n_averages}).")
         logging.info(f"Estimated time: {total_time_minutes:.1f} minutes ({total_time_minutes/60:.2f} hours).")
         logging.info(f"Data will be saved to {csv_filename}")
-        
+
         for idx, (curr, c1, c2, r1) in enumerate(parameter_space, 1):
             logging.info(f"[{idx}/{n_configs}] Testing cfg: current={curr}, c1={c1}, c2={c2}, r1={r1}")
-            
+
             # Apply configuration
             cfg = CFG_COARSE2.copy()
             cfg.update(
@@ -356,14 +372,14 @@ def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, 
                 set_r1=r1,
             )
             config_pll(cfg)  # ports already open (main block); reopening them fails
-            
+
             # PLL supply current and power with this configuration (NaN without the supply SMU)
             p = pll_setup.measure_pll_supply(supply, label=f"cfg {curr},{c1},{c2},{r1}")
             supply_vals = [p["pll_vdd"], p["pll_i"] * 1e3, p["pll_p"] * 1e3]
-            
+
             # Workaround: Reset the 300s remote-control timer
             reset_remote_timer()
-            
+
             # Measure
             try:
                 time_jitter, phase_jitter = measure_integrated_jitter(
@@ -371,15 +387,15 @@ def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, 
                     center_freq=37.5e6,
                     n_averages=n_averages,
                 )
-                
+
                 time_jitter_ps = time_jitter * 1e12
                 phase_jitter_mrad = phase_jitter * 1e3
-                
+
                 logging.info(f"Result: time = {time_jitter_ps:.3f} ps | phase = {phase_jitter_mrad:.3f} mrad")
-                
+
                 writer.writerow([curr, c1, c2, r1, time_jitter_ps, phase_jitter_mrad] + supply_vals)
                 f.flush()
-                
+
             except Exception as e:
                 if isinstance(e, pyvisa.errors.VisaIOError):
                     raise  # instrument connection lost: stop the run, outputs off in the main block

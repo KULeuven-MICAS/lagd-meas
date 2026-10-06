@@ -175,17 +175,17 @@ def split_jitter(fc, offsets, L_f, **spur_kwargs):
 
 
 if __name__ == "__main__":
-    carrier_freq = 600e6  # 1 GHz Clock
+    carrier_freq = 37499975
 
     # Frequency offsets: 10 kHz, 100 kHz, 1 MHz, 10 MHz, 100 MHz
     #offsets_hz = [10e3, 100e3, 532e3, 857e3, 1e6]
-    offsets_hz = [100, 1e3, 10e3, 100e3, 500e3, 1e6, 10e6]
+    offsets_hz = [100, 1e3, 10e3, 100e3, 500e3, 1e6]
 
     # Phase noise in dBc/Hz at the given offsets
     #phase_noise_dBc = [-106, -105, -94]
     #phase_noise_dBc = [-106, -105, -107, -94,-95]
     #phase_noise_dBc = [-104.11, -115.6, -120.2, -119.9, -132.1, -142.4]
-    phase_noise_dBc = [-62.3, -63.4, -62.6, -61.9, -69, -65.1, -81]
+    phase_noise_dBc = [-103.2, -102.4, -106.9, -105.8, -100.6, -85.6]
 
     t_jitter, phase_jitter = calculate_integrated_jitter(
         carrier_freq,
