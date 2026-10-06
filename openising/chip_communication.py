@@ -124,9 +124,9 @@ def compile_data(data_folders: list[Path], nb_cores: int, core: int, delta_h_cal
             [
                 "pixi",
                 "run",
-                f"make -C ./sw clean tests/lagd_scompute_debug.spm.elf BENDER=bender VERIFICATION_TEST=0\
+                f"make -C ./sw clean tests/lagd_scompute_debug.spm.elf BENDER=bender VERIFICATION_TEST=0 \
 CORE_TESTED={core}",
-            ]
+            ], check=True
         )
         if folder_2 is not None:
             rename_move_file(TOP_LAGD_IM / "sw/tests/lagd_dcompute.spm.elf", folder_1, elf_file)
