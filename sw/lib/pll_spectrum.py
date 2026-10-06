@@ -63,8 +63,8 @@ RBW_SPAN_RATIO = 700
 DETECTOR, AVERAGE_TYPE = "RMS", "POWer"
 # Spur detection on the full curve (pll_util.find_spurs): points more than SPUR_THRESHOLD_DB above the median of L
 # within +-SPUR_WINDOW_DECADES/2 around them, over at least SPUR_MIN_POINTS neighbouring points, are spurs; the jitter
-# is split into noise and spur parts. Spurs are reported on the pad only: strong ones are not small phase modulation
-# of the VCO (coupled in after the divider), so +20 log10(N) does not apply to them.
+# is split into noise and spur parts. Spurs are reported on the pad (where they are measured). The divider sweep of
+# 2026-10-05 shows they coincide across dividers after +20 log10(N): phase modulation of the VCO, divided like its noise.
 SPUR_THRESHOLD_DB, SPUR_WINDOW_DECADES, SPUR_MIN_POINTS = 10.0, 0.2, 2
 # A carrier on the pad below this level is not measured (status "no_carrier"): no carrier at all (noise or a spur), or
 # a pad that does not drive this frequency (full swing is about -5..+1 dBm).
