@@ -7,7 +7,6 @@
 # VCO lookup table: measure it (vco_lut_measure) and use it (VcoLUT). Typical use in a measurement:
 #
 #   lut = VcoLUT(sample="S5")                     # newest results/vco/vco_lut_S5_*.csv (or VcoLUT(csv_path))
-#   lut.margin = 0.05                             # window, margin, vdd, n_alternatives: plain attributes
 #   cfg = lut.update_config(CFG_REF8, 1e9, 1e9)   # start config + the VCO codes for 1 GHz, |Kvco| ~1 GHz/V
 #   op = lut.predict(cfg, 1e9)                    # {"vctrl_pred", "kvco_pred"}: expected operating point
 #   pll = pll_setup.open_pll(cfg)                 # load it on the chip
