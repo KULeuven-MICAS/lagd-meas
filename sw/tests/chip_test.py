@@ -111,12 +111,23 @@ def example_with_driver():
 
 
 def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32,
-                mem_test: bool = False, bypass_pll: bool = False):
+                mem_test: bool = False, bypass_pll: bool = False, custom: bool = False):
     # Set up PLL
     if setup_pll:
         if bypass_pll:
             # Bypass the PLL and use the reference clock directly
             cfg = PLL_BYPASS_CFG.copy()
+        elif custom:
+            # Use a custom configuration
+            cfg = CFG_REF18_75.copy()
+
+            cfg.update(
+                    vco_tune_coarse=0b0000,  # Smaller = faster
+                    vco_current_max=0b1000,
+                    vco_current_min=0b1000,
+                    set_div_freq=0b011,
+                    clk_div_val=49,
+                )
         else:
             # Set up the PLL
             assert pll_freq in [8, 16, 32, 64, 128, 256, 512], "pll_freq must be one of [32, 64, 128, 256]"
@@ -191,4 +202,4 @@ if __name__ == "__main__":
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
-    sys.exit(setup_chip(ref_freq=8, pll_freq=512, bypass_pll=True))  # exit code 0 = success, 1 = failure
+    sys.exit(setup_chip(ref_freq=8, pll_freq=512, bypass_pll=True, custom=False))  # exit code 0 = success, 1 = failure
