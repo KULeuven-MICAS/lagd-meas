@@ -15,3 +15,17 @@ use_ZF: true
 logfile_discrimination: ""
 nb_flipping: 50
 benchmark: ./ising/benchmarks/biqmac/rudy/pm1s_100.0
+
+num_iterations_Multiplicative: 5000
+cluster_threshold: 0.3
+init_cluster_size: 0.8
+end_cluster_size: 0.0625
+exponent: 3.0
+cluster_choice: "random"
+current: 1.0
+capacitance: 1
+accumulation_delay: 0.
+broadcast_delay: 0.
+delay_offset: 0.0
+# sigma_J: -1.0
+stop_criterion: 1e-6  # 1uV
