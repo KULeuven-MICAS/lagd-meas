@@ -121,6 +121,34 @@ def integrate_phase_noise(fc, offsets, L_f):
     return rms_phase / (2.0 * np.pi * fc), rms_phase
 
 
+def bin_phase_noise(offsets, L_f, edges):
+    """A densely sampled L(f) [dBc/Hz] (e.g. phase_noise_from_traces) averaged into bins, for plotting.
+
+    Per bin [edges[i], edges[i+1]): the mean of 10^(L/10), each point weighted by the bandwidth it stands for (half
+    the distance to its neighbours, so stitched spans with different point spacings count correctly), back in dB.
+    This keeps the noise power of the bin, so the level stays right (averaging the dB values would read noise low).
+    A spur narrower than the bin is spread over it and its peak in dBc/Hz drops: take spur levels and the jitter from
+    the unbinned curve.
+
+    Returns (offset [Hz], L [dBc/Hz]) arrays: per non-empty bin the weighted mean offset and level.
+    """
+    f = np.asarray(offsets, dtype=float)
+    lin = 10.0 ** (np.asarray(L_f, dtype=float) / 10.0)
+    if len(f) < 2:
+        return f, np.asarray(L_f, dtype=float)
+    weight = np.gradient(f)  # (f[i+1] - f[i-1]) / 2: bandwidth per point
+    bin_of = np.digitize(f, edges) - 1
+    out_f, out_l = [], []
+    for i in range(len(edges) - 1):
+        in_bin = bin_of == i
+        w = weight[in_bin]
+        if w.sum() <= 0:
+            continue  # empty bin
+        out_f.append(np.sum(f[in_bin] * w) / w.sum())
+        out_l.append(10.0 * np.log10(np.sum(lin[in_bin] * w) / w.sum()))
+    return np.array(out_f), np.array(out_l)
+
+
 def find_spurs(offsets, L_f, threshold_db=10.0, window_decades=0.2, min_points=2):
     """Discrete spurs in a densely sampled L(f) [dBc/Hz] (e.g. phase_noise_from_traces).
 
