@@ -19,6 +19,8 @@ VCO_CHARAC_CFG = DEFAULT_CFG.copy()
 VCO_CHARAC_CFG.update(pdown_PD=0b1, set_v_ctrl=0b11, clk_div_val=49, set_div_freq=0b000)
 SAFE_LOOP_CFG = DEFAULT_CFG.copy()
 SAFE_LOOP_CFG.update(set_current=0b001, set_c1=0b111, set_c2=0b111, set_r1=0b011, set_v_ctrl=0b00)  # Min BW
+MIN_JITTER_CFG = DEFAULT_CFG.copy()
+MIN_JITTER_CFG.update(set_current=0b111, set_c1=0b000, set_c2=0b001, set_r1=0b111, set_v_ctrl=0b00)  # Max BW
 COOKED_CFG = SAFE_LOOP_CFG.copy()
 COOKED_CFG.update(set_v_ctrl=0b00, vco_current_min=0b1000, vco_current_max=0b1100, vco_tune_coarse=0b1001)
 FREF_20M_CFG = DEFAULT_CFG.copy()
@@ -144,6 +146,16 @@ CFG_COARSE0.update(
         vco_current_min=0b1000,
     )
 
+# Fref = [16, 56] MHz
+CFG_COARSE0_FAST = DEFAULT_CFG.copy()
+CFG_COARSE0_FAST.update(
+        clk_div_val=49,
+        set_div_freq=0b000,
+        set_v_ctrl=0b00,
+        vco_tune_coarse=0b0000,
+        vco_current_max=0b1000,
+        vco_current_min=0b1000,
+    )
 # DEFAULT_CFG = {
 #     "fb_clk_oen": 0b1,  # ?
 #     "pll_clk_o_en": 0b0,  # clk_o comes from the divider outside the PLL
