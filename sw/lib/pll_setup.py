@@ -64,13 +64,9 @@ def open_pll(cfg):
     return pll
 
 
-def start_reference(freq, vpp=1.8, channel=1, load=50, duty=50.0):
-    """Reference clock for the PLL from the Keysight 33600A (meas_setup.yaml `function_generator`): a 0 -> `vpp`
-    square wave at `freq` [Hz], `duty` [%], amplitude programmed for a `load` [Ohm] termination. Output on.
-
-    Returns the generator: keep it open while the PLL runs, close() turns the output off. Needs the lab
-    network (iclab_session).
-    """
+def open_reference_generator():
+    """The Keysight 33600A of meas_setup.yaml (`function_generator`), reset: all outputs off. Needs the lab network
+    (iclab_session)."""
     import yaml  # instrument imports only when a reference is needed
     from pathlib import Path
     from sw.lib.lab_instruments import instrument as inst
@@ -79,7 +75,18 @@ def start_reference(freq, vpp=1.8, channel=1, load=50, duty=50.0):
     cfg_path = Path(__file__).resolve().parent / "lab_instruments" / "config" / "meas_setup.yaml"
     with cfg_path.open(encoding="utf-8") as f:
         config = yaml.safe_load(f)
-    fg = KeysightFG33600(inst.BaseInstrumentData.from_mapping(config["function_generator"]))
+    return KeysightFG33600(inst.BaseInstrumentData.from_mapping(config["function_generator"]))
+
+
+def start_reference(freq, vpp=1.8, channel=1, load=50, duty=50.0, fg=None):
+    """Reference clock for the PLL from the Keysight 33600A (meas_setup.yaml `function_generator`): a 0 -> `vpp`
+    square wave at `freq` [Hz], `duty` [%], amplitude programmed for a `load` [Ohm] termination. Output on.
+
+    `fg`: an already open generator (open_reference_generator); None opens one.
+    Returns the generator: keep it open while the PLL runs, close() turns the output off. Needs the lab
+    network (iclab_session).
+    """
+    fg = fg or open_reference_generator()
     fg.set_load(channel, load)
     fg.set_square(channel, freq, vpp, offset=vpp / 2, duty=duty)
     fg.output_on(channel)
@@ -93,14 +100,9 @@ def start_reference(freq, vpp=1.8, channel=1, load=50, duty=50.0):
 SUPPLY_COLUMNS = ("pll_vdd", "pll_i", "pll_p")
 
 
-def start_pll_supply(vdd=0.75, settle=0.5):
-    """PLL supply from the 2450 SMU (meas_setup.yaml `smu_vdd_pll`): output on at `vdd` [V]. Start it before
-    the PLL is configured (an unpowered PLL loses its config).
-
-    Returns the SMU: keep it open while the PLL runs, close() goes back to 0 V and turns the output off. Prefer
-    `with pll_supply():`, which also turns it off on an error. Needs the lab network (iclab_session).
-    """
-    import time
+def open_pll_smu():
+    """The 2450 SMU supplying the PLL (meas_setup.yaml `smu_vdd_pll`), reset: 0 V, output off. Needs the lab
+    network (iclab_session)."""
     import yaml  # instrument imports only when the supply is used
     from pathlib import Path
     from sw.lib.lab_instruments import instrument as inst
@@ -109,14 +111,29 @@ def start_pll_supply(vdd=0.75, settle=0.5):
     cfg_path = Path(__file__).resolve().parent / "lab_instruments" / "config" / "meas_setup.yaml"
     with cfg_path.open(encoding="utf-8") as f:
         config = yaml.safe_load(f)
-    smu = KeithleySMU2450(inst.BaseInstrumentData.from_mapping(config["smu_vdd_pll"]))
+    return KeithleySMU2450(inst.BaseInstrumentData.from_mapping(config["smu_vdd_pll"]))
+
+
+def start_pll_supply(vdd=0.75, settle=0.5, smu=None):
+    """PLL supply from the 2450 SMU (meas_setup.yaml `smu_vdd_pll`): output on at `vdd` [V]. Start it before
+    the PLL is configured (an unpowered PLL loses its config).
+
+    `smu`: an already open SMU (open_pll_smu), e.g. to change the voltage of a running supply; None opens one.
+    Returns the SMU: keep it open while the PLL runs, close() goes back to 0 V and turns the output off. Prefer
+    `with pll_supply():`, which also turns it off on an error. Needs the lab network (iclab_session).
+    """
+    import time
+
+    opened_here = smu is None
+    smu = smu or open_pll_smu()
     try:
         smu.set_voltage(vdd)
         smu.output_on()
         smu.wait_settled(vdd)
         time.sleep(settle)
     except BaseException:
-        smu.close()  # back to 0 V, output off
+        if opened_here:
+            smu.close()  # back to 0 V, output off; a passed-in SMU is closed by its owner
         raise
     logger.info("PLL supply on: %.3f V from %s", vdd, smu.info.name)
     return smu

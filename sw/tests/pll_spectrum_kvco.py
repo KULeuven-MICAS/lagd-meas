@@ -228,14 +228,14 @@ def main():
             # 1 GHz (ref 7.8125 MHz), |Kvco| in the geometric middle of what the S5 table offers at 1 GHz
             # phase-noise markers + full curve with spur detection, averaged spectrum
             # pause=True: switch off the PCB 5 V after the PLL is configured, then press Enter
-            # measure_pll_kvco(1e9, "middle", sample="S5", supply=supply, pause=True)
+            measure_pll_kvco(1e9, "middle", sample="S5", supply=supply, pause=True)
 
             # Kvco sweep at 1 GHz: 8 |Kvco| targets log-spaced over the S5 table's range, everything measured per
             # setting, one CSV for sw/tools/notebooks/pll_spectrum_kvco.ipynb (~2 min per setting)
             # kvco_sweep(1e9, n_kvco=8, sample="S5", supply=supply)
 
             # Frequency sweep at |Kvco| ~2 GHz/V: FREQ_SWEEP (300 MHz - 4 GHz), everything measured per frequency
-            frequency_sweep(FREQ_SWEEP, kvco=2e9, sample="S5", supply=supply)
+            # frequency_sweep(FREQ_SWEEP, kvco=2e9, sample="S5", supply=supply)
 
 
 if __name__ == "__main__":
