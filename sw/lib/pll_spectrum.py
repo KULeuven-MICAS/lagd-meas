@@ -6,8 +6,8 @@
 
 # Spectrum, phase noise and jitter of the locked PLL's output pad on the R&S FSV, shared by the PLL test scripts
 # (sw/tests/pll_spectrum_kvco.py, sw/tests/pll_spectrum_div.py). measure_output() does everything after lock:
-# carrier search and check, phase-noise markers (CALC:DELT2:FUNC:PNO:RES?, default detector), the full phase-noise
-# curve from the exported traces (RMS detector, power averaging) with spur detection, and an averaged spectrum.
+# carrier search and check, phase-noise markers (CALC:DELT2:FUNC:PNO:RES?) and the full phase-noise curve from the
+# exported traces of the same sweeps (RMS detector, power averaging) with spur detection, and an averaged spectrum.
 #
 # Three points along the output chain (named so in every log line, column and plot):
 #   VCO          f_vco, before any divider;
@@ -27,8 +27,8 @@ import numpy as np
 from sw.lib import vco_measure
 from sw.lib.lab_instruments import instrument as inst
 from sw.lib.lab_instruments.drivers.rohde_schwarz_fsv_spectrum import RohdeSchwarzFSVSpectrum
-from sw.lib.pll_util import (LOG_AVG_CORR_DB, calculate_integrated_jitter, integrate_phase_noise,
-                             phase_noise_from_traces, split_jitter)
+from sw.lib.pll_util import (calculate_integrated_jitter, integrate_phase_noise, phase_noise_from_traces,
+                             split_jitter)
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +53,15 @@ OUT_OFFSET_RATIO = 2.5
 # Highest pad frequency: above it the pad does not drive a full-swing carrier (divider sweep 2026-10-05: 125 MHz and
 # below -5..+1 dBm, 250 MHz -16 dBm, 500 MHz / 1 GHz no carrier). pad_divider picks the divider from it.
 PAD_F_MAX = 125e6
-# RBW = span / RBW_SPAN_RATIO (1-2-3-5 steps), VBW = 3 RBW, 2 sweep points per RBW (driver set_bandwidths_for_span):
+# RBW = span / RBW_SPAN_RATIO (1-2-3-5 steps), VBW = 3 RBW, 5 sweep points per RBW (driver set_bandwidths_for_span):
 # 21 kHz -> 30 Hz, 210 kHz -> 300 Hz, 2.1 MHz -> 3 kHz, 21 MHz -> 30 kHz, 105 MHz -> 100 kHz, 5 MHz spectrum -> 5 kHz.
 # The lowest offset of each span's band (1 kHz, 10 kHz, 100 kHz, 1 MHz, 10 MHz) is then >= ~33 RBW from the carrier.
 RBW_SPAN_RATIO = 700
-# Trace detector and averaging for the full curve and the spectrum: RMS detector + power (linear) averaging, so every
-# trace point is the true noise power in the RBW (no log-average correction). The markers are read with the
-# analyzer's default detector and averaging (with RMS + power they read 3-7 dB high at wide RBWs).
-DETECTOR, AVERAGE_TYPE = "RMS", "POWer"
+# Detector, averaging and video filter for the markers, the full curve (the same sweeps) and the spectrum: RMS detector
+# + power (linear) averaging + linear video filter, so every trace point is the true noise power in the RBW (no
+# log-average correction). The values the analyzer reports back are recorded per row (detector, average_type,
+# video_filter).
+DETECTOR, AVERAGE_TYPE, VIDEO_FILTER = "RMS", "POWer", "LINear"
 # Spur detection on the full curve (pll_util.find_spurs): points more than SPUR_THRESHOLD_DB above the median of L
 # within +-SPUR_WINDOW_DECADES/2 around them, over at least SPUR_MIN_POINTS neighbouring points, are spurs; the jitter
 # is split into noise and spur parts. Spurs are reported on the pad (where they are measured). The divider sweep of
@@ -82,7 +83,7 @@ OUTPUT_COLUMNS = (["f_out", "f_pll_out", "pll_div", "ext_div", "offset_max", "f_
                    "phase_jitter_vco_mrad", "time_jitter_trace_ps",
                    "phase_jitter_trace_out_mrad", "time_jitter_noise_ps", "time_jitter_spur_ps", "n_spurs", "spurs",
                    "common_band", "time_jitter_common_ps", "time_jitter_trace_common_ps", "detector",
-                   "average_type"]
+                   "average_type", "video_filter"]
                   + ["L_out_{:.0f}".format(f) for f in OFFSET_SPAN_MAP]
                   + ["L_pll_{:.0f}".format(f) for f in OFFSET_SPAN_MAP]
                   + ["L_vco_{:.0f}".format(f) for f in OFFSET_SPAN_MAP] + ["status"])
@@ -90,7 +91,7 @@ OUTPUT_COLUMNS = (["f_out", "f_pll_out", "pll_div", "ext_div", "offset_max", "f_
 # level [dBm]; "L_trace": the full phase-noise curve, freq = offset from the carrier [Hz], level = L(f) on the pad
 # [dBc/Hz]; "L_noise": the same with the spurs replaced by the local noise floor; "spur": one row per spur,
 # freq = offset of its peak [Hz], level = spur power on the pad [dBc, single sideband].
-TRACE_FIELDS = ["kind", "center", "span", "rbw", "averages", "freq", "level_dbm"]
+TRACE_FIELDS = ["kind", "center", "span", "rbw", "vbw", "averages", "freq", "level_dbm"]
 
 
 def open_spectrum():
@@ -128,11 +129,13 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
     total_div / pll_div. None: no external divider (pad = PLL output).
 
     1. Carrier search (center_on_fundamental); below MIN_CARRIER_DBM: status "no_carrier", nothing else measured.
-    2. Phase-noise markers (PNO:RES?) at the offsets of `offset_span_map`, default detector, `n_averages` sweeps
-       per span; RMS jitter over the offsets (pll_util.calculate_integrated_jitter).
-    3. The full curve: the same spans with the RMS detector + power averaging, traces exported, L(f) built from
-       them and integrated with the spurs split off (pll_util.split_jitter).
-    4. An averaged spectrum over `span` (`spectrum_averages` sweeps).
+    2. One pass over the spans of `offset_span_map`, RMS detector + power averaging, `n_averages` sweeps per span:
+       - phase-noise markers (PNO:RES?) at the offsets; RMS jitter over the offsets
+         (pll_util.calculate_integrated_jitter);
+       - the full curve from the traces of the same sweeps, L(f) integrated with the spurs split off
+         (pll_util.split_jitter).
+    3. An averaged spectrum over `span` (`spectrum_averages` sweeps), same detector and averaging.
+    detector / average_type in the row: as the analyzer reports them after the sweeps.
     `common_band` (lo, hi) [Hz]: also integrate the markers and the full curve over only that band, to compare
     settings whose bands differ (e.g. dividers: the band is limited by the pad frequency).
     row: the OUTPUT_COLUMNS values; n_meas = f_vco / measured carrier checks the divider (a digital divider is exact,
@@ -145,8 +148,8 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
     f_out = f_vco / total_div
     row = dict(f_out=f_out, f_pll_out=f_vco / pll_div, pll_div=pll_div, ext_div=ext_div,
                offset_max=max(offset_span_map),
-               n_averages=n_averages, detector=DETECTOR,
-               average_type=AVERAGE_TYPE, common_band="{:g}-{:g}".format(*common_band) if common_band else "",
+               n_averages=n_averages, detector=DETECTOR, average_type=AVERAGE_TYPE, video_filter=VIDEO_FILTER,
+               common_band="{:g}-{:g}".format(*common_band) if common_band else "",
                status="error")
     traces = []
     n_db = 20 * math.log10(total_div)  # pad -> VCO
@@ -164,18 +167,18 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
             row["status"] = "no_carrier"
             return row, traces
 
-        # 1. Markers with the default detector and averaging
-        profile = spectrum.measure_phase_noise_profile(averages=n_averages, offset_span_map=offset_span_map,
-                                                       rbw_span_ratio=RBW_SPAN_RATIO)
-        # 2. Full curve: RMS detector + power averaging, traces exported
+        # Markers and full curve from the same sweeps: RMS detector + power averaging + linear video filter
         pn_traces = []
-        spectrum.measure_phase_noise_profile(averages=n_averages, offset_span_map=offset_span_map, traces=pn_traces,
-                                             rbw_span_ratio=RBW_SPAN_RATIO, detector=DETECTOR,
-                                             average_type=AVERAGE_TYPE)
+        profile = spectrum.measure_phase_noise_profile(averages=n_averages, offset_span_map=offset_span_map,
+                                                       traces=pn_traces, rbw_span_ratio=RBW_SPAN_RATIO,
+                                                       detector=DETECTOR, average_type=AVERAGE_TYPE,
+                                                       video_filter=VIDEO_FILTER)
+        row.update(detector=spectrum.get_detector(), average_type=spectrum.get_average_type(),
+                   video_filter=spectrum.get_video_filter_type())
         traces += [dict(t, kind="phase_noise", averages=n_averages) for t in pn_traces]
-        # 3. Averaged wide spectrum around the carrier
+        # Averaged wide spectrum around the carrier
         t = spectrum.averaged_trace(f_meas, span, averages=spectrum_averages, rbw_span_ratio=RBW_SPAN_RATIO,
-                                    detector=DETECTOR, average_type=AVERAGE_TYPE)
+                                    detector=DETECTOR, average_type=AVERAGE_TYPE, video_filter=VIDEO_FILTER)
         traces.append(dict(t, kind="spectrum"))
     finally:
         spectrum.set_sweep_mode(continuous=True)  # screen live again
@@ -201,8 +204,7 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
                 "%.3f mrad at the VCO", min(profile), max(profile), t_jit * 1e12, phi_out * 1e3,
                 phi_out * ext_div * 1e3, phi_out * total_div * 1e3)
 
-    o_tr, l_tr = phase_noise_from_traces(pn_traces, list(profile),
-                                         log_avg_corr_db=LOG_AVG_CORR_DB if AVERAGE_TYPE is None else 0.0)
+    o_tr, l_tr = phase_noise_from_traces(pn_traces, list(profile))  # power-averaged: no log-average correction
     if len(o_tr) > 1:
         jit = split_jitter(f_meas, o_tr, l_tr, threshold_db=SPUR_THRESHOLD_DB, window_decades=SPUR_WINDOW_DECADES,
                            min_points=SPUR_MIN_POINTS)
@@ -245,8 +247,9 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
 
 def trace_rows(traces, **key):
     """CSV rows (one per trace point) for `traces` from measure_output, each with the `key` columns in front."""
-    return [dict(key, kind=t["kind"], center=t["center"], span=t["span"], rbw=t["rbw"], averages=t.get("averages"),
-                 freq=f, level_dbm=l) for t in traces for f, l in zip(t["freq"], t["level"])]
+    return [dict(key, kind=t["kind"], center=t["center"], span=t["span"], rbw=t["rbw"], vbw=t.get("vbw"),
+                 averages=t.get("averages"), freq=f, level_dbm=l)
+            for t in traces for f, l in zip(t["freq"], t["level"])]
 
 
 def trace_csv_path(csv_path):

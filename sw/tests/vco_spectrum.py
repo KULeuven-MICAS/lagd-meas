@@ -7,9 +7,10 @@
 #
 # Open-loop VCO spectrum, phase noise and jitter: VcoLUT (lib/vco_lut.py) sets the VCO codes for a frequency
 # and Kvco from the lookup table, the SMU holds Vctrl at the predicted operating point, and the R&S FSV signal
-# analyzer measures the output pad (same phase-noise measurement as tests/pll_integrated_jitter.py:
-# phase-noise marker at a set of offsets, integrated with pll_util.calculate_integrated_jitter). The averaged
-# trace of every span is saved too (measure_phase_noise_profile(..., traces=[])), for plotting the spectrum.
+# analyzer measures the output pad: phase-noise markers at a set of offsets, integrated with
+# pll_util.calculate_integrated_jitter; RBW = span / pll_spectrum.RBW_SPAN_RATIO, VBW = 3 RBW, RMS detector, power
+# averaging and linear video filter, as in lib/pll_spectrum.py. The averaged trace of every span is saved too
+# (measure_phase_noise_profile(..., traces=[])), for plotting the spectrum.
 #
 # Output path: pll_clk_o_en = 1, the VCO divided by 2**set_div_freq only (no external divider), with
 # set_div_freq the smallest that brings the pad frequency at or below `out_f_max`. Division keeps the time
@@ -45,6 +46,7 @@ from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 from sw.lib.pll_command_api import calculate_div_factor
 from sw.lib.pll_settings import VCO_CHARAC_CFG
+from sw.lib.pll_spectrum import RBW_SPAN_RATIO
 from sw.lib.pll_util import calculate_integrated_jitter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
@@ -63,17 +65,18 @@ OUT_F_MAX = 50e6
 
 SPECTRUM_COLUMNS = (["time", "lut_csv", "f_target", "kvco_target"] + list(vco_lut.LUT_FIELDS)
                     + ["vctrl_pred", "kvco_pred", "vctrl_meas", "set_div_freq", "total_div", "f_out_meas",
-                       "f_vco_meas", "f_dev_pct", "n_averages", "offset_min", "offset_max", "time_jitter_ps",
-                       "phase_jitter_out_mrad", "phase_jitter_vco_mrad"]
+                       "f_vco_meas", "f_dev_pct", "n_averages", "detector", "average_type", "video_filter",
+                       "offset_min", "offset_max", "time_jitter_ps", "phase_jitter_out_mrad", "phase_jitter_vco_mrad"]
                     + ["L_out_{:.0f}".format(f) for f in VCO_OFFSET_SPAN_MAP]
                     + ["L_vco_{:.0f}".format(f) for f in VCO_OFFSET_SPAN_MAP]
                     + list(pll_setup.SUPPLY_COLUMNS) + ["status"])
 # One row per trace point; `offset` = freq - center (the carrier), power in dBm as on the analyzer.
-TRACE_COLUMNS = ["f_target", "total_div", "span", "rbw", "center", "freq", "offset", "power_dbm"]
+TRACE_COLUMNS = ["f_target", "total_div", "span", "rbw", "vbw", "center", "freq", "offset", "power_dbm"]
 # capture_spectrum: one row per trace point of an averaged spectrum.
 CAPTURE_COLUMNS = (["time", "note", "f_target", "kvco_target"] + list(vco_lut.LUT_FIELDS)
                    + ["vctrl_pred", "vctrl_meas", "kvco_pred", "set_div_freq", "total_div", "center", "span", "rbw",
-                      "averages"] + list(pll_setup.SUPPLY_COLUMNS) + ["freq", "level_dbm"])
+                      "vbw", "averages", "detector", "average_type", "video_filter"] + list(pll_setup.SUPPLY_COLUMNS)
+                   + ["freq", "level_dbm"])
 
 
 def spectrum_cfg(f_vco, out_f_max=OUT_F_MAX):
@@ -165,9 +168,12 @@ def measure_vco_spectrum(f_vco, kvco=None, sample=None, lut=None, csv_path=None,
 
         traces = []  # the averaged trace of every span (RohdeSchwarzFSVSpectrum.get_trace)
         profile = spectrum.measure_phase_noise_profile(averages=n_averages, offset_span_map=offset_span_map,
-                                                       traces=traces)
+                                                       traces=traces, rbw_span_ratio=RBW_SPAN_RATIO)
+        row.update(detector=spectrum.get_detector(), average_type=spectrum.get_average_type(),
+                   video_filter=spectrum.get_video_filter_type())
         append_rows(trace_csv_path(csv_path), TRACE_COLUMNS,
-                    [dict(f_target=f_vco, total_div=total_div, span=t["span"], rbw=t["rbw"], center=t["center"],
+                    [dict(f_target=f_vco, total_div=total_div, span=t["span"], rbw=t["rbw"], vbw=t["vbw"],
+                          center=t["center"],
                           freq=f, offset=f - t["center"], power_dbm=p)
                      for t in traces for f, p in zip(t["freq"], t["level"])])
         offsets, l_out = list(profile), list(profile.values())
@@ -272,14 +278,18 @@ def capture_spectrum(f_vco, kvco=None, sample=None, lut=None, center=None, span=
     around `center` (None: the expected pad frequency) over `span`, then Vctrl off and every connection closed.
 
     Written to results/vco/vco_capture_<sample>_<stamp>.csv, one row per trace point, with the setting in every
-    row. `rbw`/`vbw` None: the analyzer's auto coupling. `supply`: the PLL supply SMU (pll_setup.pll_supply), its
-    voltage, current and power are recorded. Returns the CSV path.
+    row. `rbw`/`vbw` None: RBW = span / RBW_SPAN_RATIO, VBW = 3 RBW (as the phase-noise traces); `rbw` alone: VBW =
+    3 rbw. `supply`: the PLL supply SMU (pll_setup.pll_supply), its voltage, current and power are recorded.
+    Returns the CSV path.
     """
     vco = set_vco(f_vco, kvco, sample=sample, lut=lut, out_f_max=out_f_max, settle=settle)
     spectrum = None
     try:
         spectrum = open_spectrum()
-        t = spectrum.averaged_trace(center or vco["f_out"], span, averages=averages, rbw=rbw, vbw=vbw)
+        t = spectrum.averaged_trace(center or vco["f_out"], span, averages=averages, rbw=rbw, vbw=vbw,
+                                    rbw_span_ratio=RBW_SPAN_RATIO if rbw is None and vbw is None else None)
+        method = dict(detector=spectrum.get_detector(), average_type=spectrum.get_average_type(),
+                      video_filter=spectrum.get_video_filter_type())
         power = pll_setup.measure_pll_supply(supply, label="%.1f MHz" % (f_vco / 1e6))
         spectrum.set_sweep_mode(continuous=True)  # screen live again afterwards
         spectrum.set_display_update(True)
@@ -294,8 +304,8 @@ def capture_spectrum(f_vco, kvco=None, sample=None, lut=None, center=None, span=
     setting = dict(time=datetime.now().isoformat(timespec="seconds"), note=note, f_target=f_vco, kvco_target=kvco,
                    **vco_lut.vco_codes(vco["cfg"]), **vco["op"], vctrl_meas=vco["vctrl_meas"],
                    set_div_freq=vco["cfg"]["set_div_freq"],
-                   total_div=vco["total_div"], center=t["center"], span=t["span"], rbw=t["rbw"], averages=averages,
-                   **power)
+                   total_div=vco["total_div"], center=t["center"], span=t["span"], rbw=t["rbw"], vbw=t["vbw"],
+                   averages=averages, **method, **power)
     append_rows(csv_path, CAPTURE_COLUMNS,
                 [dict(setting, freq=f, level_dbm=l) for f, l in zip(t["freq"], t["level"])])
     i_max = int(np.argmax(t["level"]))

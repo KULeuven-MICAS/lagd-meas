@@ -16,6 +16,13 @@ from sw.lib.lab_instruments import instrument as inst
 
 logger = logging.getLogger(__name__)
 
+# Bandwidth rules of the measurement methods: VBW = VBW_RBW_RATIO x RBW, so the video filter does (almost) no
+# averaging and the trace averaging (power) does the smoothing; POINTS_PER_RBW sweep points per RBW, so the RMS bin
+# around the carrier covers only the top of the RBW filter (carrier ~0.04 dB low; 2 points per RBW: ~0.26 dB).
+VBW_RBW_RATIO = 3.0
+POINTS_PER_RBW = 5.0
+
+
 class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
     """
     Class for the Rohde & Schwarz FSVA/FSV spectrum analyzer.
@@ -127,15 +134,38 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         differ between R&S models: a wrong one raises the instrument error from write()."""
         self.write(f'AVER:TYPE {average_type}')
 
+    def get_detector(self, trace: int = 1) -> str:
+        """Trace detector as the analyzer reports it (e.g. 'RMS', 'SAMP', 'APE')."""
+        trace = self._validate_trace(trace)
+        return self.query(f'DET{trace}:FUNC?').strip()
+
+    def get_average_type(self) -> str:
+        """Trace averaging type as the analyzer reports it (e.g. 'POW', 'VID', 'LOG')."""
+        return self.query('AVER:TYPE?').strip()
+
+    def set_video_filter_type(self, kind: str):
+        """Where the video filter acts: 'LINear' (on the linear power, so any video filtering averages power) or
+        'LOGarithmic' (on the dB values: noise reads low when VBW < RBW)."""
+        self.write(f'BAND:VID:TYPE {kind}')
+
+    def get_video_filter_type(self) -> str:
+        """Video filter type as the analyzer reports it (e.g. 'LIN', 'LOG')."""
+        return self.query('BAND:VID:TYPE?').strip()
+
+    def set_bandwidths_auto(self):
+        """RBW and VBW back to the analyzer's auto coupling (undoes a manual RBW/VBW, e.g. center_on_fundamental's)."""
+        self.write('BAND:RES:AUTO ON')
+        self.write('BAND:VID:AUTO ON')
+
     def set_sweep_points(self, points: int):
         """Number of trace points per sweep (101 .. 32001)."""
         self.write(f'SWE:POIN {int(points)}')
 
-    def set_bandwidths_for_span(self, span: float, rbw_span_ratio: float, vbw_rbw_ratio: float = 3.0,
-                                points_per_rbw: float = 2.0) -> float:
+    def set_bandwidths_for_span(self, span: float, rbw_span_ratio: float, vbw_rbw_ratio: float = VBW_RBW_RATIO,
+                                points_per_rbw: float = POINTS_PER_RBW) -> float:
         """RBW = span / `rbw_span_ratio` (snapped down), VBW = `vbw_rbw_ratio` * RBW (snapped down, so the trace
         averaging rather than the video filter does the smoothing) and at least `points_per_rbw` sweep points per
-        RBW (no spectrum between points). Returns the RBW [Hz]."""
+        RBW (no spectrum between points; see POINTS_PER_RBW). Returns the RBW [Hz]."""
         rbw = self.snap_bandwidth(span / rbw_span_ratio)
         self.set_rbw(rbw)
         self.set_vbw(self.snap_bandwidth(vbw_rbw_ratio * rbw))
@@ -143,18 +173,21 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         return rbw
 
     def averaged_trace(self, center: float, span: float, averages: int = 20, rbw: float = None,
-                       vbw: float = None, rbw_span_ratio: float = None, detector: str = None,
-                       average_type: str = None) -> Dict[str, List[float]]:
+                       vbw: float = None, rbw_span_ratio: float = None, detector: str = 'RMS',
+                       average_type: str = 'POWer', video_filter: str = 'LINear') -> Dict[str, List[float]]:
         """
         One averaged spectrum: `averages` single sweeps averaged on trace 1, then read with get_trace.
 
         Args:
             center, span: Frequency window (Hz).
             averages: Number of sweeps averaged (trace mode AVERage).
-            rbw, vbw: Resolution / video bandwidth (Hz); None keeps the analyzer's auto coupling.
+            rbw, vbw: Resolution / video bandwidth (Hz). vbw None with rbw given: VBW_RBW_RATIO x rbw. Both None
+                      (and no rbw_span_ratio): the analyzer's auto coupling for both.
             rbw_span_ratio: When given (instead of rbw/vbw), set_bandwidths_for_span(span, rbw_span_ratio).
-            detector, average_type: Optional; set_detector / set_average_type before the sweeps (e.g. 'RMS',
-                                    'POWer' for noise); None leaves them as they are.
+            detector, average_type: set_detector / set_average_type before the sweeps; default RMS detector +
+                                    power averaging (every trace point is the true power in the RBW, also for
+                                    noise); None leaves them as they are.
+            video_filter: set_video_filter_type before the sweeps (default 'LINear'); None leaves it as it is.
 
         Returns:
             get_trace() dictionary, plus 'averages'.
@@ -163,14 +196,20 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         self.set_span(span)
         if rbw_span_ratio is not None:
             self.set_bandwidths_for_span(span, rbw_span_ratio)
+        elif rbw is None and vbw is None:
+            self.set_bandwidths_auto()
         if rbw is not None:
             self.set_rbw(rbw)
+            if vbw is None:
+                vbw = self.snap_bandwidth(VBW_RBW_RATIO * rbw)
         if vbw is not None:
             self.set_vbw(vbw)
         if detector is not None:
             self.set_detector(detector)
         if average_type is not None:
             self.set_average_type(average_type)
+        if video_filter is not None:
+            self.set_video_filter_type(video_filter)
         self.set_sweep_mode(continuous=False)
         self.set_sweep_count(averages)
         self.set_trace_mode(trace=1, mode='WRITe')  # clears a previous average
@@ -193,8 +232,9 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
                                     offset_span_map: Dict[float, float],
                                     traces: List[Dict] = None,
                                     rbw_span_ratio: float = None,
-                                    detector: str = None,
-                                    average_type: str = None) -> Dict[float, float]:
+                                    detector: str = 'RMS',
+                                    average_type: str = 'POWer',
+                                    video_filter: str = 'LINear') -> Dict[float, float]:
         """
         Execute phase noise measurements over a set of offset frequencies
 
@@ -205,11 +245,12 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
                              Example: {100: 2.1e3, 1000: 2.1e3, 10000: 21e3}
             traces: Optional list; when given, the averaged trace of every span (get_trace) is appended to it.
             rbw_span_ratio: Optional; RBW, VBW and sweep points per span from set_bandwidths_for_span(span,
-                            rbw_span_ratio) instead of the fixed 1 Hz / 10 Hz RBW.
-            detector, average_type: Optional; set_detector / set_average_type before the sweeps (e.g. 'RMS',
-                                    'POWer': each trace point is then the true noise power in the RBW); None leaves
-                                    them as they are. The phase-noise marker reads 3-7 dB high at wide RBWs with RMS +
-                                    POWer (2026-10-05): read the markers with the default detector and averaging.
+                            rbw_span_ratio) instead of the fixed 1 Hz / 10 Hz RBW (VBW = VBW_RBW_RATIO x RBW).
+            detector, average_type: set_detector / set_average_type before the sweeps; default RMS detector +
+                                    power averaging, for the markers and the traces alike (each trace point is then
+                                    the true noise power in the RBW, no log-average bias); None leaves them as they
+                                    are. Read back with get_detector / get_average_type to record them.
+            video_filter: set_video_filter_type before the sweeps (default 'LINear'); None leaves it as it is.
 
         Returns:
             Dictionary mapping the evaluated offsets to their phase noise in dBc/Hz: the phase-noise marker
@@ -226,6 +267,8 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
             self.set_detector(detector)
         if average_type is not None:
             self.set_average_type(average_type)
+        if video_filter is not None:
+            self.set_video_filter_type(video_filter)
 
         # Enable trace averaging
         self.set_sweep_count(averages)
@@ -245,11 +288,12 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
                     rbw = self.set_bandwidths_for_span(required_span, rbw_span_ratio)
                     logger.info(f"[{self.info.name}] RBW {rbw} Hz for {required_span} Hz span")
                 # Dynamically adjust RBW to prevent timeout on wide spans
-                elif required_span > 1e6:
-                    logger.info(f"[{self.info.name}] Span > 1 MHz detected. Increasing RBW to 10 Hz.")
-                    self.set_rbw(10.0)
                 else:
-                    self.set_rbw(1.0)
+                    if required_span > 1e6:
+                        logger.info(f"[{self.info.name}] Span > 1 MHz detected. Increasing RBW to 10 Hz.")
+                    rbw = 10.0 if required_span > 1e6 else 1.0
+                    self.set_rbw(rbw)
+                    self.set_vbw(self.snap_bandwidth(VBW_RBW_RATIO * rbw))  # not the 1 Hz of center_on_fundamental
 
                 # To clear the previous average buffer, toggle trace mode
                 self.set_trace_mode(trace=1, mode='WRITe')

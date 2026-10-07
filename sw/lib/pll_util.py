@@ -63,16 +63,15 @@ def     calculate_integrated_jitter(fc, offsets, L_f):
     return rms_time_seconds, rms_phase_radians
 
 
-# Trace-based phase noise: the analyzer trace is the power in the RBW filter, averaged in log (dB) mode.
-# ENBW_FACTOR: noise bandwidth / RBW of the analyzer's Gaussian RBW filter. LOG_AVG_CORR_DB: noise averaged
-# as dB values reads 2.51 dB low (Rayleigh statistics). Both are applied by the analyzer's own phase-noise
-# marker; compare the trace result with the marker values at the same offsets to check them.
+# Trace-based phase noise: the analyzer trace is the power in the RBW filter. The measurements take it with the RMS
+# detector and power averaging (true noise power, no correction). ENBW_FACTOR: noise bandwidth / RBW of the analyzer's
+# Gaussian RBW filter. LOG_AVG_CORR_DB: only for traces averaged as dB values (log / video averaging), which read noise
+# 2.51 dB low (Rayleigh statistics). Compare the trace result with the marker values at the same offsets to check.
 ENBW_FACTOR = 1.065
 LOG_AVG_CORR_DB = 2.51
 
 
-def phase_noise_from_traces(traces, offsets, enbw_factor=ENBW_FACTOR, log_avg_corr_db=LOG_AVG_CORR_DB,
-                            min_rbw_offset=10.0):
+def phase_noise_from_traces(traces, offsets, enbw_factor=ENBW_FACTOR, log_avg_corr_db=0.0, min_rbw_offset=10.0):
     """Single-sideband phase noise L(f) [dBc/Hz] from analyzer traces centered on the carrier.
 
     traces: list of {'center', 'rbw', 'freq', 'level'} (dBm), e.g. one per span from
@@ -82,6 +81,7 @@ def phase_noise_from_traces(traces, offsets, enbw_factor=ENBW_FACTOR, log_avg_co
     offsets: the integration limits / marker offsets [Hz] (sorted).
     Per trace: carrier = trace maximum; L = mean of both sidebands (linear) - carrier - 10 log10(ENBW)
         + log_avg_corr_db; points closer than `min_rbw_offset` * RBW to the carrier are skipped.
+    log_avg_corr_db: 0 for power-averaged traces (the default measurement); LOG_AVG_CORR_DB for log-averaged ones.
 
     Returns (offset [Hz], L [dBc/Hz]) arrays, sorted, from offsets[0] to offsets[-1].
     """
@@ -126,8 +126,8 @@ def find_spurs(offsets, L_f, threshold_db=10.0, window_decades=0.2, min_points=2
 
     The local noise floor at each point is the median of L over offsets within +-window_decades/2 (log scale);
     points more than `threshold_db` above it are spur points, and neighbouring spur points form one spur. A spur
-    needs at least `min_points` points (a real tone is >= ~2 points wide at 2 sweep points per RBW; single points
-    are noise spikes and stay in the noise part).
+    needs at least `min_points` points (a real tone is about as wide as the RBW: >= ~2 points at 2 sweep points per
+    RBW, more at the measurements' 5 per RBW; single points are noise spikes and stay in the noise part).
     Returns (spurs, L_noise):
       spurs: list of {offset (peak) [Hz], f_lo, f_hi [Hz], peak (L at the peak) [dBc/Hz], above_floor [dB],
              power [dBc] (single sideband, integral of 10^(L/10) over the spur's points)};

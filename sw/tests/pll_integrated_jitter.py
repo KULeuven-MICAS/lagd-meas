@@ -191,8 +191,11 @@ def measure_integrated_jitter(spectrum: RohdeSchwarzFSVSpectrum, center_freq: fl
         1000000.0: 2.1e6    # 1 MHz offset measured at 2.1 MHz span
     }
 
-    # Measure the phase noise profile
-    phase_noise_profile = spectrum.measure_phase_noise_profile(averages=n_averages, offset_span_map=offset_span_map)
+    # Measure the phase noise profile: RMS detector + power averaging (true noise power, no log-average bias)
+    phase_noise_profile = spectrum.measure_phase_noise_profile(averages=n_averages, offset_span_map=offset_span_map,
+                                                               detector="RMS", average_type="POWer")
+    logging.info("Detector %s, averaging %s (as reported by the analyzer)", spectrum.get_detector(),
+                 spectrum.get_average_type())
 
     freq_offsets = list(phase_noise_profile.keys())
     phase_noise_values = list(phase_noise_profile.values())
