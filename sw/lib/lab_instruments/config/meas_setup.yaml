@@ -44,3 +44,18 @@ power_analyzer_chip:
       name: "CH4" # VDD GALENA 2 + PLL
       voltage: 0.75
       current: 1.0
+
+# Bias SMUs, keyed by the node each one drives.
+bias_smus:
+  jup:
+    name: "Keysight B2902 SMU - Jup"
+    IP: "10.91.16.78"
+  jdn:
+    name: "Keysight B2902 SMU - Jdn"
+    IP: "10.91.16.108"
+  hup:
+    name: "Keysight B2902 SMU - Hup"
+    IP: "10.91.16.77"
+  hdn:
+    name: "Keysight B2902 SMU - Hdn"
+    IP: "10.91.16.79"

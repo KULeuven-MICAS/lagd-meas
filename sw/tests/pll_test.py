@@ -29,14 +29,22 @@ import time
 
 from sw.lib.pll_driver import PllDriver
 from sw.lib.pll_command_api import (
-    default_cfg_word, OP_WRITEBACK, STRB_HZ, CFG_BITS, header,
+    calculate_div_factor,
+    pack_pll_cfg,
+    default_cfg_word,
+    OP_WRITEBACK,
+    STRB_HZ,
+    CFG_BITS,
+    header,
 )
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+from sw.lib.pll_settings import *
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
 # Device files for the PLL write/read ports (8-bit Xillybus stream).
-WRITE_DEV = '/dev/xillybus_write_8'
-READ_DEV = '/dev/xillybus_read_8'
+WRITE_DEV = "/dev/xillybus_write_8"
+READ_DEV = "/dev/xillybus_read_8"
 
 # Populated by open_ports(); declared here so the interactive helpers below
 # (and `python -i tests/pll_test.py` sessions) can refer to it as a global.
@@ -56,15 +64,15 @@ def test_writeback():
     This is the controller-liveness check: it proves the host->FPGA read/write
     path and the command decode are all working, without touching the PLL.
     """
-    expected = header(OP_WRITEBACK)            # 0xFF
+    expected = header(OP_WRITEBACK)  # 0xFF
     received = pll.writeback()
     if received is None:
-        logging.error('FAIL: writeback sent 0x%02X, received None', expected)
+        logging.error("FAIL: writeback sent 0x%02X, received None", expected)
         return False
     if received == expected:
-        logging.info('PASS: writeback echoed 0x%02X. The PLL controller is alive.', received)
+        logging.info("PASS: writeback echoed 0x%02X. The PLL controller is alive.", received)
         return True
-    logging.error('FAIL [mismatch]: writeback sent 0x%02X, received 0x%02X', expected, received)
+    logging.error("FAIL [mismatch]: writeback sent 0x%02X, received 0x%02X", expected, received)
     return False
 
 
@@ -89,21 +97,33 @@ def test_strb_config(rates=(1_000, 10_000, 100_000, 1_000_000), reps=5):
         elapsed[hz] = time.time() - t0
         wire = reps * (CFG_BITS + 1) / actual
         ok &= echoes_ok
-        logging.info('%s: %8.0f Hz requested -> %10.2f Hz actual | %d echoes %s | '
-                     'wire %6.3f s, measured %6.3f s',
-                     'PASS' if echoes_ok else 'FAIL', hz, actual, reps,
-                     'ok' if echoes_ok else 'MISMATCH/TIMEOUT', wire, elapsed[hz])
+        logging.info(
+            "%s: %8.0f Hz requested -> %10.2f Hz actual | %d echoes %s | wire %6.3f s, measured %6.3f s",
+            "PASS" if echoes_ok else "FAIL",
+            hz,
+            actual,
+            reps,
+            "ok" if echoes_ok else "MISMATCH/TIMEOUT",
+            wire,
+            elapsed[hz],
+        )
 
     # The rate really changed: the slowest sweep point must take far longer than
     # the fastest. A stuck divider (either direction) collapses this ratio.
     slow, fast = elapsed[min(rates)], elapsed[max(rates)]
     ratio_ok = slow > fast * 5
     ok &= ratio_ok
-    logging.info('%s: %.0f Hz took %.3f s vs %.3f s at %.0f Hz (%.1fx, need >5x)',
-                 'PASS' if ratio_ok else 'FAIL', min(rates), slow, fast, max(rates),
-                 slow / fast if fast else float('inf'))
+    logging.info(
+        "%s: %.0f Hz took %.3f s vs %.3f s at %.0f Hz (%.1fx, need >5x)",
+        "PASS" if ratio_ok else "FAIL",
+        min(rates),
+        slow,
+        fast,
+        max(rates),
+        slow / fast if fast else float("inf"),
+    )
 
-    pll.set_strb_hz(STRB_HZ)   # back to the power-on rate
+    pll.set_strb_hz(STRB_HZ)  # back to the power-on rate
     return ok
 
 
@@ -122,60 +142,64 @@ def test_strb_config_silicon(rates=(1_000, 10_000, 100_000)):
         actual = pll.set_strb_hz(hz)
         pll.load(word)
         received = pll.readback()
-        step_ok = (received == word)
+        step_ok = received == word
         ok &= step_ok
-        logging.info('%s: %8.0f Hz requested -> %10.2f Hz actual, readback %s',
-                     'PASS' if step_ok else 'FAIL', hz, actual,
-                     f'0x{received:012X}' if received is not None else 'None (timeout)')
-    pll.set_strb_hz(STRB_HZ)   # back to the power-on rate
+        logging.info(
+            "%s: %8.0f Hz requested -> %10.2f Hz actual, readback %s",
+            "PASS" if step_ok else "FAIL",
+            hz,
+            actual,
+            f"0x{received:012X}" if received is not None else "None (timeout)",
+        )
+    pll.set_strb_hz(STRB_HZ)  # back to the power-on rate
     return ok
 
 
-def main():
-    """Worked example of the PLL command set. Run it top to bottom.
-
-    Steps 1-3 need nothing but the Zedboard and the bitstream. Step 4 talks to the
-    PLL in the chip and is commented out -- uncomment it once the chip is wired.
-    This script deliberately never switches the SoC clock onto the PLL; see step 5
-    for how to do that, and why it is not automatic.
-    """
+def start_load_config(cfg):
+    """Start loading a configuration into the PLL."""
     open_ports()
 
     if not test_writeback():
         return 1
 
-    # 1. Put the PLL registers in a known state before configuring them.
-    pll.reset()
+    # Tune the strobe rate, 1kHz
+    pll.set_strb_hz(STRB_HZ)
 
-    # 2. Build and load a config
-    word = default_cfg_word()
+    # Put the PLL registers in a known state before configuring them.
+    pll.reset()
+    # Set the clock mux to the external reference
+    pll.select_reference()
+
+    # Build and load a config
+    # word = default_cfg_word(set_clk_out=1, set_div_freq=0b000, pll_clk_o_en=1)
+    word = pack_pll_cfg(**cfg)
     if pll.verify_load(word) == word:
-        logging.info('config path OK: controller assembled 0x%012X', word)
+        logging.info("config check OK: 0x%012X", word)
+        logging.info("Division factor on chip clock: %d, total: %d", *calculate_div_factor(cfg))
     else:
-        logging.error('config path FAILED for 0x%012X', word)
+        logging.error("config check FAILED: 0x%012X", word)
     # Per-field overrides instead of the packed word:
     #   word = pll.load_default(vco_tune_coarse=0xA)
     #   word = pll.load_cfg(pdown_PD=0, pdown_VCO=0)   # reset defaults elsewhere
 
-    # 3. Tune the strobe rate, 1kHz
-    pll.set_strb_hz(STRB_HZ)
-
-    # 4. Check what the silicon captured   [needs the chip, FMC LA06_N]
-    # READBACK scans the shallow register out of the PLL's data_o (recirculating,
+    # READBACK the chip's shallow register out of the PLL's data_o (recirculating,
     # so it is non-destructive).
-    # assert pll.readback() == word
-    # logging.info('PLL lock = %s', pll.read_lock())     # STATUS, bit0
+    readback = pll.readback()
+    logging.info("readback = 0x%012X", readback)
+    assert readback == word
 
-    # 5. Move the SoC onto the PLL         [needs the chip; NOT done here]
-    # Boot is on the reference clock (bitstream default clk_sel=1) because the PLL
-    # powers up disabled, so switching before it locks would leave the RISC-V with
-    # no clock. bring_up() configures, polls STATUS until lock, and only then
-    # switches. The clock mux is NOT glitchless -- hold the core in reset across
-    # the switch. Left commented because it changes a chip-critical setting.
-    # if pll.bring_up(lock_timeout=1.0, switch=True):
-    #     logging.info('PLL locked and selected as the SoC clock')
-    # else:
-    #     logging.error('PLL did not lock; SoC left on the reference clock')
+
+def setup_pll_bypass():
+    """Worked example of the PLL command set."""
+    start_load_config(PLL_BYPASS_CFG)
+
+    # Move the SoC onto the PLL
+    locked = pll.wait_lock(timeout=3)
+    if locked:
+        pll.select_pll()
+        logging.info("PLL lock = %s and selected as the SoC clock", pll.read_lock())
+    else:
+        logging.error("PLL did not lock; SoC left on the reference clock")
 
     # =====================================================================
     # Optional deeper checks -- none of these are required to use the script
@@ -186,5 +210,50 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
-    sys.exit(main())
+def vco_characterization():
+    """VCO characterization placeholder."""
+    start_load_config(VCO_CHARAC_CFG)
+
+
+def charge_pump_sanity_check():
+    """Power down phase detector, assert charge pump behavior in Vctrl node."""
+    start_load_config(PD_OFF_CFG)
+
+
+def debug_phase_detector():
+    """Phase detector debug test.
+    Set different or same clocks to both reference and feedback clock pads and check Vctrl node.
+    Check 'locked pin for correct behavior.
+    """
+    start_load_config(PD_DEBUG_CFG)
+
+    locked = pll.wait_lock(timeout=3)
+    if locked:
+        logging.info("PLL lock = %s and selected as the SoC clock", pll.read_lock())
+    else:
+        logging.error("PLL did not lock; SoC left on the reference clock")
+
+
+def ctrl_voltage_transient():
+    """Transient response of the control voltage node."""
+    start_load_config(SAFE_LOOP_CFG)
+
+
+def start_pll(cfg):
+    start_load_config(cfg)
+
+    # Move the SoC onto the PLL
+    locked = pll.wait_lock(timeout=3)
+    if locked:
+        pll.select_pll()
+        logging.info("PLL lock = %s and selected as the SoC clock", pll.read_lock())
+    else:
+        logging.error("PLL did not lock; SoC left on the reference clock")
+
+    return 0
+
+
+if __name__ == "__main__":
+    cfg = CFG_REF4_OUT128MHZ.copy()
+    # Safer default config
+    sys.exit(start_pll(cfg))

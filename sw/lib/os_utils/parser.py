@@ -15,7 +15,9 @@ class BaseParser:
     def __init__(self, args=None):
         self.parser = argparse.ArgumentParser(description='Gets options from command line.')
         self.init_parser()
-        self.args = self.parser.parse_args(args) if args else self.parser.parse_args()
+        # `args is not None` rather than a truth test: an empty list is a valid
+        # request to parse nothing, and must not silently fall back to sys.argv.
+        self.args = self.parser.parse_args(args) if args is not None else self.parser.parse_args()
         self.check_args()
         self.init_attr()
         self.reduce_args()
@@ -37,8 +39,10 @@ class BaseParser:
 
 
 class Parser(BaseParser):
-    def __init__(self, ):
-        super().__init__()
+    # Callers with a CLI of their own must pass the credential arguments
+    # explicitly; parsing sys.argv here would reject their own flags.
+    def __init__(self, args=None):
+        super().__init__(args)
 
     def init_parser(self):
         self.parser.add_argument('-k', '--keyfile', type=Path, help='Key file path')

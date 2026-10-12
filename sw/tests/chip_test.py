@@ -22,13 +22,21 @@
 #
 # See: fpga/src/verilog/chip_controller.sv and chip_command_api.sv
 
+import argparse
 import sys
 import random
 import logging
 # import time
+import sw.tests.pll_test as pll_test
 
 from sw.lib.chip_driver import ChipDriver
 from sw.lib.chip_command_api import WRITEBACK_FIFO, make_command
+from sw.lib.pll_settings import (
+    PLL_BYPASS_CFG,
+    CFG_REF4_OUT32MHZ, CFG_REF4_OUT64MHZ, CFG_REF4_OUT128MHZ, CFG_REF4_OUT256MHZ,
+    CFG_REF8_OUT8MHZ, CFG_REF8_OUT16MHZ, CFG_REF8_OUT32MHZ, CFG_REF8_OUT64MHZ,
+    CFG_REF8_OUT128MHZ, CFG_REF8_OUT256MHZ, CFG_REF8_OUT512MHZ,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -101,36 +109,119 @@ def example_with_driver():
     return readback
 
 
-def main():
+# Which PLL settings block produces which SoC clock, per reference frequency. Keyed
+# (ref_freq_MHz, pll_freq_MHz); anything not listed cannot be synthesised from that reference.
+PLL_CFG_TABLE = {
+    (4, 32): CFG_REF4_OUT32MHZ,
+    (4, 64): CFG_REF4_OUT64MHZ,
+    (4, 128): CFG_REF4_OUT128MHZ,
+    (4, 256): CFG_REF4_OUT256MHZ,
+    (8, 8): CFG_REF8_OUT8MHZ,
+    (8, 16): CFG_REF8_OUT16MHZ,
+    (8, 32): CFG_REF8_OUT32MHZ,
+    (8, 64): CFG_REF8_OUT64MHZ,
+    (8, 128): CFG_REF8_OUT128MHZ,
+    (8, 256): CFG_REF8_OUT256MHZ,
+    (8, 512): CFG_REF8_OUT512MHZ,
+}
+
+
+def pll_cfg_for(ref_freq, pll_freq, bypass_pll=False):
+    """Pick the PLL settings block for a reference/output pair, or the bypass config."""
+    if bypass_pll:
+        # Reference clock straight through; the PLL loop is not used at all.
+        return PLL_BYPASS_CFG.copy()
+    try:
+        return PLL_CFG_TABLE[(ref_freq, pll_freq)].copy()
+    except KeyError:
+        options = sorted(f for r, f in PLL_CFG_TABLE if r == ref_freq)
+        if not options:
+            raise ValueError(f"unsupported reference clock {ref_freq} MHz; have 4 and 8")
+        raise ValueError(
+            f"{pll_freq} MHz cannot be made from a {ref_freq} MHz reference; "
+            f"available: {options}")
+
+
+def setup_chip(setup_pll=True, ref_freq=8, pll_freq=512, bypass_pll=False, mem_test=False):
+    """Bring the chip to a known state: PLL configured, ports open, chip reset, SPI up.
+
+    send_uart.py calls this before every load, so a single `send_uart` invocation still does
+    reset-and-run in one step rather than requiring a separate chip_test pass.
+    """
+    # Set up PLL. This has to happen before the chip is taken out of reset, since it is what
+    # decides the SoC clock the reset is released into.
+    if setup_pll:
+        cfg = pll_cfg_for(ref_freq, pll_freq, bypass_pll)
+        if bypass_pll:
+            logger.info("PLL: bypassed, SoC runs on the %d MHz reference", ref_freq)
+        else:
+            logger.info("PLL: ref %d MHz -> SoC %d MHz", ref_freq, pll_freq)
+        pll_test.start_pll(cfg)
+
+    # Set up the chip driver
     open_ports()
+
     # tune the chip clock and spi clock
     # SCK must stay at or below the chip clock: the slave's RX FIFO is 8 words
     # deep and cannot backpressure SPI, so an AXI side slower than the SPI silently drops words.
-    chip.set_chip_clk_hz(10e6) # 10 MHz
+    # chip.set_chip_clk_hz(10e6) # 10 MHz (FPGA clock is not used for now. Use the on-PCB oscillator instead)
     chip.set_sck_hz(5e6) # 5 MHz
+
     # enable the chip clock and reset the chip
-    chip.reset_chip(hold=0.001, chip_clk_en=1)
+    chip.reset_chip(hold=0.5, chip_clk_en=1)
+
     # init quad-spi
     chip.init_spi()
-    # smoke test: test writeback loop
-    test_writeback()
-    # burst write without loopback check
-    # chip.write_mem(0x100, [random.randint(0, 0xFFFFFFFF) for _ in range(7000)])
-    # loopback-write check: data is echoed back for verification
-    SCRATCH_0 = 0x80000000
-    length = 50
-    data = [random.randint(0, 0xFFFFFFFF) for _ in range(length)]
-    logger.debug(f"Writing data: {[hex(d) for d in data]}")
-    test_verify_write_mem(SCRATCH_0, data)
-    # read back check
-    readback = chip.read_mem(SCRATCH_0, length=length)
-    logger.debug(f"Readback data: {[hex(d) for d in readback]}")
-    logger.info(f"Readback matches written data: {readback == data}")
-    # time.sleep(60)
+
+    # run a memory test
+    if mem_test:
+        # smoke test: test writeback loop
+        test_writeback()
+
+        # loopback-write check: data is echoed back for verification
+        SCRATCH_0 = 0x80000000
+        length = 50
+        data = [random.randint(0, 0xFFFFFFFF) for _ in range(length)]
+        logger.debug(f"Writing data: {[hex(d) for d in data]}")
+        test_verify_write_mem(SCRATCH_0, data)
+
+        # read back check
+        readback = chip.read_mem(SCRATCH_0, length=length)
+        logger.info(f"Readback matches written data: {readback == data}")
+
+    return 0
+
+
+def build_arg_parser():
+    """Shared with send_uart.py, so both expose the same PLL options under the same names."""
+    ap = argparse.ArgumentParser(add_help=False)
+    g = ap.add_argument_group("PLL / clocking")
+    g.add_argument("--no-pll", dest="setup_pll", action="store_false",
+                   help="skip PLL configuration entirely (leave the clock as-is)")
+    g.add_argument("--bypass-pll", action="store_true",
+                   help="run the SoC straight off the reference clock instead of the PLL")
+    g.add_argument("--ref-freq", type=int, default=8, choices=(4, 8),
+                   help="reference clock in MHz (default: 8)")
+    g.add_argument("--pll-freq", type=int, default=512,
+                   choices=(8, 16, 32, 64, 128, 256, 512),
+                   help="SoC clock in MHz to synthesise (default: 512, the closest available "
+                        "step to 500; needs --ref-freq 8)")
+    g.add_argument("--mem-test", action="store_true",
+                   help="run the writeback and memory loopback checks after reset")
+    return ap
 
 
 if __name__ == '__main__':
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
-    sys.exit(main())
+    args = argparse.ArgumentParser(parents=[build_arg_parser()],
+                                   description="Bring the chip up: PLL, ports, reset, SPI."
+                                   ).parse_args()
+    sys.exit(setup_chip(
+        setup_pll=args.setup_pll,
+        ref_freq=args.ref_freq,
+        pll_freq=args.pll_freq,
+        bypass_pll=args.bypass_pll,
+        mem_test=args.mem_test
+    ))

@@ -26,10 +26,17 @@ import logging
 import os
 import select
 import struct
+import subprocess
 import sys
 import termios
 import time
 from pathlib import Path
+
+import sw.tests.chip_test as chip_test
+
+# sw.tests.chip_test's setup_chip() (PLL setup, port open, chip reset) is run before anything else
+# so every invocation of this loader starts from a known chip state.
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 logger = logging.getLogger(__name__)
 
@@ -271,10 +278,44 @@ def parse_elf(path):
 
 # --- Main --------------------------------------------------------------------
 
+def run_chip_reset(args):
+    """Bring the chip up (PLL, ports, reset, SPI) before loading anything.
+
+    Run as a subprocess rather than imported so the Xillybus device files it opens are closed
+    again by process exit, before this loader touches the UART. The PLL options are forwarded
+    verbatim, which is what keeps reset-and-run a single send_uart invocation instead of a
+    separate chip_test pass.
+    """
+    cmd = [sys.executable, "-m", "sw.tests.chip_test"]
+    if not args.setup_pll:
+        cmd.append("--no-pll")
+    if args.bypass_pll:
+        cmd.append("--bypass-pll")
+    if args.mem_test:
+        cmd.append("--mem-test")
+    cmd += ["--ref-freq", str(args.ref_freq), "--pll-freq", str(args.pll_freq)]
+
+    quiet = args.quiet
+    subprocess.run(cmd, check=True, cwd=REPO_ROOT,
+                   stdout=subprocess.DEVNULL if quiet else None,
+                   stderr=subprocess.DEVNULL if quiet else None)
+    if not args.setup_pll:
+        how = "PLL untouched"
+    elif args.bypass_pll:
+        how = f"PLL bypassed, ref {args.ref_freq} MHz"
+    else:
+        how = f"ref {args.ref_freq} MHz -> SoC {args.pll_freq} MHz"
+    logger.info("Reset    : sw.tests.chip_test ran (%s).", how)
+
+
 def main():
+    # The PLL/clocking options come from chip_test so both entry points stay in step; they are
+    # forwarded to the reset subprocess below.
     ap = argparse.ArgumentParser(
+        parents=[chip_test.build_arg_parser()],
         description="Load and run an ELF on the LAGD/Cheshire SoC over UART "
-                    "(passive boot debug protocol).")
+                    "(passive boot debug protocol). The chip is reset and the PLL configured "
+                    "as part of this same invocation.")
     ap.add_argument("elf", nargs="?",
                     help="path to the ELF to load (e.g. helloworld.spm.elf); "
                          "omit only with --ping")
@@ -308,11 +349,19 @@ def main():
                     help="seconds to wait for EOC after EXEC; 0 = forever (default: 60)")
     ap.add_argument("--connect-timeout", type=float, default=10.0,
                     help="seconds to wait for the initial ACK handshake (default: 10)")
+    ap.add_argument("-q", "--quiet", action="store_true",
+                    help="suppress the port/handshake/segment/etc. debug info; only show which "
+                         "ELF ran and the final result (EOC / return code)")
     args = ap.parse_args()
 
-    logging_level = logging.INFO
+    logging_level = logging.WARNING if args.quiet else logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
+
+    # Always shown, regardless of --quiet.
+    headline = logger.warning if args.quiet else logger.info
+
+    run_chip_reset(args)
 
     # --ping: only do the ACK handshake with the bootrom, then exit (no ELF).
     if args.ping:
@@ -364,7 +413,7 @@ def main():
 
     entry, segments = parse_elf(args.elf)
     total = sum(len(b) for _, b in segments)
-    logger.info("ELF      : %s", args.elf)
+    headline("ELF      : %s", args.elf)
     logger.info("Entry    : 0x%016x", entry)
     logger.info("Segments : %d, %d bytes total", len(segments), total)
     for paddr, blob in segments:
@@ -407,7 +456,7 @@ def main():
 
         rt = None if args.run_timeout == 0 else args.run_timeout
         ret = wait_for_eoc(fd, rt)
-        logger.info("EOC      : return code %d", ret)
+        headline("EOC      : return code %d", ret)
         return 0 if ret == 0 else 2
     except ProtoError as e:
         logger.error("%s", e)
