@@ -1,3 +1,29 @@
+[project]
+name = "lagd-meas"
+version = "0.0.1"
+description = "Measurement and bring-up tooling for the LAGD chip"
+# Only governs the uv-managed environment on the general-purpose servers. The
+# FPGA lab machines do not use this: they source /opt/pyvisa-env (Python 3.6),
+# which is why the ruff target-version below stays low.
+requires-python = ">=3.9"
+dependencies = [
+    "pyvisa",       # instrument control API
+    "pyvisa-py",    # pure-Python VISA backend: without it pyvisa finds no
+                    # implementation and open_resource() fails outright
+    "pyyaml",       # meas_setup.yaml
+    "requests",     # sw/lib/os_utils/iclab_session.py
+    "cryptography", # sw/lib/os_utils/crypto_utils.py
+    "pyserial",     # sw/uart/send_uart.py
+    "numpy",
+    "matplotlib",
+]
+
+# The repo is a collection of scripts run as `python -m sw.tests.<name>`, not an
+# installable distribution. Without this uv tries to build it as a package and
+# fails for want of a build backend.
+[tool.uv]
+package = false
+
 [tool.ruff]
 line-length = 120
 indent-width = 4
