@@ -431,6 +431,10 @@ if __name__ == "__main__":
     )
 
     cfg_bypass = PLL_BYPASS_CFG.copy()
+    cfg_bypass.update(
+        pdown_PD=0b1,
+        pdown_VCO=0b1,
+    )
 
     lut = VcoLUT(sample="S5")
     cfg_opt = lut.update_config(MIN_JITTER_CFG, f_vco=8e9, kvco=10e9)
