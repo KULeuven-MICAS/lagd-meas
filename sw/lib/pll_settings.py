@@ -156,6 +156,17 @@ CFG_COARSE0_FAST.update(
         vco_current_max=0b1000,
         vco_current_min=0b1000,
     )
+
+# Fref = [?, 93] MHz
+# max = 2 --> locks up to 88 MHz ref
+# max = 1 --> locks up to 91 MHz ref
+# max = 0 --> locks up to 93 MHz ref
+CFG_COARSE0_FASTEST = CFG_COARSE0_FAST.copy()
+CFG_COARSE0_FASTEST.update(
+        vco_current_max=0b0000,
+        vco_current_min=0b0000,
+    )
+
 # DEFAULT_CFG = {
 #     "fb_clk_oen": 0b1,  # ?
 #     "pll_clk_o_en": 0b0,  # clk_o comes from the divider outside the PLL
