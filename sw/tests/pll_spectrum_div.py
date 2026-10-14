@@ -60,7 +60,8 @@ COMMON_BAND = (1e3, 1e6)
 
 RESULT_COLUMNS = (["time", "lut_csv", "divider", "pll_clk_o_en", "clk_div_en", "set_div_freq", "clk_div_val",
                    "total_div", "f_vco", "kvco_target"] + list(vco_lut.LUT_FIELDS) + list(FILTER_FIELDS)
-                  + ["vctrl_pred", "kvco_pred", "f_ref", "locked"] + OUTPUT_COLUMNS + list(pll_setup.SUPPLY_COLUMNS))
+                  + ["vctrl_pred", "kvco_pred", "f_ref", "ref_vpp", "locked"] + OUTPUT_COLUMNS
+                  + list(pll_setup.SUPPLY_COLUMNS))
 TRACE_COLUMNS = ["divider", "total_div"] + TRACE_FIELDS
 
 
@@ -71,14 +72,16 @@ def divider_label(div):
 
 
 def divider_sweep(f_vco=1e9, kvco="middle", sample=None, lut=None, supply=None, dividers=None, n_averages=10,
-                  span=5e6, spectrum_averages=20, lock_timeout=3.0, common_band=COMMON_BAND):
+                  span=5e6, spectrum_averages=20, lock_timeout=3.0, common_band=COMMON_BAND, ref_vpp=1.8,
+                  run_label=""):
     """Lock the PLL at `f_vco` [Hz] (VCO codes from the lookup table for |Kvco| `kvco` [Hz/V] or "middle", reference
     f_vco / FB_DIV from the 33600A), then for every output divider in `dividers` (default DIVIDERS): load the config,
     wait for lock and measure the pad with measure_output (offsets up to f_out / OUT_OFFSET_RATIO, jitter also over
     `common_band`). The PLL supply `supply` (pll_setup.pll_supply) must already be on; its current is recorded per
     divider. A divider that fails is recorded and the sweep continues; a VISA error stops it. The reference and the
     FPGA link are closed at the end, also on an error. `lut`: the lookup table (vco_lut.VcoLUT); None = the newest
-    table of `sample`. Returns the CSV path.
+    table of `sample`. `ref_vpp`: reference amplitude [V] (0 -> ref_vpp square into 50 Ohm). `run_label`: appended
+    to the CSV name (e.g. "repeat", "vpp1p2") to tell debug runs apart. Returns the CSV path.
     """
     dividers = dividers or DIVIDERS
     lut = lut or vco_lut.VcoLUT(sample=sample)
@@ -88,14 +91,15 @@ def divider_sweep(f_vco=1e9, kvco="middle", sample=None, lut=None, supply=None, 
     op = lut.predict(vco_cfg, f_vco)
     f_ref = f_vco / FB_DIV
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    csv_path = RESULTS_DIR / "pll_spectrum_div_{}_{}.csv".format(sample or "nosample",
-                                                                 datetime.now().strftime("%Y%m%d_%H%M%S"))
+    csv_path = RESULTS_DIR / "pll_spectrum_div_{}_{}{}.csv".format(sample or "nosample",
+                                                                   datetime.now().strftime("%Y%m%d_%H%M%S"),
+                                                                   "_" + run_label if run_label else "")
     logging.info("Divider sweep at %.1f MHz (ref %.4f MHz x %d), |Kvco| %.0f MHz/V, %d dividers",
                  f_vco / 1e6, f_ref / 1e6, FB_DIV, op["kvco_pred"] / 1e6, len(dividers))
 
     fg = pll = None
     try:
-        fg = pll_setup.start_reference(f_ref, vpp=1.8, channel=1, load=50)
+        fg = pll_setup.start_reference(f_ref, vpp=ref_vpp, channel=1, load=50)
         pll = pll_setup.connect()  # one link; every divider loads its own config on it
 
         for i, div in enumerate(dividers, 1):
@@ -105,8 +109,8 @@ def divider_sweep(f_vco=1e9, kvco="middle", sample=None, lut=None, supply=None, 
             row = dict(time=datetime.now().isoformat(timespec="seconds"), lut_csv=lut.path.name, divider=label,
                        pll_clk_o_en=cfg["pll_clk_o_en"], clk_div_en=cfg["clk_div_en"],
                        set_div_freq=cfg["set_div_freq"], clk_div_val=cfg["clk_div_val"], total_div=total_div,
-                       f_vco=f_vco, kvco_target=target, f_ref=f_ref, status="error", **vco_lut.vco_codes(cfg),
-                       **{k: cfg[k] for k in FILTER_FIELDS}, **op)
+                       f_vco=f_vco, kvco_target=target, f_ref=f_ref, ref_vpp=ref_vpp, status="error",
+                       **vco_lut.vco_codes(cfg), **{k: cfg[k] for k in FILTER_FIELDS}, **op)
             traces = []
             logging.info("=== Divider %d/%d: %s (total /%d) -> %.4f MHz on the pad ===", i, len(dividers), label,
                          total_div, f_vco / total_div / 1e6)
@@ -151,7 +155,8 @@ def divider_sweep(f_vco=1e9, kvco="middle", sample=None, lut=None, supply=None, 
     return csv_path
 
 
-def hold_divider(f_vco=1e9, divider=None, kvco="middle", sample=None, lut=None, supply=None, lock_timeout=3.0):
+def hold_divider(f_vco=1e9, divider=None, kvco="middle", sample=None, lut=None, supply=None, lock_timeout=3.0,
+                 ref_vpp=1.8):
     """Lock the PLL at `f_vco` [Hz] with the operating point of divider_sweep (VCO codes from the lookup table for
     |Kvco| `kvco`, loop filter of CFG_REF8_LOOP, reference f_vco / FB_DIV from the 33600A) and output divider
     `divider` (a dict like the DIVIDERS entries, e.g. dict(pll_clk_o_en=1, set_div_freq=3) for /8 inside the PLL),
@@ -159,7 +164,8 @@ def hold_divider(f_vco=1e9, divider=None, kvco="middle", sample=None, lut=None, 
 
     Logs the setting, the lock bit and the PLL supply (`supply`: pll_setup.pll_supply, None = not measured); after
     Enter the lock bit and the supply once more. The reference is turned off and the FPGA link closed, also on an
-    error. `lut`: the lookup table (vco_lut.VcoLUT); None = the newest table of `sample`.
+    error. `lut`: the lookup table (vco_lut.VcoLUT); None = the newest table of `sample`. `ref_vpp`: reference
+    amplitude [V].
     """
     divider = divider or dict(pll_clk_o_en=1, set_div_freq=3)
     lut = lut or vco_lut.VcoLUT(sample=sample)
@@ -176,7 +182,7 @@ def hold_divider(f_vco=1e9, divider=None, kvco="middle", sample=None, lut=None, 
 
     fg = pll = None
     try:
-        fg = pll_setup.start_reference(f_ref, vpp=1.8, channel=1, load=50)
+        fg = pll_setup.start_reference(f_ref, vpp=ref_vpp, channel=1, load=50)
         pll = pll_setup.open_pll(cfg)
         locked = pll.wait_lock(timeout=lock_timeout)
         logging.info("PLL %s: ref %.4f MHz -> VCO %.1f MHz (x%d), divider %s (total /%d) -> pad %.4f MHz; "
@@ -212,11 +218,41 @@ def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()):
-        # PLL VDD 0.75 V from the 2450 (smu_vdd_pll) for the block, off afterwards (also on an error)
-        with pll_setup.pll_supply() as supply:
+        int8, int128 = dict(pll_clk_o_en=1, set_div_freq=3), dict(pll_clk_o_en=1, set_div_freq=7)
+        # Debug step 4b: PLL VDD from the 2450 (smu_vdd_pll, never above 0.75 V), /8 and /128 per voltage; 0.75 V
+        # again at the end: drift check. If the pad couples in through the PLL supply, the /8 - /128 gap changes with
+        # VDD. The measured VDD and current are in the pll_vdd / pll_i columns.
+        for vdd in (0.75, 0.70, 0.65, 0.75):
+            with pll_setup.pll_supply(vdd=vdd) as supply:
+                divider_sweep(1e9, "middle", sample="S5", supply=supply, dividers=[int8, int128],
+                              run_label="vdd{:.2f}".format(vdd).replace(".", "p"))
+
+        # Debug step 4b': VDDIO (pad driver supply, N6705B CH1) set by hand on the front panel; its driver resets
+        # every chip supply when opened. Lower VDDIO -> smaller pad swing and current. Reference at 1.2 V for every
+        # run so it stays below VDDIO (1.2 V and 1.8 V gave the same result in step 4a).
+        with pll_setup.pll_supply() as supply:  # PLL VDD 0.75 V
+            for vddio in (1.8, 1.6, 1.5, 1.8):
+                input("Set VDDIO (N6705B CH1) to {:.2f} V, then press Enter...".format(vddio))
+                divider_sweep(1e9, "middle", sample="S5", supply=supply, dividers=[int8, int128], ref_vpp=1.2,
+                              run_label="vddio{:.2f}".format(vddio).replace(".", "p"))
+
+        # Earlier steps, each inside `with pll_setup.pll_supply() as supply:` (PLL VDD 0.75 V from the 2450, off
+        # afterwards, also on an error):
+            # Debug step 4a: reference edge slope. Coupling into the reference input shifts its switching moment by
+            # V_coupled / slope; a smaller reference (same rise time, so a smaller slope) should hurt /8 much more
+            # than /128 if that is the path. 1.8 V again at the end: drift check. A run that does not lock is
+            # recorded as not_locked.
+            # for vpp in (1.8, 1.2, 0.9, 1.8):
+            #     divider_sweep(1e9, "middle", sample="S5", supply=supply, dividers=[int8, int128], ref_vpp=vpp,
+            #                   run_label="vpp{:.1f}".format(vpp).replace(".", "p"))
+
+            # Debug step 1: is the /8 vs /128 difference repeatable, independent of the sweep order (~1.5 min each)
+            # divider_sweep(1e9, "middle", sample="S5", supply=supply, dividers=[int8, int128, int8, int128, int8],
+            #               run_label="repeat")
+
             # 1 GHz, |Kvco| in the geometric middle of the S5 table's range, one divider held until Enter (scope by
             # hand): set_div_freq n -> pad 1 GHz / 2**n
-            hold_divider(1e9, dict(pll_clk_o_en=1, set_div_freq=3), "middle", sample="S5", supply=supply)
+            # hold_divider(1e9, dict(pll_clk_o_en=1, set_div_freq=0), "middle", sample="S5", supply=supply)
 
             # 1 GHz, |Kvco| in the geometric middle of the S5 table's range; all DIVIDERS (~1.5 min each)
             # divider_sweep(1e9, "middle", sample="S5", supply=supply)

@@ -40,7 +40,7 @@ CLOCK_MEASUREMENTS = {
 
 class KeysightScopeMXR058A(inst.BaseInstrument):
     """
-    Class for the Keysight Infiniium MXR058A oscilloscope (8 channels, 6 GHz, 50 Ohm / 1 MOhm inputs).
+    Class for the Keysight Infiniium MXR058A oscilloscope (8 channels, 500 MHz, 50 Ohm / 1 MOhm inputs).
     It implements the specific methods for this instrument (Infiniium SCPI).
     info: inst.BaseInstrumentData: The data class containing the instrument's information.
     info.args: dict: Additional arguments for the instrument. Accepts
@@ -95,7 +95,7 @@ class KeysightScopeMXR058A(inst.BaseInstrument):
         self.write(f':CHANnel{channel}:DISPlay OFF')
 
     def set_bandwidth(self, bandwidth="MAX"):
-        """Acquisition bandwidth limit: "MAX" (6 GHz), "AUTO" (follows the sample rate) or a value [Hz]."""
+        """Acquisition bandwidth limit: "MAX" (500 MHz), "AUTO" (follows the sample rate) or a value [Hz]."""
         self.write(f':ACQuire:BANDwidth {bandwidth}')
 
     # --- Horizontal, acquisition, trigger ---
