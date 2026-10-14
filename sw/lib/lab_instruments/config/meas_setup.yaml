@@ -105,3 +105,10 @@ spectrum_analyzer:
   name: "Rohde & Schwarz FSV Signal Analyzer"
   IP: "10.91.16.56"
 
+
+# Oscilloscope with 50 Ohm inputs: the PLL output clock as it arrives in a 50 Ohm load (sw/tests/pll_waveform.py)
+scope_mxr:
+  name: "Keysight MXR058A Scope"
+  IP: "0.0.0.0" # TODO: the scope's IP address
+  args:
+    channels: 8

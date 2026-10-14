@@ -22,8 +22,11 @@
 #   pll.set_strb_hz(hz)                # retune the config strobe -> actual Hz
 #
 #
-# The open-loop VCO measurements (bench, equipment checks, sweeps) live in lib/vco_measure.py and the VCO
-# lookup table (VcoLUT) in lib/vco_lut.py; main() below only calls into them.
+# main() puts the PLL in one configuration (TRY_CFG on a TRY_F_REF reference) and holds it until Enter, to try
+# settings by hand: edit TRY_CFG / TRY_F_REF and run again.
+#
+# The open-loop VCO measurements (bench, equipment checks, sweeps, the lookup-table measurement) are run from
+# tests/vco_test.py (lib/vco_measure.py, lib/vco_lut.py).
 #
 # Related to: fpga/src/verilog/pll_controller.sv and pll_command_api.sv
 
@@ -33,11 +36,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from sw.lib import pll_setup, vco_lut, vco_measure
+from sw.lib import pll_setup, vco_lut
 from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 from sw.lib.pll_driver import PllDriver
 from sw.lib.pll_command_api import (
+    calculate_div_factor,
     default_cfg_word,
     OP_WRITEBACK,
     STRB_HZ,
@@ -46,6 +50,7 @@ from sw.lib.pll_command_api import (
 )
 
 from sw.lib.pll_settings import *
+from sw.lib.pll_spectrum import FB_DIV
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
@@ -251,34 +256,69 @@ def start_log_file():
     return log_path
 
 
+# The configuration main() puts the PLL in: edit the fields and run again (all fields: pll_command_api.FIELDS).
+# Default: the simulated case of pll_test_sim.py with the loop filter of the spectrum scripts: ref 32 MHz,
+# VCO 128 x 32 MHz = 4.096 GHz, codes 0 / 10 / 8, PLL output /64 = 64 MHz on the pad (no external divider).
+TRY_F_REF = 32e6  # reference from the 33600A [Hz]; the VCO runs at FB_DIV x TRY_F_REF
+TRY_CFG = dict(
+    CFG_REF8,  # loop closed, internal Vctrl
+    vco_tune_coarse=0,
+    vco_current_min=10,
+    vco_current_max=8,
+    set_current=7,  # loop filter: charge-pump current
+    set_c1=0,
+    set_c2=0,
+    set_r1=7,
+    pll_clk_o_en=1,  # pad = PLL output (0: through the external divider: / 2**set_div_freq / (2 * (clk_div_val + 1)))
+    set_div_freq=6,  # PLL output = VCO / 2**set_div_freq; keep the pad <= 125 MHz
+)
+
+
+def hold_config(cfg, f_ref, supply=None, select_pll=False, lock_timeout=3.0):
+    """Put the PLL in `cfg` on a reference of `f_ref` [Hz] from the 33600A and hold it until Enter.
+
+    Loads the config (with silicon readback), waits for lock, logs the lock bit and the PLL supply current and power
+    (`supply`: the pll_setup.pll_supply SMU, None = not measured). `select_pll`: also move the SoC clock onto the PLL
+    when locked. After Enter the lock bit and the supply are read once more; the reference is turned off and the FPGA
+    link closed, also on an error.
+    """
+    fg = link = None
+    try:
+        fg = pll_setup.start_reference(f_ref, vpp=1.8, channel=1, load=50)
+        link = pll_setup.open_pll(cfg)
+        locked = link.wait_lock(timeout=lock_timeout)
+        _, total_div = calculate_div_factor(cfg)
+        logging.info("PLL %s: ref %.4f MHz -> VCO %.1f MHz (x%d), pad %.4f MHz (/%d); VCO coarse %d min %d max %d, "
+                     "Icp %d C1 %d C2 %d R1 %d", "LOCKED" if locked else "NOT LOCKED", f_ref / 1e6,
+                     FB_DIV * f_ref / 1e6, FB_DIV, FB_DIV * f_ref / total_div / 1e6, total_div,
+                     cfg["vco_tune_coarse"], cfg["vco_current_min"], cfg["vco_current_max"], cfg["set_current"],
+                     cfg["set_c1"], cfg["set_c2"], cfg["set_r1"])
+        if locked and select_pll:
+            link.select_pll()
+            logging.info("SoC clock on the PLL")
+        pll_setup.measure_pll_supply(supply, label="PLL locked" if locked else "PLL not locked")
+        input("PLL configured and held; press Enter to stop...")
+        logging.info("Lock bit at the end: %s", link.read_lock())
+        pll_setup.measure_pll_supply(supply, label="at the end")
+    finally:
+        if link is not None:
+            link.close()
+        if fg is not None:
+            fg.close()  # reference off
+
+
 def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()):
         # PLL VDD 0.75 V from the 2450 SMU (smu_vdd_pll) for the whole run, off afterwards (also on an error)
         with pll_setup.pll_supply() as supply:
-            # Equipment checks for the VCO measurements (lib/vco_measure.py)
-            # vco_measure.test_function_generator(freqs=(1e6,))  # 1 MHz, 0 -> 0.75 V square
-            # vco_measure.test_fg_to_scope()
-            # vco_measure.test_smu()
+            # TRY_CFG on TRY_F_REF, held until Enter
+            hold_config(TRY_CFG, TRY_F_REF, supply=supply)
 
-            # VCO tuning curve for the CFG_REF8 settings (locked at ~1 GHz with an 8 MHz ref)
-            # vco_measure.vctrl_sweep(CFG_REF8)
-
-            # Full: Vctrl curves for every current setting per coarse code, for the plots in
-            # sw/tools/notebooks/calibrate_vco.ipynb (this sample only)
-            # vco_measure.vco_current_families(coarse_codes=range(16))  # all coarse codes, overnight
-
-            # Quick check of the lookup-table measurement (lib/vco_lut.py): one coarse code, two min codes, three
-            # Vctrl points (+ VDD), default max codes, drift references before and after -> ~70 points, ~3 min
-            # vco_lut.vco_lut_measure(sample="debug", coarse_codes=(8,), min_codes=(0, 8), vctrls=(0.0, 0.4, 0.7))
-
-            # Lookup table (overnight), then set the VCO for a frequency and Kvco from it
-            vco_lut.vco_lut_measure(sample="S5")  # LUT_VCTRLS / LUT_MIN_CODES / LUT_MAX_CODES: ~13 h at ~3.3 s/point
-            # lut = vco_lut.VcoLUT(sample="S5")
-            # cfg = lut.update_config(VCO_CHARAC_CFG, 1.0e9, 1.0e9)  # 1 GHz, |Kvco| ~1 GHz/V
-            # pll_link = pll_setup.open_pll(cfg)
-            # pll_setup.measure_pll_supply(supply, label="VCO 1 GHz")
+            # VCO codes from the lookup table instead (for VCO = FB_DIV x TRY_F_REF, central Vctrl):
+            # lut_cfg = vco_lut.VcoLUT(sample="S5").update_config(TRY_CFG, FB_DIV * TRY_F_REF)
+            # hold_config(lut_cfg, TRY_F_REF, supply=supply)
 
             # Safer default config: lock, then the PLL supply current and power
             # start_pll(CFG_REF4_OUT128MHZ.copy(), supply=supply)

@@ -34,10 +34,10 @@ from sw.lib import pll_setup, vco_lut
 from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 from sw.lib.pll_command_api import calculate_div_factor
-from sw.lib.pll_settings import CFG_REF8
-from sw.lib.pll_spectrum import (FB_DIV, OFFSET_SPAN_MAP, OUTPUT_COLUMNS, RBW_SPAN_RATIO, offsets_for, pad_divider,
-                                 RESULTS_DIR, TRACE_FIELDS, append_rows, kvco_target_for, measure_output,
-                                 open_spectrum, trace_csv_path, trace_rows)
+from sw.lib.pll_settings import CFG_REF8_LOOP, FILTER_FIELDS
+from sw.lib.pll_spectrum import (FB_DIV, OFFSET_SPAN_MAP, OUTPUT_COLUMNS, RBW_SPAN_RATIO,
+                                 offsets_for, pad_divider, RESULTS_DIR, TRACE_FIELDS, append_rows, kvco_target_for,
+                                 measure_output, open_spectrum, trace_csv_path, trace_rows)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
@@ -52,16 +52,17 @@ PAUSE_VIEW_SPAN = 2.5e6
 FREQ_SWEEP = (300e6, 500e6, 750e6, 1e9, 1.5e9, 2e9, 3e9, 4e9)
 
 RESULT_COLUMNS = (["time", "lut_csv", "f_vco", "kvco_request", "kvco_target"] + list(vco_lut.LUT_FIELDS)
-                  + ["vctrl_pred", "kvco_pred", "kvco_min", "kvco_max", "f_ref", "set_div_freq", "total_div",
-                     "locked", "locked_after_pause"] + OUTPUT_COLUMNS + list(pll_setup.SUPPLY_COLUMNS))
+                  + list(FILTER_FIELDS) + ["vctrl_pred", "kvco_pred", "kvco_min", "kvco_max", "f_ref",
+                                           "set_div_freq", "total_div", "locked", "locked_after_pause"]
+                  + OUTPUT_COLUMNS + list(pll_setup.SUPPLY_COLUMNS))
 TRACE_COLUMNS = ["f_vco", "kvco_target"] + TRACE_FIELDS
 
 
 def loop_cfg(f_vco):
-    """Closed-loop config (CFG_REF8 base: loop filter defaults, internal Vctrl) on the direct output (no external
-    divider: pad = PLL output), divided inside the PLL to at most PAD_F_MAX on the pad (pll_spectrum.pad_divider).
-    The VCO codes are added by VcoLUT.update_config."""
-    return dict(CFG_REF8, pll_clk_o_en=1, set_div_freq=pad_divider(f_vco))
+    """Closed-loop config (CFG_REF8_LOOP: CFG_REF8 with the loop filter LOOP_FILTER, internal Vctrl) on the direct
+    output (no external divider: pad = PLL output), divided inside the PLL to at most PAD_F_MAX on the pad
+    (pll_spectrum.pad_divider). The VCO codes are added by VcoLUT.update_config."""
+    return dict(CFG_REF8_LOOP, pll_clk_o_en=1, set_div_freq=pad_divider(f_vco))
 
 
 def measure_pll_kvco(f_vco=1e9, kvco="middle", sample=None, lut=None, csv_path=None, supply=None,
@@ -91,7 +92,8 @@ def measure_pll_kvco(f_vco=1e9, kvco="middle", sample=None, lut=None, csv_path=N
     f_ref = f_vco / FB_DIV
     row = dict(time=datetime.now().isoformat(timespec="seconds"), lut_csv=lut.path.name, f_vco=f_vco,
                kvco_request=kvco, kvco_target=target, kvco_min=kvco_min, kvco_max=kvco_max, f_ref=f_ref,
-               set_div_freq=cfg["set_div_freq"], total_div=total_div, status="error", **vco_lut.vco_codes(cfg), **op)
+               set_div_freq=cfg["set_div_freq"], total_div=total_div, status="error", **vco_lut.vco_codes(cfg),
+               **{k: cfg[k] for k in FILTER_FIELDS}, **op)
     traces = []
 
     fg = pll = None
@@ -228,14 +230,14 @@ def main():
             # 1 GHz (ref 7.8125 MHz), |Kvco| in the geometric middle of what the S5 table offers at 1 GHz
             # phase-noise markers + full curve with spur detection, averaged spectrum
             # pause=True: switch off the PCB 5 V after the PLL is configured, then press Enter
-            measure_pll_kvco(1e9, "middle", sample="S5", supply=supply, pause=True)
+            # measure_pll_kvco(1e9, "middle", sample="S5", supply=supply, pause=True)
 
             # Kvco sweep at 1 GHz: 8 |Kvco| targets log-spaced over the S5 table's range, everything measured per
             # setting, one CSV for sw/tools/notebooks/pll_spectrum_kvco.ipynb (~2 min per setting)
             # kvco_sweep(1e9, n_kvco=8, sample="S5", supply=supply)
 
             # Frequency sweep at |Kvco| ~2 GHz/V: FREQ_SWEEP (300 MHz - 4 GHz), everything measured per frequency
-            # frequency_sweep(FREQ_SWEEP, kvco=2e9, sample="S5", supply=supply)
+            frequency_sweep(FREQ_SWEEP, kvco=2e9, sample="S5", supply=supply)
 
 
 if __name__ == "__main__":

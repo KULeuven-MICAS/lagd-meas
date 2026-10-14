@@ -13,6 +13,8 @@
 #   test_lut_pick(f, kvco, sample)       # VCO codes from the lookup table, sweep Vctrl, compare with the table
 #   test_lut_range(targets, sample)      # the same for a list of (f, kvco) targets, one CSV for all
 #                                        # (plotted in sw/tools/notebooks/LUT_test.ipynb)
+# main() also holds the equipment checks, Vctrl sweeps and the lookup-table measurement (vco_lut.vco_lut_measure),
+# commented out: uncomment the one to run.
 #
 
 import csv
@@ -25,7 +27,7 @@ import numpy as np
 from sw.lib import pll_setup, vco_lut, vco_measure
 from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
-from sw.lib.pll_settings import VCO_CHARAC_CFG
+from sw.lib.pll_settings import CFG_REF8, VCO_CHARAC_CFG
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
@@ -172,6 +174,26 @@ def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()):
+        # Equipment checks for the VCO measurements (lib/vco_measure.py)
+        # vco_measure.test_function_generator(freqs=(1e6,))  # 1 MHz, 0 -> 0.75 V square
+        # vco_measure.test_fg_to_scope()
+        # vco_measure.test_smu()
+
+        # with pll_setup.pll_supply():  # PLL VDD 0.75 V from the 2450 (smu_vdd_pll), off afterwards
+        #     # VCO tuning curve for the CFG_REF8 settings (locked at ~1 GHz with an 8 MHz ref)
+        #     vco_measure.vctrl_sweep(CFG_REF8)
+        #
+        #     # Full: Vctrl curves for every current setting per coarse code, for the plots in
+        #     # sw/tools/notebooks/calibrate_vco.ipynb (this sample only)
+        #     vco_measure.vco_current_families(coarse_codes=range(16))  # all coarse codes, overnight
+        #
+        #     # Quick check of the lookup-table measurement (lib/vco_lut.py): one coarse code, two min codes, three
+        #     # Vctrl points (+ VDD), default max codes, drift references before and after -> ~70 points, ~3 min
+        #     vco_lut.vco_lut_measure(sample="debug", coarse_codes=(8,), min_codes=(0, 8), vctrls=(0.0, 0.4, 0.7))
+        #
+        #     # Lookup table (overnight); LUT_VCTRLS / LUT_MIN_CODES / LUT_MAX_CODES: ~13 h at ~3.3 s/point
+        #     vco_lut.vco_lut_measure(sample="S5")
+
         # One lookup-table check: 1 GHz with |Kvco| ~1 GHz/V from the S5 table
         # test_lut_pick(1.0e9, 1.0e9, sample="S5")
 

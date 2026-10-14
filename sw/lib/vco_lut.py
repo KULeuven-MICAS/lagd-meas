@@ -179,6 +179,13 @@ class VcoLUT:
         pts = [(v, f) for v, f in self._curve_points(cfg) if not math.isnan(f)]
         return [v for v, _ in pts], [f for _, f in pts]
 
+    def fastest_setting(self):
+        """The VCO codes ({LUT_FIELDS: code}) with the highest frequency anywhere in the table (at any Vctrl)."""
+        def f_top(key):
+            return max((f for _, f in self._curves[key] if not math.isnan(f)), default=0.0)
+
+        return dict(zip(LUT_FIELDS, max(self._curves, key=f_top)))
+
     def frequency_range(self, points_per_decade=100):
         """Which frequencies update_config can reach (kvco=None, same rules), overall and per coarse code.
 

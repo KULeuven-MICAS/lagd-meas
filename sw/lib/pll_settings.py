@@ -72,6 +72,17 @@ CFG_REF8.update(
     vco_current_min=0b1100,
 )
 
+# Loop filter of the closed-loop measurement scripts (pll_spectrum_kvco.py, pll_spectrum_div.py, pll_range.py) since
+# 2026-10-13; before, they used the DEFAULT_CFG filter: Icp 3, C1 3, C2 3, R1 3. FILTER_FIELDS: the filter fields, as
+# recorded per row in the result CSVs.
+LOOP_FILTER = dict(set_current=0b111, set_c1=0b000, set_c2=0b000, set_r1=0b111)
+FILTER_FIELDS = tuple(LOOP_FILTER)
+# The DEFAULT_CFG filter (Icp 3, C1 3, C2 3, R1 3) as a filter dict, e.g. to compare against LOOP_FILTER
+DEFAULT_FILTER = {k: DEFAULT_CFG[k] for k in FILTER_FIELDS}
+# CFG_REF8 with LOOP_FILTER: the base config of those scripts (VCO codes and output divider set per measurement)
+CFG_REF8_LOOP = CFG_REF8.copy()
+CFG_REF8_LOOP.update(LOOP_FILTER)
+
 CFG_REF8_OUT8MHZ = CFG_REF8.copy()
 CFG_REF8_OUT8MHZ.update(
     set_div_freq=0b111,

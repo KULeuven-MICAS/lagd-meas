@@ -26,6 +26,8 @@
 #
 # Tests:
 #   divider_sweep(f_vco, kvco, sample)   # all DIVIDERS at one operating point
+#   hold_divider(f_vco, divider, kvco)   # the same operating point with one divider, held until Enter (manual
+#                                        # measurements, e.g. the pad on a scope)
 #
 
 import logging
@@ -38,9 +40,10 @@ from sw.lib import pll_setup, vco_lut
 from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 from sw.lib.pll_command_api import calculate_div_factor
-from sw.lib.pll_settings import CFG_REF8
-from sw.lib.pll_spectrum import (FB_DIV, OUTPUT_COLUMNS, PAD_F_MAX, RESULTS_DIR, TRACE_FIELDS, append_rows,
-                                 kvco_target_for, measure_output, offsets_for, trace_csv_path, trace_rows)
+from sw.lib.pll_settings import CFG_REF8_LOOP, FILTER_FIELDS
+from sw.lib.pll_spectrum import (FB_DIV, OUTPUT_COLUMNS, PAD_F_MAX, RESULTS_DIR,
+                                 TRACE_FIELDS, append_rows, kvco_target_for, measure_output, offsets_for,
+                                 trace_csv_path, trace_rows)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
@@ -56,7 +59,7 @@ DIVIDERS = ([dict(pll_clk_o_en=1, set_div_freq=n) for n in range(3, 8)]
 COMMON_BAND = (1e3, 1e6)
 
 RESULT_COLUMNS = (["time", "lut_csv", "divider", "pll_clk_o_en", "clk_div_en", "set_div_freq", "clk_div_val",
-                   "total_div", "f_vco", "kvco_target"] + list(vco_lut.LUT_FIELDS)
+                   "total_div", "f_vco", "kvco_target"] + list(vco_lut.LUT_FIELDS) + list(FILTER_FIELDS)
                   + ["vctrl_pred", "kvco_pred", "f_ref", "locked"] + OUTPUT_COLUMNS + list(pll_setup.SUPPLY_COLUMNS))
 TRACE_COLUMNS = ["divider", "total_div"] + TRACE_FIELDS
 
@@ -80,7 +83,8 @@ def divider_sweep(f_vco=1e9, kvco="middle", sample=None, lut=None, supply=None, 
     dividers = dividers or DIVIDERS
     lut = lut or vco_lut.VcoLUT(sample=sample)
     target, _, _ = kvco_target_for(lut, f_vco, kvco)
-    vco_cfg = lut.update_config(CFG_REF8, f_vco, target)  # the same VCO codes for every divider below
+    # the same VCO codes and loop filter (CFG_REF8_LOOP) for every divider below
+    vco_cfg = lut.update_config(CFG_REF8_LOOP, f_vco, target)
     op = lut.predict(vco_cfg, f_vco)
     f_ref = f_vco / FB_DIV
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -101,7 +105,8 @@ def divider_sweep(f_vco=1e9, kvco="middle", sample=None, lut=None, supply=None, 
             row = dict(time=datetime.now().isoformat(timespec="seconds"), lut_csv=lut.path.name, divider=label,
                        pll_clk_o_en=cfg["pll_clk_o_en"], clk_div_en=cfg["clk_div_en"],
                        set_div_freq=cfg["set_div_freq"], clk_div_val=cfg["clk_div_val"], total_div=total_div,
-                       f_vco=f_vco, kvco_target=target, f_ref=f_ref, status="error", **vco_lut.vco_codes(cfg), **op)
+                       f_vco=f_vco, kvco_target=target, f_ref=f_ref, status="error", **vco_lut.vco_codes(cfg),
+                       **{k: cfg[k] for k in FILTER_FIELDS}, **op)
             traces = []
             logging.info("=== Divider %d/%d: %s (total /%d) -> %.4f MHz on the pad ===", i, len(dividers), label,
                          total_div, f_vco / total_div / 1e6)
@@ -146,6 +151,52 @@ def divider_sweep(f_vco=1e9, kvco="middle", sample=None, lut=None, supply=None, 
     return csv_path
 
 
+def hold_divider(f_vco=1e9, divider=None, kvco="middle", sample=None, lut=None, supply=None, lock_timeout=3.0):
+    """Lock the PLL at `f_vco` [Hz] with the operating point of divider_sweep (VCO codes from the lookup table for
+    |Kvco| `kvco`, loop filter of CFG_REF8_LOOP, reference f_vco / FB_DIV from the 33600A) and output divider
+    `divider` (a dict like the DIVIDERS entries, e.g. dict(pll_clk_o_en=1, set_div_freq=3) for /8 inside the PLL),
+    then hold it until Enter, for measurements by hand. Pads above PAD_F_MAX are set too (only a warning).
+
+    Logs the setting, the lock bit and the PLL supply (`supply`: pll_setup.pll_supply, None = not measured); after
+    Enter the lock bit and the supply once more. The reference is turned off and the FPGA link closed, also on an
+    error. `lut`: the lookup table (vco_lut.VcoLUT); None = the newest table of `sample`.
+    """
+    divider = divider or dict(pll_clk_o_en=1, set_div_freq=3)
+    lut = lut or vco_lut.VcoLUT(sample=sample)
+    target, _, _ = kvco_target_for(lut, f_vco, kvco)
+    cfg = dict(lut.update_config(CFG_REF8_LOOP, f_vco, target), **divider)
+    op = lut.predict(cfg, f_vco)
+    _, total_div = calculate_div_factor(cfg)
+    f_ref = f_vco / FB_DIV
+    f_pad = f_vco / total_div
+    label = divider_label(divider)
+    if f_pad > PAD_F_MAX:
+        logging.warning("%s: %.1f MHz on the pad > %.0f MHz, which the pad is not specified for", label, f_pad / 1e6,
+                        PAD_F_MAX / 1e6)
+
+    fg = pll = None
+    try:
+        fg = pll_setup.start_reference(f_ref, vpp=1.8, channel=1, load=50)
+        pll = pll_setup.open_pll(cfg)
+        locked = pll.wait_lock(timeout=lock_timeout)
+        logging.info("PLL %s: ref %.4f MHz -> VCO %.1f MHz (x%d), divider %s (total /%d) -> pad %.4f MHz; "
+                     "VCO coarse %d min %d max %d (|Kvco| %.0f MHz/V, Vctrl %.2f V predicted), "
+                     "Icp %d C1 %d C2 %d R1 %d",
+                     "LOCKED" if locked else "NOT LOCKED", f_ref / 1e6, f_vco / 1e6, FB_DIV, label, total_div,
+                     f_pad / 1e6, cfg["vco_tune_coarse"], cfg["vco_current_min"], cfg["vco_current_max"],
+                     op["kvco_pred"] / 1e6, op["vctrl_pred"], cfg["set_current"], cfg["set_c1"], cfg["set_c2"],
+                     cfg["set_r1"])
+        pll_setup.measure_pll_supply(supply, label=label)
+        input("Divider %s held (pad %.4f MHz); press Enter to stop..." % (label, f_pad / 1e6))
+        logging.info("Lock bit at the end: %s", pll.read_lock())
+        pll_setup.measure_pll_supply(supply, label="at the end")
+    finally:
+        if pll is not None:
+            pll.close()
+        if fg is not None:
+            fg.close()  # reference off
+
+
 def start_log_file():
     """Also write the log to results/logs/pll_spectrum_div_<stamp>.log; returns its path."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -163,8 +214,12 @@ def main():
     with iclab_session(parser.get_credentials()):
         # PLL VDD 0.75 V from the 2450 (smu_vdd_pll) for the block, off afterwards (also on an error)
         with pll_setup.pll_supply() as supply:
+            # 1 GHz, |Kvco| in the geometric middle of the S5 table's range, one divider held until Enter (scope by
+            # hand): set_div_freq n -> pad 1 GHz / 2**n
+            hold_divider(1e9, dict(pll_clk_o_en=1, set_div_freq=3), "middle", sample="S5", supply=supply)
+
             # 1 GHz, |Kvco| in the geometric middle of the S5 table's range; all DIVIDERS (~1.5 min each)
-            divider_sweep(1e9, "middle", sample="S5", supply=supply)
+            # divider_sweep(1e9, "middle", sample="S5", supply=supply)
 
 
 if __name__ == "__main__":

@@ -100,6 +100,20 @@ def start_reference(freq, vpp=1.8, channel=1, load=50, duty=50.0, fg=None):
 SUPPLY_COLUMNS = ("pll_vdd", "pll_i", "pll_p")
 
 
+def open_mxr_scope():
+    """The Keysight MXR058A of meas_setup.yaml (`scope_mxr`, 50 Ohm inputs), reset. Needs the lab network
+    (iclab_session)."""
+    import yaml  # instrument imports only when the scope is used
+    from pathlib import Path
+    from sw.lib.lab_instruments import instrument as inst
+    from sw.lib.lab_instruments.drivers.keysight_scope_mxr058a import KeysightScopeMXR058A
+
+    cfg_path = Path(__file__).resolve().parent / "lab_instruments" / "config" / "meas_setup.yaml"
+    with cfg_path.open(encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    return KeysightScopeMXR058A(inst.BaseInstrumentData.from_mapping(config["scope_mxr"]))
+
+
 def open_pll_smu():
     """The 2450 SMU supplying the PLL (meas_setup.yaml `smu_vdd_pll`), reset: 0 V, output off. Needs the lab
     network (iclab_session)."""

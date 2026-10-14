@@ -112,12 +112,22 @@ def offsets_for(f_out, offset_span_map=None, out_offset_ratio=OUT_OFFSET_RATIO):
 
 
 def kvco_target_for(lut, f_vco, kvco):
-    """|Kvco| to request from the lookup table `lut` (vco_lut.VcoLUT): `kvco` as is, or for "middle" the geometric
-    middle of the |Kvco| range it offers at f_vco (inside the Vctrl window). Returns (target, kvco_min, kvco_max)."""
-    kvco_min, kvco_max = lut.kvco_range(f_vco)  # raises when f_vco is unreachable
-    target = math.sqrt(kvco_min * kvco_max) if kvco == "middle" else kvco
-    logger.info("%.1f MHz: possible |Kvco| %.0f-%.0f MHz/V -> requesting %.0f MHz/V%s", f_vco / 1e6,
-                kvco_min / 1e6, kvco_max / 1e6, target / 1e6, " (geometric middle)" if kvco == "middle" else "")
+    """|Kvco| to request from the lookup table `lut` (vco_lut.VcoLUT) at f_vco, from the range it offers there (inside
+    the Vctrl window): `kvco` [Hz/V] as is; "middle": the geometric middle of the range; "max" / "min": its highest /
+    lowest |Kvco|; None: no preference (update_config then picks the Vctrl closest to the window centre).
+    Returns (target, kvco_min, kvco_max); raises ValueError when no setting reaches f_vco."""
+    kvco_min, kvco_max = lut.kvco_range(f_vco)
+    if kvco == "middle":
+        target = math.sqrt(kvco_min * kvco_max)
+    elif kvco == "max":
+        target = kvco_max
+    elif kvco == "min":
+        target = kvco_min
+    else:
+        target = kvco
+    logger.info("%.1f MHz: possible |Kvco| %.0f-%.0f MHz/V -> requesting %s%s", f_vco / 1e6, kvco_min / 1e6,
+                kvco_max / 1e6, "any (central Vctrl)" if target is None else "%.0f MHz/V" % (target / 1e6),
+                " (%s)" % kvco if isinstance(kvco, str) else "")
     return target, kvco_min, kvco_max
 
 
