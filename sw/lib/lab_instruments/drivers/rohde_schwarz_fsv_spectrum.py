@@ -25,7 +25,7 @@ POINTS_PER_RBW = 5.0
 
 class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
     """
-    Class for the Rohde & Schwarz FSVA/FSV spectrum analyzer.
+    Class for the Rohde & Schwarz FSVA/FSV spectrum analyzer; also used for the FSW (same SCPI for these methods).
     Implements specific resource management and high-level compound measurement workflows.
     """
     def __init__(self, info: inst.BaseSpectrumAnalyzerData, verbose: bool = False):

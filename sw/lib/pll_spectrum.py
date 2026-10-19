@@ -77,8 +77,9 @@ MIN_CARRIER_DBM = -10.0
 #   referred to the PLL output: f_pll_out, L_pll_*, phase_jitter_pll_mrad;
 #   referred to the VCO:     f_vco_meas, L_vco_*, phase_jitter_vco_mrad;
 #   time_jitter_*:           the same at all three points.
-OUTPUT_COLUMNS = (["f_out", "f_pll_out", "pll_div", "ext_div", "offset_max", "f_out_meas", "f_vco_meas",
-                   "n_meas", "divider_ok",
+#   analyzer_name:           the analyzer measured on (meas_setup.yaml name).
+OUTPUT_COLUMNS = (["analyzer_name", "f_out", "f_pll_out", "pll_div", "ext_div", "offset_max", "f_out_meas",
+                   "f_vco_meas", "n_meas", "divider_ok",
                    "carrier_dbm", "n_averages", "time_jitter_ps", "phase_jitter_out_mrad", "phase_jitter_pll_mrad",
                    "phase_jitter_vco_mrad", "time_jitter_trace_ps",
                    "phase_jitter_trace_out_mrad", "time_jitter_noise_ps", "time_jitter_spur_ps", "n_spurs", "spurs",
@@ -94,10 +95,11 @@ OUTPUT_COLUMNS = (["f_out", "f_pll_out", "pll_div", "ext_div", "offset_max", "f_
 TRACE_FIELDS = ["kind", "center", "span", "rbw", "vbw", "averages", "freq", "level_dbm"]
 
 
-def open_spectrum():
-    """The FSV from meas_setup.yaml (`spectrum_analyzer`); opening it resets the analyzer."""
+def open_spectrum(analyzer="spectrum_analyzer"):
+    """The analyzer `analyzer` from meas_setup.yaml: "spectrum_analyzer" (the one of every measurement, set there) or
+    "spectrum_analyzer_fsv" (the FSV, for a comparison); opening it resets the analyzer."""
     return RohdeSchwarzFSVSpectrum(
-        inst.BaseSpectrumAnalyzerData.from_mapping(vco_measure.load_instr_cfg()["spectrum_analyzer"]))
+        inst.BaseSpectrumAnalyzerData.from_mapping(vco_measure.load_instr_cfg()[analyzer]))
 
 
 def pad_divider(f_vco, pad_f_max=PAD_F_MAX):
@@ -132,8 +134,9 @@ def kvco_target_for(lut, f_vco, kvco):
 
 
 def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, spectrum_averages=20,
-                   common_band=None, pll_div=None):
-    """Measure the locked PLL's output pad at f_vco / total_div on the FSV. Returns (row, traces).
+                   common_band=None, pll_div=None, analyzer="spectrum_analyzer"):
+    """Measure the locked PLL's output pad at f_vco / total_div on the analyzer `analyzer` (meas_setup.yaml key, see
+    open_spectrum; default: the analyzer set in meas_setup.yaml). Returns (row, traces).
 
     `pll_div`: the divider inside the PLL (2**set_div_freq); the PLL output is f_vco / pll_div, the external divider
     total_div / pll_div. None: no external divider (pad = PLL output).
@@ -164,7 +167,8 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
     traces = []
     n_db = 20 * math.log10(total_div)  # pad -> VCO
     ext_db = 20 * math.log10(ext_div)  # pad -> PLL output
-    spectrum = open_spectrum()  # reset: default detector and averaging
+    spectrum = open_spectrum(analyzer)  # reset: default detector and averaging
+    row["analyzer_name"] = spectrum.info.name  # which analyzer (meas_setup.yaml)
     try:
         spectrum.center_on_fundamental(center_freq=f_out, search_span=2.1e3)
         f_meas = float(spectrum.query("FREQ:CENT?").strip())
