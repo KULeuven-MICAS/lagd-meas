@@ -21,6 +21,16 @@ logger = logging.getLogger(__name__)
 # around the carrier covers only the top of the RBW filter (carrier ~0.04 dB low; 2 points per RBW: ~0.26 dB).
 VBW_RBW_RATIO = 3.0
 POINTS_PER_RBW = 5.0
+# Overload protection (the FSW43 showed IF overload, IFOVL, with the reference level at the carrier peak): the
+# reference level sets the IF gain and, with auto attenuation, the RF attenuation, so the strongest signal must stay
+# below it with margin. SAFE_REF_LEVEL_DBM after the reset, before any signal level is known (the PLL pad drives up
+# to ~+2 dBm); REF_LEVEL_MARGIN_DB above the carrier once center_on_fundamental has found it (covers the square
+# wave's harmonics, which share the IF path). A higher reference level raises the analyzer's own noise floor a little.
+SAFE_REF_LEVEL_DBM = 10.0
+REF_LEVEL_MARGIN_DB = 10.0
+# STATus:QUEStionable:POWer bits (FSV / FSW): 0 = RF overload (OVLD), 2 = IF overload (IFOVL)
+STAT_POW_RF_OVERLOAD = 1 << 0
+STAT_POW_IF_OVERLOAD = 1 << 2
 
 
 class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
@@ -52,15 +62,24 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         self.write('*RST', check=False)               # Reset to default state[cite: 3]
         self.write('SYST:ERR:CLE:ALL', check=False)   # Clear the error queue
         _ = self.status()
+        # No overload before the signal level is known: reference level with headroom, RF attenuation coupled to it
+        self.set_attenuation_auto()
+        self.set_reference_level(SAFE_REF_LEVEL_DBM)
+        self.read_overload()  # clear the overload events of the reset
         logger.info(f"{self.info.name} initialized successfully.")
 
-    def center_on_fundamental(self, center_freq: float, search_span: float = 2.1e3):
+    def center_on_fundamental(self, center_freq: float, search_span: float = 2.1e3,
+                              ref_margin_db: float = REF_LEVEL_MARGIN_DB):
         """
         Start measurement by centering on the oscillator frequency.
+
+        The search sweep runs at SAFE_REF_LEVEL_DBM; afterwards the reference level is set `ref_margin_db` above the
+        carrier peak (not at the peak: that drives the IF into overload), with auto attenuation.
 
         Args:
             center_freq: Coarse estimate of the fundamental frequency (Hz).
             search_span: The span used to search for the exact peak (Hz).
+            ref_margin_db: Reference level above the carrier peak (dB).
         """
         logger.info(f"[{self.info.name}] Centering on fundamental frequency near {center_freq} Hz...")
 
@@ -74,16 +93,36 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         self.set_vbw(1.0)
         self.set_span(search_span)
         self.set_display_range(150.0)
+        self.set_attenuation_auto()
+        self.set_reference_level(SAFE_REF_LEVEL_DBM)
 
         # Execute sweep and wait for completion
         logger.info("Triggering single sweep for peak search...")
         self.trigger_single_sweep(wait=True)
         logger.info("Sweep complete")
 
-        # Find exact peak and set as new center and reference level
+        # Find exact peak and set as new center; reference level with margin above it
         self.peak_search(marker=1)
-        self.marker_to_reference_level(marker=1)
+        peak_dbm = self.get_marker_y_value(marker=1)
+        self.set_reference_level(math.ceil(peak_dbm + ref_margin_db))
         self.marker_to_center(marker=1)
+        logger.info(f"[{self.info.name}] Carrier peak {peak_dbm:.1f} dBm -> reference level "
+                    f"{math.ceil(peak_dbm + ref_margin_db):.0f} dBm, RF attenuation {self.get_attenuation():g} dB")
+
+    def set_attenuation_auto(self):
+        """RF attenuation coupled to the reference level (the analyzer picks it so the reference level does not
+        overload the mixer)."""
+        self.write('INP:ATT:AUTO ON')
+
+    def get_attenuation(self) -> float:
+        """RF attenuation [dB] as set on the analyzer."""
+        return float(self.query('INP:ATT?').strip())
+
+    def read_overload(self) -> Dict[str, bool]:
+        """Overloads since the previous call (STATus:QUEStionable:POWer event register, cleared by reading):
+        {'rf_overload': OVLD at the RF input, 'if_overload': IFOVL in the IF path}."""
+        bits = int(float(self.query('STAT:QUES:POW?').strip()))
+        return {'rf_overload': bool(bits & STAT_POW_RF_OVERLOAD), 'if_overload': bool(bits & STAT_POW_IF_OVERLOAD)}
 
     def set_display_update(self, on: bool = True):
         """Keep the screen updating while under remote control (pyvisa-py over LAN cannot send go-to-local;
