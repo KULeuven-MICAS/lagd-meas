@@ -311,17 +311,16 @@ def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()):
-        # PLL VDD 0.75 V from the 2450 SMU (smu_vdd_pll) for the whole run, off afterwards (also on an error)
-        with pll_setup.pll_supply() as supply:
-            # TRY_CFG on TRY_F_REF, held until Enter
-            hold_config(TRY_CFG, TRY_F_REF, supply=supply)
+        # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
+        # TRY_CFG on TRY_F_REF, held until Enter
+        hold_config(TRY_CFG, TRY_F_REF)
 
-            # VCO codes from the lookup table instead (for VCO = FB_DIV x TRY_F_REF, central Vctrl):
-            # lut_cfg = vco_lut.VcoLUT(sample="S5").update_config(TRY_CFG, FB_DIV * TRY_F_REF)
-            # hold_config(lut_cfg, TRY_F_REF, supply=supply)
+        # VCO codes from the lookup table instead (for VCO = FB_DIV x TRY_F_REF, central Vctrl):
+        # lut_cfg = vco_lut.VcoLUT(sample="S5").update_config(TRY_CFG, FB_DIV * TRY_F_REF)
+        # hold_config(lut_cfg, TRY_F_REF)
 
-            # Safer default config: lock, then the PLL supply current and power
-            # start_pll(CFG_REF4_OUT128MHZ.copy(), supply=supply)
+        # Safer default config: lock, SoC clock on the PLL
+        # start_pll(CFG_REF4_OUT128MHZ.copy())
 
 
 if __name__ == "__main__":

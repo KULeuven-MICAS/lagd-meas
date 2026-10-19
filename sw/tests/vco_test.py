@@ -179,7 +179,7 @@ def main():
         # vco_measure.test_fg_to_scope()
         # vco_measure.test_smu()
 
-        # with pll_setup.pll_supply():  # PLL VDD 0.75 V from the 2450 (smu_vdd_pll), off afterwards
+        # PLL supply: fixed on the board, always on (no SMU since 2026-10-19)
         #     # VCO tuning curve for the CFG_REF8 settings (locked at ~1 GHz with an 8 MHz ref)
         #     vco_measure.vctrl_sweep(CFG_REF8)
         #
@@ -198,9 +198,8 @@ def main():
         # test_lut_pick(1.0e9, 1.0e9, sample="S5")
 
         # Lookup-table check over the whole VCO range (LUT_TEST_TARGETS: 50 MHz .. 10 GHz, central Vctrl),
-        # plotted in sw/tools/notebooks/LUT_test.ipynb
-        with pll_setup.pll_supply() as supply:  # PLL VDD 0.75 V from the 2450 (smu_vdd_pll), off afterwards
-            test_lut_range(sample="S5", supply=supply)
+        # plotted in sw/tools/notebooks/LUT_test.ipynb; power columns NaN (no PLL supply SMU)
+        test_lut_range(sample="S5")
 
 
 if __name__ == "__main__":

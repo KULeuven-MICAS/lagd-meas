@@ -421,19 +421,13 @@ if __name__ == "__main__":
 
     # Reference clock: 18.75 MHz (Fvco = 128 * Fref = 2.4 GHz -> 37.5 MHz on the pad with set_div_freq /64),
     # 0 -> 1.8 V square, 50 % duty, 50 Ohm load. Stays on for the whole run, off when the generator is closed.
-    # PLL supply: 0.75 V from the 2450 SMU (smu_vdd_pll), on before the PLL is configured; its current and power
-    # are recorded per configuration.
+    # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN.
     with iclab_session(Parser().get_credentials()):
-        supply = pll_setup.start_pll_supply(0.75)
-        try:
-            fg = pll_setup.start_reference(18.75e6, vpp=1.8, channel=1, load=50)
-        except BaseException:
-            supply.close()
-            raise
+        fg = pll_setup.start_reference(18.75e6, vpp=1.8, channel=1, load=50)
     try:
         start_pll_and_config(cfg)
 
-        sweep_random_configurations(n_averages=10, n_configs=5, supply=supply)
+        sweep_random_configurations(n_averages=10, n_configs=5)
 
         sweep_grid_configurations(
             sweep_curr=[1, 3, 5, 7],
@@ -441,14 +435,12 @@ if __name__ == "__main__":
             sweep_c2=[0, 2, 5, 7],
             sweep_r1=[0, 2, 5, 7],
             n_averages=10,
-            supply=supply,
         )
     finally:
-        # Also on an error (a VISA error stops the sweeps): reference output off, FPGA ports closed, PLL supply
-        # off. The analyzer is closed by the sweep functions themselves.
+        # Also on an error (a VISA error stops the sweeps): reference output off, FPGA ports closed. The analyzer is
+        # closed by the sweep functions themselves.
         fg.close()
         if "pll" in globals():
             pll.close()
-        supply.close()
 
     sys.exit(0)

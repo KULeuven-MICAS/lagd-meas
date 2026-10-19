@@ -163,10 +163,9 @@ def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()):
-        # PLL VDD 0.75 V from the 2450 (smu_vdd_pll) for the block, off afterwards (also on an error)
-        with pll_setup.pll_supply() as supply:
-            # 1 GHz VCO, |Kvco| ~2 GHz/V, old filter (locks over the widest range): pad 1 GHz, 500 MHz ... 7.8 MHz
-            waveform_sweep(1e9, dividers=range(8), kvco=2e9, loop_filter=DEFAULT_FILTER, sample="S5", supply=supply)
+        # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
+        # 1 GHz VCO, |Kvco| ~2 GHz/V, old filter (locks over the widest range): pad 1 GHz, 500 MHz ... 7.8 MHz
+        waveform_sweep(1e9, dividers=range(8), kvco=2e9, loop_filter=DEFAULT_FILTER, sample="S5")
 
 
 if __name__ == "__main__":

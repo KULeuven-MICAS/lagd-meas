@@ -151,8 +151,10 @@ def main():
         # Current readback offset vs output voltage (nothing connected)
         # test_current_offset()
 
-        # PLL supply from the 2450 SMU (smu_vdd_pll): 0.75 V, current and power
-        test_pll_supply()
+        # PLL supply from the 2450 SMU (smu_vdd_pll): 0.75 V, current and power. The 2450 was removed from the setup
+        # on 2026-10-19 (PLL supply fixed on the board, always on)
+        # test_pll_supply()
+        pass  # nothing selected
 
 
 if __name__ == "__main__":

@@ -368,22 +368,21 @@ def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()):
-        # Set the VCO and point the analyzer at it, then leave it for manual evaluation (PLL supply left on too)
-        # view_vco(1.0e9, 1.0e9, sample="S5", supply=pll_setup.start_pll_supply())
+        # Set the VCO and point the analyzer at it, then leave it for manual evaluation
+        # view_vco(1.0e9, 1.0e9, sample="S5")
 
-        # PLL VDD 0.75 V from the 2450 (smu_vdd_pll) for the block, current and power recorded, off afterwards
-        with pll_setup.pll_supply() as supply:
-            # Averaged spectrum: sets the VCO (S5 table) and Vctrl, captures, Vctrl off;
-            # plotted in vco_spectrum.ipynb
-            # capture_spectrum(1.0e9, 1.0e9, sample="S5", center=31e6, span=5e6, averages=20, supply=supply)
-            # capture_spectrum(2.4e9, 1.0e9, sample="S5", span=15e6, averages=20, supply=supply)  # / 64 -> 37.5 MHz
-            capture_spectrum(2.4e9, 5.0e9, sample="S5", span=15e6, averages=20, supply=supply)  # |Kvco| ~5 GHz/V
+        # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
+        # Averaged spectrum: sets the VCO (S5 table) and Vctrl, captures, Vctrl off;
+        # plotted in vco_spectrum.ipynb
+        # capture_spectrum(1.0e9, 1.0e9, sample="S5", center=31e6, span=5e6, averages=20)
+        # capture_spectrum(2.4e9, 1.0e9, sample="S5", span=15e6, averages=20)  # / 64 -> 37.5 MHz
+        capture_spectrum(2.4e9, 5.0e9, sample="S5", span=15e6, averages=20)  # |Kvco| ~5 GHz/V
 
-            # One setting: 1 GHz with |Kvco| ~1 GHz/V from the S5 table
-            # measure_vco_spectrum(1.0e9, 1.0e9, sample="S5", supply=supply)
+        # One setting: 1 GHz with |Kvco| ~1 GHz/V from the S5 table
+        # measure_vco_spectrum(1.0e9, 1.0e9, sample="S5")
 
-            # Several settings, one CSV pair
-            # vco_spectrum_sweep([(f, None) for f in (200e6, 500e6, 1e9, 2e9, 5e9)], sample="S5", supply=supply)
+        # Several settings, one CSV pair
+        # vco_spectrum_sweep([(f, None) for f in (200e6, 500e6, 1e9, 2e9, 5e9)], sample="S5")
 
 
 if __name__ == "__main__":

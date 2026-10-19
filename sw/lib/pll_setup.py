@@ -97,6 +97,10 @@ def start_reference(freq, vpp=1.8, channel=1, load=50, duty=50.0, fg=None):
 
 
 # Columns added to a result CSV by measure_pll_supply.
+#
+# Since 2026-10-19 the 2450 SMU (smu_vdd_pll) is no longer in the setup: the PLL supply is fixed on the board and
+# always on. The scripts pass no supply (supply=None), so measure_pll_supply returns NaN columns; open_pll_smu,
+# start_pll_supply and pll_supply are only for when a supply SMU is connected again.
 SUPPLY_COLUMNS = ("pll_vdd", "pll_i", "pll_p")
 
 

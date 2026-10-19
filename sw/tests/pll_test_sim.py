@@ -150,10 +150,9 @@ def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()):
-        # PLL VDD 0.75 V from the 2450 (smu_vdd_pll) for the block, off afterwards (also on an error)
-        with pll_setup.pll_supply() as supply:
-            # Simulated case: 32 MHz reference, VCO 4.096 GHz, codes and loop filter of SIM_CFG
-            measure_pll_sim(SIM_CFG, SIM_F_REF, sample="S5", supply=supply)
+        # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
+        # Simulated case: 32 MHz reference, VCO 4.096 GHz, codes and loop filter of SIM_CFG
+        measure_pll_sim(SIM_CFG, SIM_F_REF, sample="S5")
 
 
 if __name__ == "__main__":

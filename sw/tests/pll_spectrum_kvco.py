@@ -225,19 +225,18 @@ def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()):
-        # PLL VDD 0.75 V from the 2450 (smu_vdd_pll) for the block, off afterwards (also on an error)
-        with pll_setup.pll_supply() as supply:
-            # 1 GHz (ref 7.8125 MHz), |Kvco| in the geometric middle of what the S5 table offers at 1 GHz
-            # phase-noise markers + full curve with spur detection, averaged spectrum
-            # pause=True: switch off the PCB 5 V after the PLL is configured, then press Enter
-            # measure_pll_kvco(1e9, "middle", sample="S5", supply=supply, pause=True)
+        # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
+        # 1 GHz (ref 7.8125 MHz), |Kvco| in the geometric middle of what the S5 table offers at 1 GHz
+        # phase-noise markers + full curve with spur detection, averaged spectrum
+        # pause=True: switch off the PCB 5 V after the PLL is configured, then press Enter
+        measure_pll_kvco(1e9, "middle", sample="S5", pause=True)
 
-            # Kvco sweep at 1 GHz: 8 |Kvco| targets log-spaced over the S5 table's range, everything measured per
-            # setting, one CSV for sw/tools/notebooks/pll_spectrum_kvco.ipynb (~2 min per setting)
-            # kvco_sweep(1e9, n_kvco=8, sample="S5", supply=supply)
+        # Kvco sweep at 1 GHz: 8 |Kvco| targets log-spaced over the S5 table's range, everything measured per
+        # setting, one CSV for sw/tools/notebooks/pll_spectrum_kvco.ipynb (~2 min per setting)
+        # kvco_sweep(1e9, n_kvco=8, sample="S5")
 
-            # Frequency sweep at |Kvco| ~2 GHz/V: FREQ_SWEEP (300 MHz - 4 GHz), everything measured per frequency
-            frequency_sweep(FREQ_SWEEP, kvco=2e9, sample="S5", supply=supply)
+        # Frequency sweep at |Kvco| ~2 GHz/V: FREQ_SWEEP (300 MHz - 4 GHz), everything measured per frequency
+        # frequency_sweep(FREQ_SWEEP, kvco=2e9, sample="S5")
 
 
 if __name__ == "__main__":
