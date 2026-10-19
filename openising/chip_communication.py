@@ -143,10 +143,13 @@ def _stream_uart_output(
     interface: str,
     elf_file: str,
     rtscts: bool = False,
+    reset_chip: bool = True,
 ):
     # ssh to xilinx first
-    tokens = [
-        "python sw/tests/chip_test.py &&",
+    tokens = []
+    if reset_chip:
+        tokens.append("python sw/tests/chip_test.py &&")
+    tokens.extend([
         remote_python,
         "-m",
         "openising.uart_output",
@@ -161,12 +164,12 @@ def _stream_uart_output(
         interface,
         "-elf",
         elf_file,
-    ]
+    ])
     subprocess.run(connect_to_host_commands + tokens, stdout=stdout, check=True)
 
 
 def interface_send(
-    interface: str, top_log: Path, host, remote_dir, elf_file, uart_device, rtscts, uart_baud, uart_timeout
+    interface: str, top_log: Path, host, remote_dir, elf_file, uart_device, rtscts, uart_baud, uart_timeout, reset_chip: bool = True
 ):
     if interface == "uart":
         with top_log.open("w") as f:
@@ -175,7 +178,7 @@ def interface_send(
 
     elif interface in ["spi", "jtag"]:
         with top_log.open("w") as f:
-            _stream_uart_output(f, uart_device, uart_baud, uart_timeout, interface, elf_file, rtscts)
+            _stream_uart_output(f, uart_device, uart_baud, uart_timeout, interface, elf_file, rtscts, reset_chip)
     else:
         raise ValueError(f"Interface {interface} is not yet supported")
 
@@ -195,6 +198,7 @@ def send_chip(
     nb_cores: int,
     clock_speed: float,
     delta_h_calculation: bool,
+    reset_chip: bool = True,
 ) -> int:
     """Send the data of the different software runs to the chip and wait untill the results from the chip are written\
        to a file.
@@ -215,6 +219,8 @@ def send_chip(
     @param uart_timeout: amount of time to wait for uart.
     @type remote_dir: str
     @param remote_dir: the directory on the board in which everything is stored.
+    @type reset_chip: bool
+    @param reset_chip: whether to reset the chip before sending the data.
     @rtype: int
     @return: return message for whether everything has finished correctly.
     """
@@ -237,7 +243,7 @@ def send_chip(
         run_folder = data_folder / f"run_{run}"
         delta_h_str = "_deltah.elf" if delta_h_calculation else ".elf"
         elf_file = str((run_folder / ("lagd_commands" + delta_h_str)).relative_to(TOP_MEAS))
-        interface_send(interface, top_log, host, remote_dir, elf_file, uart_device, rtscts, uart_baud, uart_timeout)
+        interface_send(interface, top_log, host, remote_dir, elf_file, uart_device, rtscts, uart_baud, uart_timeout, reset_chip)
 
         # move to correct folder and parse output
         folders = [run_folder]
@@ -531,13 +537,4 @@ def rename_move_file(source: Path, destination: Path, newname: str):
 
 
 if __name__ == "__main__":
-    send_chip(
-        TOP_MEAS / "openising/Maxcut_experiment/model_0",
-        2,
-        "spi",
-        uart_timeout=10,
-        host=default_host,
-        uart_baud=115200,
-        uart_device=default_device,
-        remote_dir=default_remote_dir,
-    )
+    pass
