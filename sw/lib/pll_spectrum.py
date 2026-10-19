@@ -84,7 +84,7 @@ OUTPUT_COLUMNS = (["analyzer_name", "f_out", "f_pll_out", "pll_div", "ext_div", 
                    "phase_jitter_vco_mrad", "time_jitter_trace_ps",
                    "phase_jitter_trace_out_mrad", "time_jitter_noise_ps", "time_jitter_spur_ps", "n_spurs", "spurs",
                    "common_band", "time_jitter_common_ps", "time_jitter_trace_common_ps", "detector",
-                   "average_type", "video_filter"]
+                   "average_type", "video_filter", "rf_overload", "if_overload"]
                   + ["L_out_{:.0f}".format(f) for f in OFFSET_SPAN_MAP]
                   + ["L_pll_{:.0f}".format(f) for f in OFFSET_SPAN_MAP]
                   + ["L_vco_{:.0f}".format(f) for f in OFFSET_SPAN_MAP] + ["status"])
@@ -194,6 +194,8 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
         t = spectrum.averaged_trace(f_meas, span, averages=spectrum_averages, rbw_span_ratio=RBW_SPAN_RATIO,
                                     detector=DETECTOR, average_type=AVERAGE_TYPE, video_filter=VIDEO_FILTER)
         traces.append(dict(t, kind="spectrum"))
+        overload = spectrum.read_overload()  # any overload during the sweeps above (the carrier search included)
+        row.update(rf_overload=int(overload["rf_overload"]), if_overload=int(overload["if_overload"]))
     finally:
         spectrum.set_sweep_mode(continuous=True)  # screen live again
         spectrum.close()
@@ -201,7 +203,10 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
     t_jit, phi_out = calculate_integrated_jitter(f_meas, list(profile), list(profile.values()))
     row.update(time_jitter_ps=t_jit * 1e12, phase_jitter_out_mrad=phi_out * 1e3,
                phase_jitter_pll_mrad=phi_out * ext_div * 1e3, phase_jitter_vco_mrad=phi_out * total_div * 1e3,
-               status="ok")
+               status="overload" if row["rf_overload"] or row["if_overload"] else "ok")
+    if row["status"] == "overload":
+        logger.warning("Analyzer OVERLOAD during the measurement (RF %d, IF %d): the levels are not reliable, status "
+                       "\"overload\"", row["rf_overload"], row["if_overload"])
     for f, l in profile.items():
         row["L_out_{:.0f}".format(f)] = l
         row["L_pll_{:.0f}".format(f)] = l + ext_db

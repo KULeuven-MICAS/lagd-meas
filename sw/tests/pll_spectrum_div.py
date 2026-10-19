@@ -219,21 +219,16 @@ def main():
     parser = Parser()
     with iclab_session(parser.get_credentials()):
         # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
+        # 1 GHz, |Kvco| in the geometric middle of the S5 table's range; all DIVIDERS (~1.5 min each)
+        divider_sweep(1e9, "middle", sample="S5")
+
+        # Debug steps of the in-band noise of /8 vs /128 (sw/tools/notebooks/pll_div_debug.ipynb):
         int8, int128 = dict(pll_clk_o_en=1, set_div_freq=3), dict(pll_clk_o_en=1, set_div_freq=7)
 
         # Debug step 4b (no longer possible: it needs the PLL VDD from the 2450 SMU, removed on 2026-10-19): /8 and
         # /128 per PLL VDD 0.75, 0.70, 0.65, 0.75 V. If the pad couples in through the PLL supply, the /8 - /128 gap
         # changes with VDD.
 
-        # Debug step 4b': VDDIO (pad driver supply, N6705B CH1) set by hand on the front panel; its driver resets
-        # every chip supply when opened. Lower VDDIO -> smaller pad swing and current. Reference at 1.2 V for every
-        # run so it stays below VDDIO (1.2 V and 1.8 V gave the same result in step 4a).
-        for vddio in (1.8, 1.6, 1.5, 1.8):
-            input("Set VDDIO (N6705B CH1) to {:.2f} V, then press Enter...".format(vddio))
-            divider_sweep(1e9, "middle", sample="S5", dividers=[int8, int128], ref_vpp=1.2,
-                          run_label="vddio{:.2f}".format(vddio).replace(".", "p"))
-
-        # Earlier steps:
         # Debug step 4a: reference edge slope. Coupling into the reference input shifts its switching moment by
         # V_coupled / slope; a smaller reference (same rise time, so a smaller slope) should hurt /8 much more
         # than /128 if that is the path. 1.8 V again at the end: drift check. A run that does not lock is
@@ -248,9 +243,6 @@ def main():
         # 1 GHz, |Kvco| in the geometric middle of the S5 table's range, one divider held until Enter (scope by
         # hand): set_div_freq n -> pad 1 GHz / 2**n
         # hold_divider(1e9, dict(pll_clk_o_en=1, set_div_freq=0), "middle", sample="S5")
-
-        # 1 GHz, |Kvco| in the geometric middle of the S5 table's range; all DIVIDERS (~1.5 min each)
-        # divider_sweep(1e9, "middle", sample="S5")
 
 
 if __name__ == "__main__":
