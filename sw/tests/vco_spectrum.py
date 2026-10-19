@@ -28,10 +28,12 @@
 #   capture_spectrum(f, kvco, sample, center, span, averages)  # set VCO + Vctrl, averaged spectrum -> vco_capture_*.csv
 #   measure_vco_spectrum(f, kvco, sample)      # one setting
 #   vco_spectrum_sweep(targets, sample)        # a list of (f, kvco) targets, one CSV pair for all
+#   manual_vctrl_sweep(f, kvco, sample, vctrls)  # Vctrl from a battery + potentiometer, waits for you at each step
 #
 
 import csv
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -60,18 +62,21 @@ VCO_OFFSET_SPAN_MAP = {
     5e5: 2.1e6,
     1e6: 2.1e6,
 }
+# manual_vctrl_sweep: default Vctrl steps [V], the operating window of the lookup table (vco_lut.VCTRL_WINDOW).
+MANUAL_VCTRLS = (0.50, 0.55, 0.60, 0.65, 0.70)
 # Highest pad frequency: the colleague's PLL jitter runs used ~37.5 MHz on this output.
 OUT_F_MAX = 50e6
 
 SPECTRUM_COLUMNS = (["time", "lut_csv", "f_target", "kvco_target"] + list(vco_lut.LUT_FIELDS)
-                    + ["vctrl_pred", "kvco_pred", "vctrl_meas", "set_div_freq", "total_div", "f_out_meas",
+                    + ["vctrl_pred", "kvco_pred", "vctrl_set", "f_vco_pred", "vctrl_meas", "set_div_freq",
+                       "total_div", "f_out_meas",
                        "f_vco_meas", "f_dev_pct", "n_averages", "detector", "average_type", "video_filter",
                        "offset_min", "offset_max", "time_jitter_ps", "phase_jitter_out_mrad", "phase_jitter_vco_mrad"]
                     + ["L_out_{:.0f}".format(f) for f in VCO_OFFSET_SPAN_MAP]
                     + ["L_vco_{:.0f}".format(f) for f in VCO_OFFSET_SPAN_MAP]
                     + list(pll_setup.SUPPLY_COLUMNS) + ["status"])
 # One row per trace point; `offset` = freq - center (the carrier), power in dBm as on the analyzer.
-TRACE_COLUMNS = ["f_target", "total_div", "span", "rbw", "vbw", "center", "freq", "offset", "power_dbm"]
+TRACE_COLUMNS = ["f_target", "vctrl_set", "total_div", "span", "rbw", "vbw", "center", "freq", "offset", "power_dbm"]
 # capture_spectrum: one row per trace point of an averaged spectrum.
 CAPTURE_COLUMNS = (["time", "note", "f_target", "kvco_target"] + list(vco_lut.LUT_FIELDS)
                    + ["vctrl_pred", "vctrl_meas", "kvco_pred", "set_div_freq", "total_div", "center", "span", "rbw",
@@ -121,6 +126,44 @@ def find_carrier(spectrum, f_est, rel_span=0.3, steps=(1e-2, 1e-4)):
     return float(spectrum.query("FREQ:CENT?").strip())
 
 
+def measure_pad_spectrum(spectrum, f_out_est, total_div, row, csv_path, n_averages=10, offset_span_map=None):
+    """Find the carrier near `f_out_est` [Hz] on the output pad and measure the phase noise at the offsets of
+    `offset_span_map` and the integrated jitter (on the pad and referred to the VCO, x `total_div`).
+
+    Fills `row` (carrier, L(f), jitter, analyzer method, status "ok") and appends the averaged trace of every span
+    to <csv_path stem>_traces.csv, tagged with row["f_target"] and row["vctrl_set"].
+    """
+    offset_span_map = offset_span_map or VCO_OFFSET_SPAN_MAP
+    keep_remote_alive()
+    f_out = find_carrier(spectrum, f_out_est)
+    row.update(f_out_meas=f_out, f_vco_meas=f_out * total_div,
+               f_dev_pct=(f_out * total_div / row["f_target"] - 1) * 100)
+    logging.info("  carrier on the pad (= PLL output) %.4f MHz -> VCO %.2f MHz (%+.2f %% from the target)",
+                 f_out / 1e6, f_out * total_div / 1e6, row["f_dev_pct"])
+
+    traces = []  # the averaged trace of every span (RohdeSchwarzFSVSpectrum.get_trace)
+    profile = spectrum.measure_phase_noise_profile(averages=n_averages, offset_span_map=offset_span_map,
+                                                   traces=traces, rbw_span_ratio=RBW_SPAN_RATIO)
+    row.update(detector=spectrum.get_detector(), average_type=spectrum.get_average_type(),
+               video_filter=spectrum.get_video_filter_type())
+    append_rows(trace_csv_path(csv_path), TRACE_COLUMNS,
+                [dict(f_target=row["f_target"], vctrl_set=row.get("vctrl_set"), total_div=total_div, span=t["span"],
+                      rbw=t["rbw"], vbw=t["vbw"], center=t["center"], freq=f, offset=f - t["center"], power_dbm=p)
+                 for t in traces for f, p in zip(t["freq"], t["level"])])
+    offsets, l_out = list(profile), list(profile.values())
+    t_jit, phi_out = calculate_integrated_jitter(f_out, offsets, l_out)
+    row.update(time_jitter_ps=t_jit * 1e12, phase_jitter_out_mrad=phi_out * 1e3,
+               phase_jitter_vco_mrad=phi_out * total_div * 1e3, status="ok")
+    for f, l in profile.items():
+        row["L_out_{:.0f}".format(f)] = l
+        row["L_vco_{:.0f}".format(f)] = l + 20 * np.log10(total_div)
+    logging.info("  phase noise referred to the VCO: %s", ", ".join(
+        "{:g} Hz: {:.1f} dBc/Hz".format(f, l + 20 * np.log10(total_div)) for f, l in profile.items()))
+    logging.info("  RMS jitter %.0f-%.0f Hz: %.3f ps; phase %.3f mrad on the pad (= PLL output), %.3f mrad at "
+                 "the VCO",
+                 min(offsets), max(offsets), t_jit * 1e12, phi_out * 1e3, phi_out * total_div * 1e3)
+
+
 def measure_vco_spectrum(f_vco, kvco=None, sample=None, lut=None, csv_path=None, n_averages=10,
                          offset_span_map=None, out_f_max=OUT_F_MAX, settle=2.0, spectrum=None, supply=None):
     """Configure the VCO for `f_vco` [Hz] / |Kvco| `kvco` [Hz/V] from the lookup table, hold Vctrl at the
@@ -159,35 +202,8 @@ def measure_vco_spectrum(f_vco, kvco=None, sample=None, lut=None, csv_path=None,
         row["vctrl_meas"] = smu.measure()[0]
 
         spectrum = spectrum or open_spectrum()
-        keep_remote_alive()
-        f_out = find_carrier(spectrum, f_vco / total_div)
-        row.update(f_out_meas=f_out, f_vco_meas=f_out * total_div, f_dev_pct=(f_out * total_div / f_vco - 1) * 100)
+        measure_pad_spectrum(spectrum, f_vco / total_div, total_div, row, csv_path, n_averages, offset_span_map)
         row.update(pll_setup.measure_pll_supply(supply, label="%.1f MHz" % (f_vco / 1e6)))
-        logging.info("  carrier on the pad (= PLL output) %.4f MHz -> VCO %.2f MHz (%+.2f %% from the target)",
-                     f_out / 1e6, f_out * total_div / 1e6, row["f_dev_pct"])
-
-        traces = []  # the averaged trace of every span (RohdeSchwarzFSVSpectrum.get_trace)
-        profile = spectrum.measure_phase_noise_profile(averages=n_averages, offset_span_map=offset_span_map,
-                                                       traces=traces, rbw_span_ratio=RBW_SPAN_RATIO)
-        row.update(detector=spectrum.get_detector(), average_type=spectrum.get_average_type(),
-                   video_filter=spectrum.get_video_filter_type())
-        append_rows(trace_csv_path(csv_path), TRACE_COLUMNS,
-                    [dict(f_target=f_vco, total_div=total_div, span=t["span"], rbw=t["rbw"], vbw=t["vbw"],
-                          center=t["center"],
-                          freq=f, offset=f - t["center"], power_dbm=p)
-                     for t in traces for f, p in zip(t["freq"], t["level"])])
-        offsets, l_out = list(profile), list(profile.values())
-        t_jit, phi_out = calculate_integrated_jitter(f_out, offsets, l_out)
-        row.update(time_jitter_ps=t_jit * 1e12, phase_jitter_out_mrad=phi_out * 1e3,
-                   phase_jitter_vco_mrad=phi_out * total_div * 1e3, status="ok")
-        for f, l in profile.items():
-            row["L_out_{:.0f}".format(f)] = l
-            row["L_vco_{:.0f}".format(f)] = l + 20 * np.log10(total_div)
-        logging.info("  phase noise referred to the VCO: %s", ", ".join(
-            "{:g} Hz: {:.1f} dBc/Hz".format(f, l + 20 * np.log10(total_div)) for f, l in profile.items()))
-        logging.info("  RMS jitter %.0f-%.0f Hz: %.3f ps; phase %.3f mrad on the pad (= PLL output), %.3f mrad at "
-                     "the VCO",
-                     min(offsets), max(offsets), t_jit * 1e12, phi_out * 1e3, phi_out * total_div * 1e3)
     except Exception:
         logging.exception("VCO spectrum measurement failed at %.1f MHz", f_vco / 1e6)
         row["status"] = "error"
@@ -333,6 +349,98 @@ def vco_spectrum_sweep(targets, sample=None, lut=None, **kwargs):
     return csv_path
 
 
+def ask_vctrl(vctrl_set):
+    """Wait until the user has set Vctrl to `vctrl_set` [V] on the potentiometer.
+    Returns the voltage read on the multimeter (Enter alone: `vctrl_set`), "skip" or "stop"."""
+    while True:
+        answer = input("\n>>> Set Vctrl to %.3f V on the potentiometer. Enter = done (or type the voltage you read), "
+                       "s = skip, q = stop: " % vctrl_set).strip().lower()
+        if answer == "":
+            return vctrl_set
+        if answer == "s":
+            return "skip"
+        if answer == "q":
+            return "stop"
+        try:
+            return float(answer)
+        except ValueError:
+            print("Not a voltage: %r" % answer)
+
+
+def manual_vctrl_sweep(f_vco, kvco=None, sample=None, vctrls=MANUAL_VCTRLS, lut=None, n_averages=10,
+                       offset_span_map=None, out_f_max=OUT_F_MAX, settle=1.0):
+    """Spectrum and phase noise with Vctrl from a battery + potentiometer instead of the SMU (no SMU noise).
+
+    The VCO codes for `f_vco` [Hz] / |Kvco| `kvco` [Hz/V] are taken from the lookup table and loaded on the chip
+    (direct output, see spectrum_cfg). Then, for every voltage in `vctrls` [V], the script waits until you have
+    set it on the potentiometer (ask_vctrl: press Enter, or type the voltage read on the multimeter), waits
+    `settle` s and measures as measure_vco_spectrum: carrier near the lookup-table frequency at that Vctrl,
+    L(f) at the offsets, integrated jitter, averaged traces.
+
+    One row per step in results/vco/vco_spectrum_<sample>_<stamp>.csv (vctrl_set = requested, vctrl_meas = typed
+    or requested, f_vco_pred = lookup table at vctrl_set), traces in <stem>_traces.csv. Returns the CSV path.
+    """
+    offset_span_map = offset_span_map or VCO_OFFSET_SPAN_MAP
+    csv_path = spectrum_csv_path(sample)
+    lut = lut or vco_lut.VcoLUT(sample=sample)
+    cfg = lut.update_config(spectrum_cfg(f_vco, out_f_max), f_vco, kvco)
+    op = lut.predict(cfg, f_vco)
+    _, total_div = calculate_div_factor(cfg)
+    curve_v, curve_f = lut.curve(cfg)
+    setting = dict(lut_csv=lut.path.name, f_target=f_vco, kvco_target=kvco, set_div_freq=cfg["set_div_freq"],
+                   total_div=total_div, n_averages=n_averages, offset_min=min(offset_span_map),
+                   offset_max=max(offset_span_map))
+    setting.update(vco_lut.vco_codes(cfg))
+    setting.update(op)
+
+
+    pll = pll_setup.open_pll(cfg)
+    pll.close()  # closes the FPGA ports only; the config stays on the chip
+    logging.info("VCO codes for %.1f MHz loaded; output / %d (set_div_freq %d). Vctrl comes from the "
+                 "potentiometer (no SMU).", f_vco / 1e6, total_div, cfg["set_div_freq"])
+
+    rows = []
+    spectrum = open_spectrum()
+    try:
+        for vctrl_set in vctrls:
+            answer = ask_vctrl(vctrl_set)
+            if answer == "stop":
+                break
+            f_pred = float(np.interp(vctrl_set, curve_v, curve_f))
+            row = dict(setting, time=datetime.now().isoformat(timespec="seconds"), vctrl_set=vctrl_set,
+                       f_vco_pred=f_pred)
+            if answer == "skip":
+                row["status"] = "skipped"
+                rows.append(row)
+                append_rows(csv_path, SPECTRUM_COLUMNS, [row])
+                continue
+            row["vctrl_meas"] = answer
+            logging.info("Vctrl %.3f V (read %.4f V): lookup table %.2f MHz -> %.4f MHz expected on the pad",
+                         vctrl_set, answer, f_pred / 1e6, f_pred / total_div / 1e6)
+            time.sleep(settle)
+            try:
+                measure_pad_spectrum(spectrum, f_pred / total_div, total_div, row, csv_path, n_averages,
+                                     offset_span_map)
+            except BaseException:
+                row["status"] = "error"
+                append_rows(csv_path, SPECTRUM_COLUMNS, [row])
+                raise
+            rows.append(row)
+            append_rows(csv_path, SPECTRUM_COLUMNS, [row])
+    finally:
+        spectrum.close()
+        logging.info("Turn the potentiometer down / disconnect the battery.")
+
+    logging.info("Manual Vctrl sweep -> %s (traces: %s)", csv_path, trace_csv_path(csv_path).name)
+    for r in rows:
+        if r["status"] == "ok":
+            logging.info("  Vctrl %.3f V: VCO %.2f MHz, %.3f ps", r["vctrl_set"], r["f_vco_meas"] / 1e6,
+                         r["time_jitter_ps"])
+        else:
+            logging.info("  Vctrl %.3f V: %s", r["vctrl_set"], r["status"])
+    return csv_path
+
+
 def spectrum_csv_path(sample):
     vco_lut.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     return vco_lut.RESULTS_DIR / "vco_spectrum_{}_{}.csv".format(
@@ -367,7 +475,7 @@ def start_log_file():
 def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
-    with iclab_session(parser.get_credentials()):
+    with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # Set the VCO and point the analyzer at it, then leave it for manual evaluation
         # view_vco(1.0e9, 1.0e9, sample="S5")
 
@@ -376,7 +484,10 @@ def main():
         # plotted in vco_spectrum.ipynb
         # capture_spectrum(1.0e9, 1.0e9, sample="S5", center=31e6, span=5e6, averages=20)
         # capture_spectrum(2.4e9, 1.0e9, sample="S5", span=15e6, averages=20)  # / 64 -> 37.5 MHz
-        capture_spectrum(2.4e9, 5.0e9, sample="S5", span=15e6, averages=20)  # |Kvco| ~5 GHz/V
+        # capture_spectrum(2.4e9, 5.0e9, sample="S5", span=15e6, averages=20)  # |Kvco| ~5 GHz/V
+
+        # Vctrl from a battery + potentiometer (no SMU): codes for 2.4 GHz, waits for you at every Vctrl step
+        manual_vctrl_sweep(2.4e9, 1.0e9, sample="S5", vctrls=MANUAL_VCTRLS)
 
         # One setting: 1 GHz with |Kvco| ~1 GHz/V from the S5 table
         # measure_vco_spectrum(1.0e9, 1.0e9, sample="S5")

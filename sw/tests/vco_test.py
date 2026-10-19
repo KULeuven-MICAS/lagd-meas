@@ -173,7 +173,7 @@ def start_log_file():
 def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
-    with iclab_session(parser.get_credentials()):
+    with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # Equipment checks for the VCO measurements (lib/vco_measure.py)
         # vco_measure.test_function_generator(freqs=(1e6,))  # 1 MHz, 0 -> 0.75 V square
         # vco_measure.test_fg_to_scope()

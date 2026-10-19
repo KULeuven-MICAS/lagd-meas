@@ -310,7 +310,7 @@ def hold_config(cfg, f_ref, supply=None, select_pll=False, lock_timeout=3.0):
 def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
-    with iclab_session(parser.get_credentials()):
+    with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
         # TRY_CFG on TRY_F_REF, held until Enter
         hold_config(TRY_CFG, TRY_F_REF)

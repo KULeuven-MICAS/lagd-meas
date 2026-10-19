@@ -9,7 +9,10 @@
 # (lib/vco_lut.py, VcoLUT) for f_vco and a requested |Kvco|; the loop is closed on a reference of
 # f_vco / FB_DIV from the 33600A, the PLL supply is the 2450 SMU (current and power recorded). The output pad
 # (VCO / 2**set_div_freq) is measured on the R&S FSV with lib/pll_spectrum.measure_output: phase-noise markers,
-# the full phase-noise curve with spur detection, an averaged spectrum, and the RMS jitter from both.
+# the full phase-noise curve with spur detection, an averaged spectrum, and the RMS jitter from both. With
+# phase_noise_mode=True the same lock is then also measured in the analyzer's Phase Noise application (FSW K40,
+# pll_spectrum.measure_phase_noise_mode: L_pnm_*, *_pnm_* columns, "L_pnmode" / "pnm_spur" traces), and the methods
+# are logged side by side.
 #
 # Results (plotted in sw/tools/notebooks/pll_spectrum_kvco.ipynb):
 #   results/pll/pll_spectrum_kvco_<sample>_<stamp>.csv          one row per setting: codes, lock, L(f), jitter, supply
@@ -18,7 +21,8 @@
 #                                                               (sw/tools/notebooks/pll_spectrum_freq.ipynb)
 #
 # Tests:
-#   measure_pll_kvco(f_vco, kvco, sample)   # one setting; kvco="middle": geometric middle of the possible |Kvco|
+#   measure_pll_kvco(f_vco, kvco, sample)   # one setting; kvco="middle": geometric middle of the possible |Kvco|;
+#                                           # phase_noise_mode=True: also the analyzer's Phase Noise application
 #   kvco_sweep(f_vco, n_kvco, sample)       # measure_pll_kvco for |Kvco| log-spaced over the table's range, one CSV
 #   frequency_sweep(freqs, kvco, sample)   # measure_pll_kvco at several f_vco with the same requested |Kvco|, one CSV
 #
@@ -35,9 +39,9 @@ from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 from sw.lib.pll_command_api import calculate_div_factor
 from sw.lib.pll_settings import CFG_REF8_LOOP, FILTER_FIELDS
-from sw.lib.pll_spectrum import (FB_DIV, OFFSET_SPAN_MAP, OUTPUT_COLUMNS, RBW_SPAN_RATIO,
-                                 offsets_for, pad_divider, RESULTS_DIR, TRACE_FIELDS, append_rows, kvco_target_for,
-                                 measure_output, open_spectrum, trace_csv_path, trace_rows)
+from sw.lib.pll_spectrum import (FB_DIV, OFFSET_SPAN_MAP, OUTPUT_COLUMNS, PNM_COLUMNS, offsets_for, pad_divider,
+                                 RESULTS_DIR, TRACE_FIELDS, append_rows, kvco_target_for, log_method_comparison,
+                                 measure_output, measure_phase_noise_mode, trace_csv_path, trace_rows)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
@@ -46,15 +50,13 @@ LOG_DIR = Path(__file__).resolve().parents[2] / "results" / "logs"
 # Band integrated for every setting, so settings with different pad frequencies (and so different bands, up to
 # pad / OUT_OFFSET_RATIO) can be compared: fits every pad frequency from PAD_F_MAX / 2 = 62.5 MHz up.
 COMMON_BAND = (1e3, 1e7)
-# Live spectrum shown on the analyzer during the pause of measure_pll_kvco(pause=True): carrier +- 1.25 MHz.
-PAUSE_VIEW_SPAN = 2.5e6
 # Frequencies of frequency_sweep (8: one notebook colour each); reference f / 128 = 2.3-31 MHz.
 FREQ_SWEEP = (300e6, 500e6, 750e6, 1e9, 1.5e9, 2e9, 3e9, 4e9)
 
 RESULT_COLUMNS = (["time", "lut_csv", "f_vco", "kvco_request", "kvco_target"] + list(vco_lut.LUT_FIELDS)
                   + list(FILTER_FIELDS) + ["vctrl_pred", "kvco_pred", "kvco_min", "kvco_max", "f_ref",
-                                           "set_div_freq", "total_div", "locked", "locked_after_pause"]
-                  + OUTPUT_COLUMNS + list(pll_setup.SUPPLY_COLUMNS))
+                                           "set_div_freq", "total_div", "locked"]
+                  + OUTPUT_COLUMNS + list(pll_setup.SUPPLY_COLUMNS) + PNM_COLUMNS)
 TRACE_COLUMNS = ["f_vco", "kvco_target"] + TRACE_FIELDS
 
 
@@ -67,14 +69,17 @@ def loop_cfg(f_vco):
 
 def measure_pll_kvco(f_vco=1e9, kvco="middle", sample=None, lut=None, csv_path=None, supply=None,
                      span=5e6, spectrum_averages=20, n_averages=10, offset_span_map=None, lock_timeout=3.0,
-                     pause=False, skip_unlocked=True, common_band=COMMON_BAND):
+                     skip_unlocked=True, common_band=COMMON_BAND, phase_noise_mode=False):
     """Lock the PLL at `f_vco` [Hz] with VCO codes from the lookup table for |Kvco| `kvco` [Hz/V] (or "middle"),
     then measure the output pad with pll_spectrum.measure_output (markers, full curve with spurs, spectrum, jitter).
 
+    `phase_noise_mode`: afterwards, on the same lock, also measure in the analyzer's Phase Noise application
+    (pll_spectrum.measure_phase_noise_mode: spot noise, its jitter, spur list; the PNM_COLUMNS and the "L_pnmode" /
+    "pnm_spur" traces) and log the methods side by side (log_method_comparison). A failure there is recorded
+    (pnm_status "error") without losing the measure_output results; a VISA error stops as everywhere.
+
     `skip_unlocked`: no analyzer measurement when the PLL did not lock (status "not_locked").
     `common_band`: also integrate the jitter over only this band (time_jitter_common_ps / time_jitter_trace_common_ps).
-    `pause`: after the PLL is configured and locked, show the live spectrum and wait for Enter before measuring (e.g.
-    to switch off the PCB 5 V); the lock is read again afterwards and the PLL supply current is measured after it.
     The reference (f_vco / FB_DIV from the 33600A) is started here and turned off at the end; the PLL supply
     `supply` (pll_setup.pll_supply) must already be on. Every connection is closed at the end, also on an error.
     `lut`: the lookup table (vco_lut.VcoLUT); None = the newest table of `sample`.
@@ -108,25 +113,6 @@ def measure_pll_kvco(f_vco=1e9, kvco="middle", sample=None, lut=None, csv_path=N
                      op["kvco_pred"] / 1e6, total_div, f_vco / total_div / 1e6)
         row.update(pll_setup.measure_pll_supply(supply, label="%.1f MHz, |Kvco| %.0f MHz/V" % (
             f_vco / 1e6, op["kvco_pred"] / 1e6)))
-        if pause:
-            # Live spectrum while waiting: carrier +- PAUSE_VIEW_SPAN / 2, continuous sweep, so the effect of switching
-            # off the 5 V shows directly. Closed again after Enter (the measurement starts from a fresh reset).
-            view = open_spectrum()
-            try:
-                view.set_center_frequency(f_vco / total_div)
-                view.set_span(PAUSE_VIEW_SPAN)
-                view.set_bandwidths_for_span(PAUSE_VIEW_SPAN, RBW_SPAN_RATIO)
-                view.set_sweep_mode(continuous=True)
-                view.set_display_update(True)
-                input("PLL configured (%s); the analyzer shows the live spectrum. Switch off the PCB 5 V now, then "
-                      "press Enter to measure..." % ("locked" if locked else "NOT locked"))
-            finally:
-                view.close()
-            lock = pll.read_lock()  # None: no answer from the chip (e.g. its IO is unpowered now)
-            row["locked_after_pause"] = lock
-            logging.info("After the pause: lock bit %s", "no answer" if lock is None else lock)
-            row.update(pll_setup.measure_pll_supply(supply, label="after the pause"))
-
         if not locked and skip_unlocked:
             # No lock: no carrier at f_vco / N either; the analyzer would only measure noise
             logging.warning("Not locked: setting not measured (|Kvco| %.0f MHz/V)", op["kvco_pred"] / 1e6)
@@ -136,6 +122,19 @@ def measure_pll_kvco(f_vco=1e9, kvco="middle", sample=None, lut=None, csv_path=N
         meas, traces = measure_output(f_vco, total_div, offset_span_map, n_averages=n_averages, span=span,
                                       spectrum_averages=spectrum_averages, common_band=common_band)
         row.update(meas)
+
+        if phase_noise_mode and meas["status"] in ("ok", "overload"):
+            try:
+                pnm, pnm_traces = measure_phase_noise_mode(f_vco, total_div, list(offset_span_map),
+                                                           carrier_dbm=meas.get("carrier_dbm"), our_traces=traces)
+                row.update(pnm)
+                traces += pnm_traces
+                log_method_comparison(row, traces)
+            except pyvisa.VisaIOError:
+                raise  # instrument connection lost: stop, outputs off in the finally block
+            except Exception:
+                logging.exception("Phase-noise mode measurement failed; the measure_output results are kept")
+                row["pnm_status"] = "error"
     finally:
         if pll is not None:
             pll.close()
@@ -224,12 +223,13 @@ def start_log_file():
 def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
-    with iclab_session(parser.get_credentials()):
+    with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
         # 1 GHz (ref 7.8125 MHz), |Kvco| in the geometric middle of what the S5 table offers at 1 GHz
         # phase-noise markers + full curve with spur detection, averaged spectrum
-        # pause=True: switch off the PCB 5 V after the PLL is configured, then press Enter
-        measure_pll_kvco(1e9, "middle", sample="S5", pause=True)
+        # phase_noise_mode=True: then also the analyzer's Phase Noise application (FSW K40) on the same lock, the
+        # methods compared side by side in the log
+        measure_pll_kvco(1e9, "middle", sample="S5", phase_noise_mode=True)
 
         # Kvco sweep at 1 GHz: 8 |Kvco| targets log-spaced over the S5 table's range, everything measured per
         # setting, one CSV for sw/tools/notebooks/pll_spectrum_kvco.ipynb (~2 min per setting)

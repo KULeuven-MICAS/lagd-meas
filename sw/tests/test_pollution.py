@@ -133,7 +133,7 @@ def start_log_file():
 def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
-    with iclab_session(parser.get_credentials()):
+    with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # 100 kHz - 200 MHz: all off, + 7.8125 MHz reference (~10 s per state); PLL supply always on
         pollution_sweep()
 

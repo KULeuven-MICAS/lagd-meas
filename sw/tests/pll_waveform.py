@@ -162,7 +162,7 @@ def start_log_file():
 def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
-    with iclab_session(parser.get_credentials()):
+    with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
         # 1 GHz VCO, |Kvco| ~2 GHz/V, old filter (locks over the widest range): pad 1 GHz, 500 MHz ... 7.8 MHz
         waveform_sweep(1e9, dividers=range(8), kvco=2e9, loop_filter=DEFAULT_FILTER, sample="S5")

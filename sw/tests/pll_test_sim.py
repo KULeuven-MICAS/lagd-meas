@@ -149,7 +149,7 @@ def start_log_file():
 def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
-    with iclab_session(parser.get_credentials()):
+    with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
         # Simulated case: 32 MHz reference, VCO 4.096 GHz, codes and loop filter of SIM_CFG
         measure_pll_sim(SIM_CFG, SIM_F_REF, sample="S5")

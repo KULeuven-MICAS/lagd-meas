@@ -425,17 +425,18 @@ if __name__ == "__main__":
     with iclab_session(Parser().get_credentials()):
         fg = pll_setup.start_reference(18.75e6, vpp=1.8, channel=1, load=50)
     try:
-        start_pll_and_config(cfg)
+        with pll_setup.core_in_reset():  # chip's digital core in reset during the measurements: no pollution
+            start_pll_and_config(cfg)
 
-        sweep_random_configurations(n_averages=10, n_configs=5)
+            sweep_random_configurations(n_averages=10, n_configs=5)
 
-        sweep_grid_configurations(
-            sweep_curr=[1, 3, 5, 7],
-            sweep_c1=[0, 2, 5, 7],
-            sweep_c2=[0, 2, 5, 7],
-            sweep_r1=[0, 2, 5, 7],
-            n_averages=10,
-        )
+            sweep_grid_configurations(
+                sweep_curr=[1, 3, 5, 7],
+                sweep_c1=[0, 2, 5, 7],
+                sweep_c2=[0, 2, 5, 7],
+                sweep_r1=[0, 2, 5, 7],
+                n_averages=10,
+            )
     finally:
         # Also on an error (a VISA error stops the sweeps): reference output off, FPGA ports closed. The analyzer is
         # closed by the sweep functions themselves.

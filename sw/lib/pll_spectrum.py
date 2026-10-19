@@ -8,6 +8,8 @@
 # (sw/tests/pll_spectrum_kvco.py, sw/tests/pll_spectrum_div.py). measure_output() does everything after lock:
 # carrier search and check, phase-noise markers (CALC:DELT2:FUNC:PNO:RES?) and the full phase-noise curve from the
 # exported traces of the same sweeps (RMS detector, power averaging) with spur detection, and an averaged spectrum.
+# measure_phase_noise_mode() measures the same pad in the analyzer's Phase Noise application (FSW K40) for a
+# comparison, log_method_comparison() logs the methods side by side.
 #
 # Three points along the output chain (named so in every log line, column and plot):
 #   VCO          f_vco, before any divider;
@@ -20,13 +22,14 @@
 import csv
 import logging
 import math
+import time
 from pathlib import Path
 
 import numpy as np
 
 from sw.lib import vco_measure
 from sw.lib.lab_instruments import instrument as inst
-from sw.lib.lab_instruments.drivers.rohde_schwarz_fsv_spectrum import RohdeSchwarzFSVSpectrum
+from sw.lib.lab_instruments.drivers.rohde_schwarz_fsv_spectrum import PNO_MAX_SPOT_MARKERS, RohdeSchwarzFSVSpectrum
 from sw.lib.pll_util import (calculate_integrated_jitter, integrate_phase_noise, phase_noise_from_traces,
                              split_jitter)
 
@@ -93,6 +96,29 @@ OUTPUT_COLUMNS = (["analyzer_name", "f_out", "f_pll_out", "pll_div", "ext_div", 
 # [dBc/Hz]; "L_noise": the same with the spurs replaced by the local noise floor; "spur": one row per spur,
 # freq = offset of its peak [Hz], level = spur power on the pad [dBc, single sideband].
 TRACE_FIELDS = ["kind", "center", "span", "rbw", "vbw", "averages", "freq", "level_dbm"]
+
+# Phase-noise mode (FSW K40, measure_phase_noise_mode), for a comparison with the marker / full-curve method above:
+# RBW as % of each half decade's start offset, measurement preset (FAST / NORMal / AVERage: averaging per half
+# decade), trace averages over whole sweeps, spur removal off by default (the trace keeps its spurs, as our full curve
+# does; the spur list and the discrete / random jitter split come either way), timeout of one averaged sweep.
+PNM_RBW_PERCENT = 10.0
+PNM_PRESET = "NORMal"
+PNM_AVERAGES = 10
+PNM_SWEEP_TIMEOUT_MS = 900000
+# Columns written by measure_phase_noise_mode (pnm = phase-noise mode), all on the pad:
+#   L_pnm_*:                  spot noise at the OFFSET_SPAN_MAP offsets (at most 5 spot markers: the rest empty);
+#   time_jitter_pnm_ps:       the analyzer's residual RMS jitter over pnm_band (FETC:PNO:RMS?);
+#   time_jitter_pnm_ipn_ps:   from its integrated phase noise (FETC:PNO:IPN?), phase_jitter_pnm_out_mrad likewise;
+#   time_jitter_pnm_trace_ps: our integration (pll_util.integrate_phase_noise) of its trace over pnm_band;
+#   time_jitter_pnm_random_ps / _discrete_ps: its split into noise and spurs; pnm_spurs: its spur list;
+#   time_jitter_trace_pnm_band_ps: our full curve (measure_output) integrated over the same pnm_band.
+PNM_COLUMNS = (["pnm_f_out_meas", "pnm_carrier_dbm", "pnm_band", "pnm_offset_stop", "pnm_rbw_percent", "pnm_preset",
+                "pnm_averages", "pnm_spur_removal", "pnm_spur_threshold_db", "pnm_sweep_s", "time_jitter_pnm_ps",
+                "time_jitter_pnm_ipn_ps", "phase_jitter_pnm_out_mrad", "time_jitter_pnm_trace_ps",
+                "time_jitter_trace_pnm_band_ps",
+                "time_jitter_pnm_random_ps", "time_jitter_pnm_discrete_ps", "pnm_residual_pm", "pnm_residual_fm_hz",
+                "pnm_n_spurs", "pnm_spurs"]
+               + ["L_pnm_{:.0f}".format(f) for f in OFFSET_SPAN_MAP] + ["pnm_status"])
 
 
 def open_spectrum(analyzer="spectrum_analyzer"):
@@ -170,9 +196,8 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
     spectrum = open_spectrum(analyzer)  # reset: default detector and averaging
     row["analyzer_name"] = spectrum.info.name  # which analyzer (meas_setup.yaml)
     try:
-        spectrum.center_on_fundamental(center_freq=f_out, search_span=2.1e3)
+        carrier_dbm = spectrum.center_on_fundamental(center_freq=f_out, search_span=2.1e3)  # peak of its search sweep
         f_meas = float(spectrum.query("FREQ:CENT?").strip())
-        carrier_dbm = spectrum.get_marker_y_value(marker=1)  # peak found by center_on_fundamental
         row.update(f_out_meas=f_meas, f_vco_meas=f_meas * total_div, carrier_dbm=carrier_dbm,
                    n_meas=f_vco / f_meas, divider_ok=int(abs(f_vco / f_meas / total_div - 1) < 1e-3))
         if carrier_dbm < MIN_CARRIER_DBM:
@@ -262,6 +287,111 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
                     "{:.3f}".format(row["time_jitter_trace_common_ps"]) if "time_jitter_trace_common_ps" in row
                     else "-")
     return row, traces
+
+
+def measure_phase_noise_mode(f_vco, total_div, offsets, carrier_dbm=None, averages=PNM_AVERAGES,
+                             preset=PNM_PRESET, rbw_percent=PNM_RBW_PERCENT, spur_removal=False,
+                             spur_threshold_db=SPUR_THRESHOLD_DB, our_traces=None, analyzer="spectrum_analyzer"):
+    """Measure the locked PLL's pad (f_vco / total_div) in the analyzer's Phase Noise application (FSW option K40),
+    for a comparison with measure_output on the same lock. Returns (row, traces).
+
+    The analyzer verifies and tracks the carrier (expected level `carrier_dbm`, e.g. measure_output's; None: 0 dBm),
+    sweeps the offsets from min(offsets) up to f_out / OUT_OFFSET_RATIO (it rounds the stop to a half decade) in one
+    single averaged sweep (`averages` trace averages, `preset`, RBW `rbw_percent` % of the offset), then reads
+    (RohdeSchwarzFSVSpectrum.read_phase_noise) over the band min(offsets)..max(offsets), the band of measure_output,
+    cut at the analyzer's stop offset (pnm_band; `our_traces`, measure_output's traces: their full curve is integrated
+    over the same band too, time_jitter_trace_pnm_band_ps):
+    spot noise at the offsets, its residual jitter, integrated phase noise, spur list with the discrete / random jitter
+    split, and the L(f) trace, which is integrated here too (pll_util.integrate_phase_noise).
+    row: the PNM_COLUMNS values; traces: "L_pnmode" (its L(f) curve, freq = offset) and "pnm_spur" (its spur list,
+    freq = offset, level = dBc), with the TRACE_FIELDS. The analyzer is left in single sweep and closed at the end,
+    also on an error.
+    """
+    offsets = sorted(offsets)
+    f_out = f_vco / total_div
+    spot = offsets[:PNO_MAX_SPOT_MARKERS]
+    row = dict(pnm_rbw_percent=rbw_percent, pnm_preset=preset,
+               pnm_averages=averages, pnm_spur_removal=int(spur_removal),
+               pnm_spur_threshold_db=spur_threshold_db if spur_removal else None, pnm_status="error")
+    spectrum = open_spectrum(analyzer)  # reset: also leaves a previous phase-noise channel
+    try:
+        spectrum.start_phase_noise_mode(f_out, offsets[0], f_out / OUT_OFFSET_RATIO,
+                                        carrier_level_dbm=0.0 if carrier_dbm is None else round(carrier_dbm),
+                                        tracking=True, rbw_percent=rbw_percent, preset=preset, averages=averages,
+                                        spur_removal=spur_removal, spur_threshold_db=spur_threshold_db,
+                                        continuous=False)
+        spectrum.set_phase_noise_spot_offsets(spot)
+        # The analyzer rounds the stop offset to a half decade (125 MHz pad: 50 MHz -> 30 MHz): integrate only up to
+        # where it measured
+        row["pnm_offset_stop"] = float(spectrum.query("FREQ:STOP?").strip())
+        band = (offsets[0], min(offsets[-1], row["pnm_offset_stop"]))
+        row["pnm_band"] = "{:g}-{:g}".format(*band)
+        t0 = time.time()
+        spectrum.trigger_single_sweep(wait=True, timeout_ms=PNM_SWEEP_TIMEOUT_MS)
+        row["pnm_sweep_s"] = time.time() - t0
+        res = spectrum.read_phase_noise(spot, band=band)
+    finally:
+        # Single sweep: in continuous sweep the phase-noise application keeps searching for the carrier once the
+        # reference is switched off at the end, switching its input relays all the time
+        spectrum.set_sweep_mode(continuous=False)
+        spectrum.close()
+
+    f_meas = res["f_carrier"]
+    o, l = np.asarray(res["offset"], dtype=float), np.asarray(res["level"], dtype=float)
+    keep = (o >= band[0]) & (o <= band[1])
+    row.update(pnm_f_out_meas=f_meas, pnm_carrier_dbm=res["carrier_dbm"], time_jitter_pnm_ps=res["jitter_s"] * 1e12,
+               time_jitter_pnm_ipn_ps=res["rms_phase_rad"] / (2 * math.pi * f_meas) * 1e12,
+               phase_jitter_pnm_out_mrad=res["rms_phase_rad"] * 1e3,
+               time_jitter_pnm_random_ps=res["jitter_random_s"] * 1e12,
+               time_jitter_pnm_discrete_ps=res["jitter_discrete_s"] * 1e12, pnm_residual_pm=res["residual_pm"],
+               pnm_residual_fm_hz=res["residual_fm_hz"], pnm_n_spurs=len(res["spurs"]),
+               pnm_spurs="; ".join("{:.0f} Hz: {:.1f} dBc".format(f, p) for f, p in res["spurs"]), pnm_status="ok")
+    if keep.sum() > 1:
+        row["time_jitter_pnm_trace_ps"] = integrate_phase_noise(f_meas, o[keep], l[keep])[0] * 1e12
+    curve = next((t for t in our_traces or [] if t["kind"] == "L_trace"), None)
+    if curve is not None:
+        o_c, l_c = np.asarray(curve["freq"], dtype=float), np.asarray(curve["level"], dtype=float)
+        keep_c = (o_c >= band[0]) & (o_c <= band[1])
+        if keep_c.sum() > 1:
+            row["time_jitter_trace_pnm_band_ps"] = integrate_phase_noise(curve["center"], o_c[keep_c],
+                                                                         l_c[keep_c])[0] * 1e12
+    for f, v in res["spot"].items():
+        row["L_pnm_{:.0f}".format(f)] = v
+    traces = [dict(kind="L_pnmode", center=f_meas, span=None, rbw=None, averages=averages, freq=list(o), level=list(l)),
+              dict(kind="pnm_spur", center=f_meas, span=None, rbw=None, averages=averages,
+                   freq=[f for f, _ in res["spurs"]], level=[p for _, p in res["spurs"]])]
+    logger.info("Phase-noise mode: carrier %.6f MHz, %.1f dBm; one sweep of %.0f s (%s, %d averages, RBW %g %%, spur "
+                "removal %s); RMS jitter %g-%g Hz %.3f ps = %.3f ps random + %.3f ps discrete (%d spurs)",
+                f_meas / 1e6, res["carrier_dbm"], row["pnm_sweep_s"], preset, averages, rbw_percent,
+                "on" if spur_removal else "off", band[0], band[1], row["time_jitter_pnm_ps"],
+                row["time_jitter_pnm_random_ps"], row["time_jitter_pnm_discrete_ps"], row["pnm_n_spurs"])
+    return row, traces
+
+
+def log_method_comparison(row, traces):
+    """Log the marker method, the full curve (measure_output) and the phase-noise mode (measure_phase_noise_mode) side
+    by side: L(f) per offset on the pad and the RMS jitter of each, from a row with the OUTPUT_COLUMNS and PNM_COLUMNS
+    and the traces of both (the "L_trace" curve)."""
+    curve = next((t for t in traces if t["kind"] == "L_trace"), None)
+    logger.info("Phase noise on the pad [dBc/Hz]:  offset    markers  full curve  phase-noise mode")
+    for f in OFFSET_SPAN_MAP:
+        marker, pnm = row.get("L_out_{:.0f}".format(f)), row.get("L_pnm_{:.0f}".format(f))
+        if marker is None and pnm is None:
+            continue
+        full = float(np.interp(f, curve["freq"], curve["level"])) if curve and len(curve["freq"]) else None
+        logger.info("  %10g Hz  %8s  %10s  %16s", f, *("-" if v is None else "{:.1f}".format(v)
+                                                         for v in (marker, full, pnm)))
+
+    def ps(key):
+        return "-" if row.get(key) is None else "{:.3f} ps".format(row[key])
+
+    logger.info("RMS jitter on the pad: markers %s; full curve %s (noise %s + spurs %s); phase-noise mode %s (random "
+                "%s + discrete %s; from its IPN %s, its trace integrated by us %s)", ps("time_jitter_ps"),
+                ps("time_jitter_trace_ps"), ps("time_jitter_noise_ps"), ps("time_jitter_spur_ps"),
+                ps("time_jitter_pnm_ps"), ps("time_jitter_pnm_random_ps"), ps("time_jitter_pnm_discrete_ps"),
+                ps("time_jitter_pnm_ipn_ps"), ps("time_jitter_pnm_trace_ps"))
+    logger.info("Over the same band %s Hz: full curve %s, phase-noise mode %s", row.get("pnm_band", "-"),
+                ps("time_jitter_trace_pnm_band_ps"), ps("time_jitter_pnm_ps"))
 
 
 def trace_rows(traces, **key):

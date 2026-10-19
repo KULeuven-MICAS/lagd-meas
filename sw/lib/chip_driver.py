@@ -150,6 +150,14 @@ class ChipDriver(PortDriver):
         time.sleep(hold)
         self.config_clk_rst(chip_clk_en=chip_clk_en, chip_rstn=1)
 
+    def hold_reset(self, held: bool, chip_clk_en: int = 1) -> None:
+        """Hold the chip's core in reset (held=True: reset_n=0) or release it (held=False: reset_n=1).
+
+        Unlike reset_chip, the state stays until the next call (the FPGA keeps driving it), e.g. to compare
+        an analog measurement with the core in reset and running.
+        """
+        self.config_clk_rst(chip_clk_en=chip_clk_en, chip_rstn=0 if held else 1)
+
     def write_mem(self, addr: int, data_words: Union[int, List[int]]) -> None:
         """Single or burst memory write. data_words: int or list of ints.
 

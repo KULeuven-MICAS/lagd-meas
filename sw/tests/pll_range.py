@@ -220,7 +220,7 @@ def start_log_file():
 def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
-    with iclab_session(parser.get_credentials()):
+    with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
         # Debug of a failed point of the range sweeps of 2026-10-13: ref 22.387 MHz -> VCO 2865.6 MHz
         # (REF_SWEEP[27]). At |Kvco| ~2 GHz/V the table picks coarse 3, min 0, max 0 (Vctrl pred 0.521 V,

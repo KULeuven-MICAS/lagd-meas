@@ -7,7 +7,8 @@
 #
 # Repeated measurements of the PLL output pad on a spectrum analyzer, to compare analyzers (FSV / FSW43) and check that
 # two measurements of the same signal agree. The PLL is NOT touched here: program it first with tests/pll_manual.py
-# (keep that script running, or let it quit: the config stays on the chip) and set the supply and reference by hand.
+# and keep that script running: it holds the chip core in reset (pll_setup.core_in_reset; it releases it when it quits)
+# and set the supply and reference by hand.
 # The PLL settings (VCO frequency, divider) are taken from pll_manual.CFG / F_REF, so the carrier search and the
 # divider check use the config that is on the chip.
 #

@@ -31,6 +31,10 @@ REF_LEVEL_MARGIN_DB = 10.0
 # STATus:QUEStionable:POWer bits (FSV / FSW): 0 = RF overload (OVLD), 2 = IF overload (IFOVL)
 STAT_POW_RF_OVERLOAD = 1 << 0
 STAT_POW_IF_OVERLOAD = 1 << 2
+# Phase Noise application (FSW option K40): name of the channel start_phase_noise_mode creates, and how many user
+# spot-noise markers it has.
+PNO_CHANNEL_NAME = 'Phase Noise'
+PNO_MAX_SPOT_MARKERS = 5
 
 
 class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
@@ -80,6 +84,11 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
             center_freq: Coarse estimate of the fundamental frequency (Hz).
             search_span: The span used to search for the exact peak (Hz).
             ref_margin_db: Reference level above the carrier peak (dB).
+
+        Returns:
+            The carrier peak level (dBm) of the search sweep. Use this, not a marker read afterwards: after the move
+            to center (no new sweep) the FSW43 read the marker beside the carrier at 100-125 MHz (-13..-55 dBm for a
+            -1 dBm carrier, 2026-10-19).
         """
         logger.info(f"[{self.info.name}] Centering on fundamental frequency near {center_freq} Hz...")
 
@@ -108,6 +117,7 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         self.marker_to_center(marker=1)
         logger.info(f"[{self.info.name}] Carrier peak {peak_dbm:.1f} dBm -> reference level "
                     f"{math.ceil(peak_dbm + ref_margin_db):.0f} dBm, RF attenuation {self.get_attenuation():g} dB")
+        return peak_dbm
 
     def set_attenuation_auto(self):
         """RF attenuation coupled to the reference level (the analyzer picks it so the reference level does not
@@ -341,6 +351,14 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
                 logger.info(f"[{self.info.name}] Acquiring {averages} sweeps at {required_span} Hz span...")
                 self.trigger_single_sweep(wait=True)
                 current_span = required_span
+                # Reference of the phase-noise marker: marker 1 on the carrier of this sweep, and the function switched
+                # off and on so it takes its (fixed) reference level from there. It takes the reference when it is
+                # switched on; at the start above, after center_on_fundamental's move to center without a new sweep,
+                # the FSW43 read marker 1 beside the carrier at 100-125 MHz (-55 instead of -1 dBm), so every marker
+                # read up to ~50 dB too high (2026-10-19).
+                self.peak_search(marker=1)
+                self.enable_phase_noise_marker(marker=2, state=False)
+                self.enable_phase_noise_marker(marker=2, state=True)
                 if traces is not None:
                     traces.append(self.get_trace(1))
 
@@ -357,3 +375,162 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
             logger.info(f"[{self.info.name}] Phase noise at {offset:g} Hz: {pno_val:.1f} dBc/Hz")
 
         return results
+
+    # --- Phase Noise application (FSW option K40) ---
+    # A separate measurement channel: the analyzer finds the carrier, sweeps the offset range in half decades with an
+    # RBW proportional to the offset, and shows L(f) [dBc/Hz] against the offset on a log axis.
+
+    def has_phase_noise_option(self) -> bool:
+        """True when the analyzer has the Phase Noise application (K40 in *OPT?)."""
+        options = self.query('*OPT?').strip().upper().split(',')
+        return any('K40' in o for o in options)
+
+    def start_phase_noise_mode(self, f_carrier: float, offset_start: float, offset_stop: float,
+                               carrier_level_dbm: float = 0.0, freq_tolerance_hz: float = 10e3,
+                               level_tolerance_db: float = 10.0, tracking: bool = True,
+                               rbw_percent: float = 10.0, preset: str = 'NORMal', averages: int = None,
+                               spur_removal: bool = False, spur_threshold_db: float = None,
+                               continuous: bool = True):
+        """
+        Switch to the Phase Noise application (channel PNO_CHANNEL_NAME, created when missing) and set it up.
+        Commands from the R&S FSW-K40 user manual (doc/FSW_K40_Phase_Noise_UserManual_en_31.pdf, chapter 8).
+
+        The analyzer checks the carrier against the expected frequency and level (verification, within the
+        tolerances) and, with `tracking`, follows its frequency and level drift during the measurement.
+
+        Args:
+            f_carrier: Expected carrier frequency (Hz).
+            offset_start, offset_stop: Offset range of the L(f) curve (Hz).
+            carrier_level_dbm: Expected carrier level (dBm).
+            freq_tolerance_hz: How far the carrier may be from f_carrier (Hz).
+            level_tolerance_db: How far the carrier level may be from carrier_level_dbm (dB).
+            tracking: Follow the carrier's frequency and level during the sweep.
+            rbw_percent: RBW as a percentage of the start offset of each half decade (1..100 %, LIST:BWID:RAT).
+            preset: Measurement configuration (SWE:MODE): 'FAST', 'NORMal' (default) or 'AVERage' (best quality);
+                    sets the averaging per half decade.
+            averages: Trace averaging over whole sweeps (SWE:COUN; a moving average in continuous sweep); None
+                      leaves the analyzer's default (200 after a reset).
+            spur_removal: Remove the spurs from all traces (SPUR:SUPP): points more than `spur_threshold_db` above
+                          the analyzer's sliding-median trace are replaced by the median. The spurs stay listed
+                          (spur list, read_phase_noise) and drawn as vertical lines; the trace data is spur-free.
+            spur_threshold_db: Spur threshold above the median trace (0..50 dB, SPUR:THR; 0 after a reset); None
+                               leaves it as it is. Only set with spur_removal (the analyzer refuses it otherwise).
+            continuous: Continuous sweep (live on the screen) or single sweeps (trigger_single_sweep).
+        """
+        if not self.has_phase_noise_option():
+            raise RuntimeError(f"{self.info.name} has no Phase Noise application (K40 not in *OPT?)")
+        if PNO_CHANNEL_NAME in self.query('INST:LIST?'):
+            self.write(f"INST:SEL '{PNO_CHANNEL_NAME}'")
+        else:
+            self.write(f"INST:CRE:NEW PNOise, '{PNO_CHANNEL_NAME}'")
+        # Expected carrier: frequency and level, verified within the tolerances, tracked during the sweep
+        self.write(f'FREQ:CENT {f_carrier}')
+        self.write('FREQ:VER:STAT ON')
+        self.write(f'FREQ:VER:TOL:ABS {freq_tolerance_hz}')
+        self.write(f'POW:RLEV {carrier_level_dbm}')
+        self.write('POW:RLEV:VER:STAT ON')
+        self.write(f'POW:RLEV:VER:TOL {level_tolerance_db}')
+        self.write(f'FREQ:TRAC {"ON" if tracking else "OFF"}')
+        self.write(f'POW:TRAC {"ON" if tracking else "OFF"}')
+        # Offset range and RBW
+        self.write(f'FREQ:STAR {offset_start}')
+        self.write(f'FREQ:STOP {offset_stop}')
+        self.write(f'LIST:BWID:RAT {rbw_percent}')
+        # Averaging: preset per half decade, optionally trace averaging over sweeps
+        self.write(f'SWE:MODE {preset}')
+        if averages is not None:
+            self.write(f'SWE:COUN {int(averages)}')
+        # Spur removal (all traces); the threshold is only available while the removal is on (else -200, "Function
+        # not available")
+        self.write(f'SPUR:SUPP {"ON" if spur_removal else "OFF"}')
+        if spur_removal and spur_threshold_db is not None:
+            self.write(f'SPUR:THR {spur_threshold_db}')
+        self.set_sweep_mode(continuous=continuous)
+        spurs = f"on, threshold {self.query('SPUR:THR?').strip()} dB" if spur_removal else "off"
+        logger.info(f"[{self.info.name}] Phase noise mode: carrier {f_carrier / 1e6:.4f} MHz +- {freq_tolerance_hz:g} "
+                    f"Hz, {carrier_level_dbm:g} dBm +- {level_tolerance_db:g} dB, tracking "
+                    f"{'on' if tracking else 'off'}; offsets {offset_start:g}-{offset_stop:g} Hz, RBW "
+                    f"{rbw_percent:g} % of the offset, preset {preset}, trace averages "
+                    f"{self.query('SWE:COUN?').strip()}; spur removal {spurs}; "
+                    f"{'continuous' if continuous else 'single'} sweep")
+
+    def add_phase_noise_window(self, window_type: str, beside: str = '1', direction: str = 'RIGHt') -> str:
+        """Add a result display to the phase-noise channel, next to window `beside`, e.g. 'SPURs' (spur list),
+        'SNOise' (spot noise table), 'RNOise' (residual noise table), 'SRESults' (sweep result list), 'SPECtrum'
+        (spectrum monitor); `direction` LEFT | RIGHt | ABOVe | BELow. Returns the new window's name."""
+        return self.query(f"LAY:ADD? '{beside}',{direction},{window_type}").strip()
+
+    def set_phase_noise_spot_offsets(self, offsets: List[float]):
+        """User spot-noise markers at `offsets` (Hz), at most PNO_MAX_SPOT_MARKERS (shown on the screen, read with
+        read_phase_noise); the other custom markers are switched off."""
+        if len(offsets) > PNO_MAX_SPOT_MARKERS:
+            raise ValueError(f"At most {PNO_MAX_SPOT_MARKERS} spot-noise offsets, got {len(offsets)}")
+        for m in range(1, PNO_MAX_SPOT_MARKERS + 1):
+            if m <= len(offsets):
+                self.write(f'CALC:SNO{m}:STAT ON')
+                self.write(f'CALC:SNO{m}:X {offsets[m - 1]}')
+            else:
+                self.write(f'CALC:SNO{m}:STAT OFF')
+
+    def read_phase_noise(self, offsets: List[float], band: List[float] = None) -> Dict:
+        """
+        Results of the last phase-noise sweep (run trigger_single_sweep first in single-sweep mode).
+
+        Args:
+            offsets: The offsets of set_phase_noise_spot_offsets, in the same order (Hz).
+            band: (start, stop) integration range of the residual noise (Hz); None: the whole measurement range.
+
+        Returns:
+            Dictionary with
+              'f_carrier', 'carrier_dbm': carrier frequency (Hz) and level (dBm) as measured;
+              'spot': {offset: L [dBc/Hz]} of the spot-noise markers;
+              'band': the integration range (None: the measurement range);
+              'integrated_dbc': integrated phase noise over the band (dBc), 'rms_phase_rad' derived from it
+                                (sqrt(2 x 10^(dBc/10)), double sideband);
+              'jitter_s': residual RMS jitter over the band (s), as the analyzer computes it;
+              'residual_pm', 'residual_fm_hz': residual PM (as the analyzer reports it) and FM (Hz);
+              'spurs': the analyzer's spur list, [(offset [Hz], level [dBc]), ...];
+              'jitter_discrete_s': RMS of the spurs' jitter (s), 'jitter_random_s': sqrt(jitter^2 - discrete^2) (s);
+              'offset' (Hz) / 'level' (dBc/Hz): the L(f) curve of trace 1 (spur-free with spur removal on).
+        """
+        result = {'f_carrier': float(self.query('FETC:PNO:MEAS:FREQ?').strip()),
+                  'carrier_dbm': float(self.query('FETC:PNO:MEAS:LEV?').strip())}
+        result['spot'] = {offset: float(self.query(f'CALC:SNO{m}:Y?').strip())
+                          for m, offset in enumerate(offsets, 1)}
+        if band is None:
+            self.write('CALC:EVAL OFF')  # residual noise over the whole measurement range
+        else:
+            self.write('CALC:EVAL ON')
+            self.write(f'CALC:EVAL:STAR {band[0]}')
+            self.write(f'CALC:EVAL:STOP {band[1]}')
+        result['band'] = band
+        result['integrated_dbc'] = float(self.query('FETC:PNO:IPN?').strip())
+        result['rms_phase_rad'] = math.sqrt(2 * 10 ** (result['integrated_dbc'] / 10))
+        result['jitter_s'] = float(self.query('FETC:PNO:RMS?').strip())
+        result['residual_pm'] = float(self.query('FETC:PNO:RPM?').strip())
+        result['residual_fm_hz'] = float(self.query('FETC:PNO:RFM?').strip())
+        spurs = [float(v) for v in self.query('FETC:PNO:SPUR?').strip().split(',') if v.strip()]
+        result['spurs'] = list(zip(spurs[0::2], spurs[1::2]))  # offset / level pairs
+        result['jitter_discrete_s'] = float(self.query('FETC:PNO:SPUR:DISC?').strip())
+        result['jitter_random_s'] = float(self.query('FETC:PNO:SPUR:RAND?').strip())
+        self.write('FORM ASC')
+        xy = [float(v) for v in self.query('TRAC:DATA? TRACE1').strip().split(',')]
+        result['offset'], result['level'] = xy[0::2], xy[1::2]  # offset / level pairs
+        return result
+
+    def list_scpi_commands(self, contains: str = '', timeout_ms: int = 60000) -> List[str]:
+        """The SCPI headers the analyzer accepts in the active channel (SYST:HELP:HEAD?), only those containing
+        `contains` (case-insensitive), e.g. list_scpi_commands('SNO') in the phase-noise channel."""
+        original_timeout = self.tool.timeout
+        self.tool.timeout = timeout_ms  # the full list is long
+        try:
+            self.tool.write('SYST:HELP:HEAD?')
+            # read_raw: up to the end of the message (the list is one header per line: query() stops at the first)
+            headers = self.tool.read_raw().decode('ascii', errors='replace').replace('\r', '').split('\n')
+        finally:
+            self.tool.timeout = original_timeout
+        return [h.strip() for h in headers if h.strip() and contains.upper() in h.upper()]
+
+    def stop_phase_noise_mode(self):
+        """Back to the spectrum channel (the phase-noise channel stays until the next reset)."""
+        self.write('INST:SEL SAN')

@@ -4,13 +4,15 @@
 
 # Author: Willem Vandesteene
 
-# Connect to the PLL controller and load a configuration with a silicon readback check; the PLL reference clock
+# Connect to the PLL controller and load a configuration with a silicon readback check, with the chip's digital core
+# held in reset during measurements (core_in_reset); the PLL reference clock
 # (start_reference) and the PLL supply with its current measurement (pll_supply, measure_pll_supply).
 # Shared by sw/tests/pll_test.py and the VCO measurement code (sw/lib/vco_measure.py, sw/lib/vco_lut.py).
 
 import contextlib
 import logging
 
+from sw.lib.chip_driver import ChipDriver
 from sw.lib.pll_driver import PllDriver
 from sw.lib.pll_command_api import OP_WRITEBACK, STRB_HZ, calculate_div_factor, header, pack_pll_cfg
 
@@ -19,6 +21,9 @@ logger = logging.getLogger(__name__)
 # Device files for the PLL write/read ports (8-bit Xillybus stream).
 WRITE_DEV = "/dev/xillybus_write_8"
 READ_DEV = "/dev/xillybus_read_8"
+# Device files for the chip write/read ports (32-bit, as in chip_test.py), for core_in_reset.
+CHIP_WRITE_DEV = "/dev/xillybus_write_32"
+CHIP_READ_DEV = "/dev/xillybus_read_32"
 
 
 def connect(write_dev=WRITE_DEV, read_dev=READ_DEV):
@@ -39,6 +44,7 @@ def load_config(pll, cfg):
 
     Sets the default strobe rate, resets the registers, selects the reference as the SoC clock, loads
     the config with the FPGA echo check and reads it back out of the silicon. Returns the config word.
+    Measure inside `with core_in_reset():` so the chip's digital core does not pollute the measurement.
     """
     pll.set_strb_hz(STRB_HZ)
     pll.reset()
@@ -54,6 +60,34 @@ def load_config(pll, cfg):
     logger.info("readback = 0x%012X", readback)
     assert readback == word
     return word
+
+
+def open_chip():
+    """Open the chip ports (ChipDriver on CHIP_WRITE_DEV / CHIP_READ_DEV); chip.close() closes them."""
+    chip = ChipDriver(CHIP_WRITE_DEV, CHIP_READ_DEV)
+    chip.open()
+    return chip
+
+
+@contextlib.contextmanager
+def core_in_reset():
+    """Hold the chip's digital core in reset for the duration of the with-block: a running core pollutes the
+    analog (PLL / VCO) measurements. Yields the open ChipDriver (chip.hold_reset(False) releases the core).
+
+    The chip ports stay open until the block ends: closing them resets the FPGA chip controller, which releases
+    the core reset, so the core runs again after the block (and after the script).
+
+        with pll_setup.core_in_reset():
+            ...measurements...
+    """
+    chip = open_chip()
+    try:
+        chip.hold_reset(True)
+        logger.info("Chip digital core held in reset (chip ports open until the end of the measurement)")
+        yield chip
+    finally:
+        chip.close()  # the FPGA chip controller resets: the core runs again
+        logger.info("Chip ports closed: the digital core runs again")
 
 
 def open_pll(cfg):

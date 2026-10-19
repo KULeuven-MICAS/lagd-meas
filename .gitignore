@@ -19,3 +19,7 @@ config.local.ini
 openising/**/run_*/**
 **.pkl
 **.out
+
+
+# Put pdf documentation of instruments here
+doc/ 
