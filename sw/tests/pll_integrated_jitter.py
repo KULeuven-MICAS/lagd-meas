@@ -328,9 +328,9 @@ def sweep_random_configurations(n_averages: int = 10, n_configs: int = 25, suppl
                 writer.writerow([curr, c1, c2, r1, "ERROR", "ERROR"] + supply_vals)
                 f.flush()
 
-    logging.info("Sweep complete!")
+    logging.info("Sweep complete")
 
-def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, sweep_r1: list, n_averages: int = 10,
+def sweep_grid_configurations(cfg, sweep_curr: list, sweep_c1: list, sweep_c2: list, sweep_r1: list, n_averages: int = 10,
                               supply=None):
     """
     Perform a grid sweep of specific PLL filter configurations and measure integrated jitter.
@@ -365,9 +365,8 @@ def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, 
             logging.info(f"[{idx}/{n_configs}] Testing cfg: current={curr}, c1={c1}, c2={c2}, r1={r1}")
 
             # Apply configuration
-            cfg = CFG_COARSE2.copy()
+            cfg = cfg.copy()
             cfg.update(
-                set_div_freq=0b110,
                 pll_clk_o_en=1,
                 set_current=curr,
                 set_c1=c1,
@@ -406,12 +405,15 @@ def sweep_grid_configurations(sweep_curr: list, sweep_c1: list, sweep_c2: list, 
                 writer.writerow([curr, c1, c2, r1, "ERROR", "ERROR"] + supply_vals)
                 f.flush()
 
-    logging.info("Grid sweep complete!")
+    logging.info("Grid sweep complete")
 
 if __name__ == "__main__":
-    cfg = CFG_COARSE2.copy()
+    cfg = CFG_COARSE0.copy()
     cfg.update(
-            set_div_freq=0b110,
+            vco_tune_coarse=0b0000,
+            vco_current_max=0b1000,
+            vco_current_min=0b1000,
+            set_div_freq=0b111,
             pll_clk_o_en=1,
             set_current=0b011,
             set_c1=0b011,
@@ -419,22 +421,23 @@ if __name__ == "__main__":
             set_r1=0b011,
     )
 
-    # Reference clock: 18.75 MHz (Fvco = 128 * Fref = 2.4 GHz -> 37.5 MHz on the pad with set_div_freq /64),
+    # Reference clock: 37.5 MHz (Fvco = 128 * Fref = 4.8 GHz -> 37.5 MHz on the pad with set_div_freq /128),
     # 0 -> 1.8 V square, 50 % duty, 50 Ohm load. Stays on for the whole run, off when the generator is closed.
     # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN.
     with iclab_session(Parser().get_credentials()):
-        fg = pll_setup.start_reference(18.75e6, vpp=1.8, channel=1, load=50)
+        fg = pll_setup.start_reference(37.5e6, vpp=1.8, channel=1, load=50)
     try:
         with pll_setup.core_in_reset():  # chip's digital core in reset during the measurements: no pollution
             start_pll_and_config(cfg)
 
-            sweep_random_configurations(n_averages=10, n_configs=5)
+            # sweep_random_configurations(n_averages=10, n_configs=5)
 
             sweep_grid_configurations(
-                sweep_curr=[1, 3, 5, 7],
-                sweep_c1=[0, 2, 5, 7],
-                sweep_c2=[0, 2, 5, 7],
-                sweep_r1=[0, 2, 5, 7],
+                cfg=cfg,
+                sweep_curr=[7],
+                sweep_c1=[0],
+                sweep_c2=[0, 1],
+                sweep_r1=[6, 7],
                 n_averages=10,
             )
     finally:

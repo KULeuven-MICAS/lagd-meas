@@ -8,7 +8,7 @@
 
 import numpy as np
 
-def     calculate_integrated_jitter(fc, offsets, L_f):
+def calculate_integrated_jitter(fc, offsets, L_f):
     """
     Calculates the integrated RMS jitter from discrete phase noise measurements.
 
