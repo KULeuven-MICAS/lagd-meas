@@ -42,12 +42,11 @@ openising/**/run_*
 
 # Maxcut
 !openising/ISSCC_tests/Maxcut_experiment/**/maxcut_raw_energies_deltah.csv
-!openising/ISSCC_tests/Maxcut_experiment/pm1d_100_1it/boxplot_1it.svg
-!openising/ISSCC_tests/Maxcut_experiment/pm1d_100/boxplot.svg
+!openising/ISSCC_tests/Maxcut_experiment/boxplot**.svg
 
 # MIMO
 !openising/ISSCC_tests/MIMO_experiment/model_6/**.csv
 !openising/ISSCC_tests/MIMO_experiment/model_6/ans.pkl
 
 # Annealing runs
-!openising/biqmac_sweep.csv
+!openising/ISSCC_tests/biqmac_sweep.csv
