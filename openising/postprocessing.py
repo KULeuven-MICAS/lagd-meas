@@ -229,7 +229,7 @@ def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxpl
     for median in bplot["medians"]:
         median.set_color("black")
     ax.set_ybound(65, 102)
-    fig.savefig(data_folders[0] / f"{figname}.svg")
+    fig.savefig(data_folders[0].parent / f"{figname}.svg")
     plt.close()
 
 
