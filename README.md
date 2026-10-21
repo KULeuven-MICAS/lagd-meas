@@ -32,7 +32,7 @@ and JTAG debug work.
 - [`pyproject.toml`](pyproject.toml) — Python linting configuration (Ruff targets Python 3.7 for the lab
   measurement machines).
 - [`measurement_ladder.md`](measurement_ladder.md) — full measurement plan and checklist for the LAGD chip.
-- [openising/ISSCC_tests](openising/ISSCC_tests) - all measurement data for the ISSCC'27 submission.
+- [`openising/ISSCC_tests`](openising/ISSCC_tests) - all measurement data for the ISSCC'27 submission.
 
 ## Quick start
 
