@@ -14,7 +14,7 @@ dummy_creator: false
 use_ZF: false
 logfile_discrimination: ""
 nb_flipping: 100
-benchmark: 
+benchmark:
   - ./ising/benchmarks/biqmac/rudy/pm1d_100.0
   - ./ising/benchmarks/biqmac/rudy/pm1s_100.0
   - ./ising/benchmarks/biqmac/rudy/pm1d_80.0
@@ -26,11 +26,11 @@ num_iterations_Multiplicative: 1000
 cluster_threshold: 0.3
 init_cluster_size: 0.9
 end_cluster_size: 0.1
-exponent: 
+exponent:
   - 1.0
 cluster_choice: "random"
 size_function: "exponential"
-bestx: 
+bestx:
   - 1
   - 2
   - 5
