@@ -16,6 +16,24 @@ Under the folder openising/ISSCC_tests/MPC_experiment/model_0 the following file
  - mppi_results.svg: the resulting figure which is used for the ISSCC paper.
  - config_experiment.yaml: the settings used to generate the data.
 
+### Analog evaluation
+`macro_only.csv` holds the raw time-resolved measurements taken on the chip for the four MAX-CUT
+benchmarks: the energy of the spin array sampled every clock cycle while it converges.
+These runs use the analog macro only. The host loads J, h and the start state and lets the array
+relax while a hardware read burst snapshots the output spins once per cycle. Afterwards the energy
+and cut value are computed for each snapshot. All of it was measured at unit current setting 8 with
+the core clock at 512 MHz. The dataset contains 4 problems x 100 runs x 257 samples.
+
+| column | meaning |
+| --- | --- |
+| `problem`  | benchmark name, one of pm1d_100, pm1d_80_0, pm1s_100, pm1s_80_0 |
+| `run`      | index of the run, 0..99. |
+| `cycle`    | sample index, 0..256. Cycle 0 is the start state read back off the chip before the run |
+| `time_ns`  | `cycle` converted to nanoseconds at 512 MHz |
+| `energy`   | Ising energy of the sampled state, `E = -sum_{i<j} J_ij s_i s_j - scaling_h * sum_i h_i s_i` |
+| `cut`      | the corresponding MAX-CUT value |
+
+
 ## Figure 6 upper table, MIMO BER calculation
 Under the folder openising/ISSCC_tests/MIMO_experiment/model_6 there are the following files:
  - ber_deltah.csv: the resulting BER that is reported in the table

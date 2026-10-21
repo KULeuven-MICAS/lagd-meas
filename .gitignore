@@ -48,5 +48,5 @@ openising/**/run_*
 !openising/ISSCC_tests/MIMO_experiment/model_6/**.csv
 !openising/ISSCC_tests/MIMO_experiment/model_6/ans.pkl
 
-# Annealing runs
-!openising/ISSCC_tests/biqmac_sweep.csv
+# Macro-only runs
+!openising/ISSCC_tests/macro_only.csv
