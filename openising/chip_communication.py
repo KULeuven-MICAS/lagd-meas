@@ -11,7 +11,7 @@ import yaml
 import csv
 
 from pathlib import Path
-from __init__ import (
+from openising import (
     TOP_MEAS,
     TOP_LAGD_IM,
     connect_to_host_commands,
@@ -66,7 +66,7 @@ def compile_data_convergence(data_folders: list[Path], nb_iteration: int, core: 
                 [
                     "pixi",
                     "run",
-                    f"make -C ./sw clean tests/lagd_scompute_debug.spm.elf BENDER=bender VERIFICATION_TEST=0\
+                    f"make -C ./sw clean tests/lagd_scompute_debug.spm.elf BENDER=bender VERIFICATION_TEST=0 \
  CORE_TESTED={core}",
                 ]
             )
@@ -124,7 +124,7 @@ def compile_data(data_folders: list[Path], nb_cores: int, core: int, delta_h_cal
             [
                 "pixi",
                 "run",
-                f"make -C ./sw clean tests/lagd_scompute_debug.spm.elf BENDER=bender VERIFICATION_TEST=0\
+                f"make -C ./sw clean tests/lagd_scompute_debug.spm.elf BENDER=bender VERIFICATION_TEST=0 \
 CORE_TESTED={core}",
             ]
         )

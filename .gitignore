@@ -33,3 +33,20 @@ openising/**/run_*
 # Figures
 **.png
 **.svg
+
+### Measurement data
+# MPC
+!openising/ISSCC_tests/MPC_experiment/model_0/**.csv
+!openising/ISSCC_tests/MPC_experiment/model_0/ans_result.pkl
+!openising/ISSCC_tests/MPC_experiment/model_0/mppi_results.svg
+
+# Maxcut
+!openising/ISSCC_tests/Maxcut_experiment/**/maxcut_raw_energies_deltah.csv
+!openising/ISSCC_tests/Maxcut_experiment/boxplot**.svg
+
+# MIMO
+!openising/ISSCC_tests/MIMO_experiment/model_6/**.csv
+!openising/ISSCC_tests/MIMO_experiment/model_6/ans.pkl
+
+# Macro-only runs
+!openising/ISSCC_tests/macro_only.csv

@@ -1,25 +1,42 @@
 # Result tests performed for ISSCC paper
 
-This folder holds all the config files needed to generate the data that was used to make the figures in our ISSCC submission. 
+This folder holds all the config files and measurement data that was used to make the figures in our ISSCC submission. The data of each figure can be found in its corresponding folder, e.g. for the pm1d_100 data with 50 iterations has the energy results in ./openising/ISSCC_tests/Maxcut_experiment/pm1d_100. In order to recreate the figure, you can run openising/postprocessing.py 
 
-## Figure 5 down
-The data of the left figure can be obtained by running:
-```bash
-python openising/generate_experiment.py -config-file openising/ISSCC_tests/Maxcut_experiment/<benchmark_name> --simulate && python openising/generate_experiment.py -config-file openising/ISSCC_tests/Maxcut_experiment/<benchmark_name>
-```
-The different benchmark names are:
-    - pm1d_100, pm1d_100_1it
-    - pm1s_100, pm1s_100_1it
-    - pm1d_80, pm1d_80_1it
-    - pm1s_80, pm1s_80_1it
+## Figure 5
+### Maxcut data
+Under the folder openising/ISSCC_tests/Maxcut_experiment there are 8 folders with the data of maxcut experiments, seen in figure 5 bottom left. The four different benchmarks pm1d_100, pm1d_80, pm1s_100, and pm1s_80 are run for 50 iterations or 1 iterations (stored with the suffix _1it) and the resulting energies are stored in maxcut_raw_energies_deltah.csv. These energies are used to create the figures for the 50 iteration per run (see openising/ISSCC_tests/Maxcut_experiment/boxplot.svg) or 1 iteration per run (see openising/ISSCC_tests/Maxcut_experiment/boxplot_1it.svg).
 
-The data of the right figure can be obtained by running:
-```bash
-python openising/generate_experiment.py -config-file openising/ISSCC_tests/MPPI_experiment/model_0
-```
+### MPC experiment
+The data of this experiment is shown in figure 5 bottom right.
+Under the folder openising/ISSCC_tests/MPC_experiment/model_0 the following files are there:
+ - ans_result.pkl: holds all the information of the scene and result data of the problem. However this file is not human-readable
+ - executed_trajectory.csv: the trajectory that was executed by the `robot' bycicle. This one should follow the reference trajectory as closely as possible. It is represented by the dark-green line in the figure.
+ - predicted_trajectory.csv: the trajectory that is predicted of horizon length N at every iteration. Only the first step is executed and results in the executed trajectory. It is represented by the light-green lines in the figure.
+ - reference_trajectory.csv: the trajectory that the `robot' bycicle should follow. It is represented by the dark blue line in the figure.
+ - mppi_results.svg: the resulting figure which is used for the ISSCC paper.
+ - config_experiment.yaml: the settings used to generate the data.
 
-## Figure 6 upper table
-The data of this table can be obtained by running:
-```bash
-python openising/generate_experiment.py -config-file openising/ISSCC_tests/MIMO_experiment/model_6 --simulate && python openising/generate_experiment.py -config-file openising/ISSCC_tests/MIMO_experiment/model_6
-```
+### Analog evaluation
+`macro_only.csv` holds the raw time-resolved measurements taken on the chip for the four MAX-CUT
+benchmarks: the energy of the spin array sampled every clock cycle while it converges.
+These runs use the analog macro only. The host loads J, h and the start state and lets the array
+relax while a hardware read burst snapshots the output spins once per cycle. Afterwards the energy
+and cut value are computed for each snapshot. All of it was measured at unit current setting 8 with
+the core clock at 512 MHz. The dataset contains 4 problems x 100 runs x 257 samples.
+
+| column | meaning |
+| --- | --- |
+| `problem`  | benchmark name, one of pm1d_100, pm1d_80_0, pm1s_100, pm1s_80_0 |
+| `run`      | index of the run, 0..99. |
+| `cycle`    | sample index, 0..256. Cycle 0 is the start state read back off the chip before the run |
+| `time_ns`  | `cycle` converted to nanoseconds at 512 MHz |
+| `energy`   | Ising energy of the sampled state, `E = -sum_{i<j} J_ij s_i s_j - scaling_h * sum_i h_i s_i` |
+| `cut`      | the corresponding MAX-CUT value |
+
+
+## Figure 6 upper table, MIMO BER calculation
+Under the folder openising/ISSCC_tests/MIMO_experiment/model_6 there are the following files:
+ - ber_deltah.csv: the resulting BER that is reported in the table
+ - symbols_deltah.csv: the send and predicted symbols of all the 24 users over all the 1000 runs. This is used to compute the BER.
+ - ans.pkl: this file holds all the information about the send symbols. However, the file is not human-readable.
+ - config_experiment.yaml: the settings used to generate the experiment data.
