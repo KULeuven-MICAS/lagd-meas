@@ -27,11 +27,12 @@ and JTAG debug work.
 - [`target/`](target/) — target/board-specific files (e.g., `zcu102/`).
 - [`xillinux/`](xillinux/) — Xillinux root filesystem overlays and workspace files.
 - [`openising/`](openising/) — Application-level scripts (MaxCut/MIMO/MPC) for chip measurement.
-- `env.sh` — environment setup: `source env.sh` from the repo root before running any
+- [`env.sh`](env.sh) — environment setup: `source env.sh` from the repo root before running any
   Python scripts.
-- `pyproject.toml` — Python linting configuration (Ruff targets Python 3.7 for the lab
+- [`pyproject.toml`](pyproject.toml) — Python linting configuration (Ruff targets Python 3.7 for the lab
   measurement machines).
-- `measurement_ladder.md` — full measurement plan and checklist for the LAGD chip.
+- [`measurement_ladder.md`](measurement_ladder.md) — full measurement plan and checklist for the LAGD chip.
+- [openising/ISSCC_tests](openising/ISSCC_tests) - all measurement data for the ISSCC'27 submission.
 
 ## Quick start
 
