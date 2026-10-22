@@ -88,6 +88,7 @@ if args.simulate:
     galena_path = TOP_ISING / "./ising/inputs/config/config_galena.yaml"
     annealing_path = TOP_ISING / "./ising/inputs/config/config_annealing.yaml"
     for exponent in exponents:
+        exponent_folder = save_folder / f"exponent_{exponent}"
         annealing_config["exponent"] = exponent
         galena_config["exponent"] = exponent
         galena_runs, annealing_runs = annealing_comparison(
@@ -98,7 +99,7 @@ if args.simulate:
             annealing_path,
             annealing_config,
             experiment_config["bestx"],
-            save_folder,
+            exponent_folder,
         )
         for ans, folder in galena_runs.values():
             data_folders = store_run(ans, folder, problem_type)
@@ -116,7 +117,7 @@ if args.simulate:
 
 else:
     for benchmark in benchmarks:
-        benchmark_folder = save_folder / benchmark.split("/")[-1].split["."][0]
+        benchmark_folder = save_folder / benchmark.split("/")[-1].split(".")[0]
         for child in benchmark_folder.iterdir():
             send_chip(
                 data_folder=child,
