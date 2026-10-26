@@ -6,11 +6,14 @@
 
 import os
 import subprocess
+import sys
+import time
 import numpy as np
 import yaml
 import csv
 
 from pathlib import Path
+from tqdm import tqdm
 from __init__ import (
     TOP_MEAS,
     TOP_LAGD_IM,
@@ -159,17 +162,180 @@ def _stream_uart_output(
         str(baud),
         "--timeout",
         str(timeout),
-        "--no-rtscts" if not rtscts else "",
         "-interface",
         interface,
         "-elf",
         elf_file,
     ])
+    if rtscts:
+        tokens.append("--rtscts")
     subprocess.run(connect_to_host_commands + tokens, stdout=stdout, check=True)
 
 
+def _stream_uart_output_batch(
+    stdout,
+    device: str,
+    baud: int,
+    timeout: float,
+    elf_files: list[str],
+    rtscts: bool = False,
+    reset_chip: bool = True,
+    interface: str = "spi",
+):
+    """Run all ELFs through one SSH and one remote transport process."""
+    if interface not in ("spi", "uart", "jtag"):
+        raise ValueError(f"batch interface {interface} is not supported")
+    tokens = []
+    if reset_chip:
+        tokens.append("python sw/tests/chip_test.py &&")
+    tokens.extend([
+        remote_python,
+        "-m",
+        "openising.uart_output",
+        "--batch",
+        "--device",
+        device,
+        "--baud",
+        str(baud),
+        "--timeout",
+        str(timeout),
+        "-interface",
+        interface,
+    ])
+    if rtscts:
+        tokens.append("--rtscts")
+    for elf_file in elf_files:
+        tokens.extend(["-elf", elf_file])
+    # The shared SSH command uses ``-t`` for interactive/single-run flows.
+    # Batch mode prints progress locally while SSH is running; an allocated PTY
+    # puts the local terminal in raw mode, where ``\n`` no longer returns the
+    # cursor to column zero.  The remote batch process is non-interactive, so
+    # explicitly disable PTY allocation here.
+    command = [("-T" if token == "-t" else token) for token in connect_to_host_commands] + tokens
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    if process.stdout is None:
+        raise RuntimeError("failed to capture remote batch output")
+
+    run_started = {}
+    total_runs = len(elf_files)
+    with tqdm(
+        total=total_runs,
+        desc=f"{interface.upper()} batch",
+        unit="run",
+        dynamic_ncols=True,
+        file=sys.stdout,
+    ) as progress:
+        for line in process.stdout:
+            stdout.write(line)
+            stdout.flush()
+            _report_batch_progress(
+                line,
+                interface,
+                elf_files,
+                run_started,
+                progress,
+            )
+
+    return_code = process.wait()
+    if return_code:
+        raise subprocess.CalledProcessError(return_code, command)
+
+
+def _format_batch_duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, remaining = divmod(int(seconds), 60)
+    return f"{minutes}m{remaining:02d}s"
+
+
+def _report_batch_progress(
+    line: str,
+    interface: str,
+    elf_files: list[str],
+    run_started: dict[int, float],
+    progress: tqdm,
+):
+    """Update the batch progress bar while complete remote output goes to the log."""
+    clean_line = line.rstrip("\r\n")
+    total_runs = len(elf_files)
+    now = time.monotonic()
+
+    if clean_line.startswith("[batch] RUN_START "):
+        run_index = int(clean_line.split(" ", 3)[2])
+        run_started[run_index] = now
+        run_name = Path(elf_files[run_index]).parent.name
+        progress.set_postfix_str(f"starting {run_name}")
+        return
+
+    if clean_line.startswith("[batch] RUN_END "):
+        run_index = int(clean_line.split(" ", 3)[2])
+        run_elapsed = now - run_started.pop(run_index, now)
+        run_name = Path(elf_files[run_index]).parent.name
+        progress.set_postfix_str(f"{run_name} {_format_batch_duration(run_elapsed)}", refresh=False)
+        progress.update(1)
+        return
+
+    if clean_line.startswith("[batch] RUN_ERROR "):
+        run_index = int(clean_line.split(" ", 3)[2])
+        run_name = Path(elf_files[run_index]).parent.name
+        progress.set_postfix_str(f"FAILED {run_name}", refresh=False)
+        progress.write(
+            f"[{interface.upper()} {run_index + 1}/{total_runs}] FAILED {run_name}; "
+            "see top_batch.log",
+            file=sys.stdout,
+        )
+
+
+def _split_batch_output(batch_log: Path, expected_runs: int) -> list[list[str]]:
+    """Split one batch transcript into the UART/log lines for each ELF."""
+    run_lines = {}
+    current_run = None
+    with batch_log.open("r") as f:
+        for line in f:
+            if line.startswith("[batch] RUN_START "):
+                fields = line.split(" ", 3)
+                current_run = int(fields[2])
+                if current_run in run_lines:
+                    raise RuntimeError(f"duplicate batch start marker for run {current_run}")
+                run_lines[current_run] = []
+            elif line.startswith("[batch] RUN_END "):
+                fields = line.split(" ", 3)
+                ended_run = int(fields[2])
+                if ended_run != current_run:
+                    raise RuntimeError(
+                        f"batch end marker for run {ended_run} while run {current_run} is active"
+                    )
+                current_run = None
+            elif line.startswith("[batch] RUN_ERROR "):
+                raise RuntimeError(line.strip())
+            elif current_run is not None:
+                run_lines[current_run].append(line)
+
+    missing_runs = [run for run in range(expected_runs) if run not in run_lines]
+    if current_run is not None:
+        raise RuntimeError(f"batch output ended before run {current_run} completed")
+    if missing_runs:
+        raise RuntimeError(f"batch output is missing runs {missing_runs}")
+    return [run_lines[run] for run in range(expected_runs)]
+
+
 def interface_send(
-    interface: str, top_log: Path, host, remote_dir, elf_file, uart_device, rtscts, uart_baud, uart_timeout, reset_chip: bool = True
+    interface: str,
+    top_log: Path,
+    host,
+    remote_dir,
+    elf_file,
+    uart_device,
+    rtscts,
+    uart_baud,
+    uart_timeout,
+    reset_chip: bool = True,
 ):
     if interface == "uart":
         with top_log.open("w") as f:
@@ -232,18 +398,72 @@ def send_chip(
     else:
         nb_variables = ans.ising_model.num_variables
         nb_runs = int(ans.config.nb_runs / 2)
-    prev_scalings = 1
-    instruments, current_settings, smu_config = setup_smus(smu_config_file, chip, core)
-    for run in range(0, nb_runs, nb_cores):
+    # prev_scalings = 1
+    # instruments, current_settings, smu_config = setup_smus(smu_config_file, chip, core)
+    run_indices = list(range(0, nb_runs, nb_cores))
+
+    if interface in ("spi", "uart", "jtag"):
+        top_log = TOP_MEAS / "top.log"
+        batch_log = TOP_MEAS / "top_batch.log"
+        delta_h_str = "_deltah.elf" if delta_h_calculation else ".elf"
+        elf_files = []
+        for run in run_indices:
+            run_folder = data_folder / f"run_{run}"
+            elf_files.append(str((run_folder / ("lagd_commands" + delta_h_str)).relative_to(TOP_MEAS)))
+
+        print(f"Running {len(elf_files)} {interface.upper()} experiments in one remote batch")
+        with batch_log.open("w") as f:
+            _stream_uart_output_batch(
+                f,
+                uart_device,
+                uart_baud,
+                uart_timeout,
+                elf_files,
+                rtscts,
+                reset_chip,
+                interface,
+            )
+        batch_outputs = _split_batch_output(batch_log, len(run_indices))
+
+        for batch_index, run in enumerate(run_indices):
+            with top_log.open("w") as f:
+                f.writelines(batch_outputs[batch_index])
+            run_folder = data_folder / f"run_{run}"
+            folders = [run_folder]
+            if nb_cores == 2:
+                folders.append(data_folder / f"run_{run + 1}")
+            retrieve_data_from_output(
+                folders,
+                nb_cores,
+                nb_variables,
+                nb_flipping,
+                convergence_mode=False,
+                clock_speed=clock_speed,
+                delta_h_calculation=delta_h_calculation,
+            )
+        return 0
+
+    for run in run_indices:
         print(f"Run: {run}")
-        prev_scalings = set_smus(instruments, ans, run, prev_scalings, current_settings, smu_config)
+        # prev_scalings = set_smus(instruments, ans, run, prev_scalings, current_settings, smu_config)
         # Reset board
         top_log = TOP_MEAS / "top.log"
         # subprocess.run(connect_to_host_commands + [f"{remote_python} sw/tests/chip_test.py"])
         run_folder = data_folder / f"run_{run}"
         delta_h_str = "_deltah.elf" if delta_h_calculation else ".elf"
         elf_file = str((run_folder / ("lagd_commands" + delta_h_str)).relative_to(TOP_MEAS))
-        interface_send(interface, top_log, host, remote_dir, elf_file, uart_device, rtscts, uart_baud, uart_timeout, reset_chip)
+        interface_send(
+            interface,
+            top_log,
+            host,
+            remote_dir,
+            elf_file,
+            uart_device,
+            rtscts,
+            uart_baud,
+            uart_timeout,
+            reset_chip,
+        )
 
         # move to correct folder and parse output
         folders = [run_folder]
