@@ -39,11 +39,11 @@ def plot_convergence_run(data_folder: Path, add_sw: bool = True, figname: str = 
         if case != "galena":
             for i, time_i in enumerate(time):
                 if time_i == 0.0:
-                    time_i = np.mean(time[[i-1, i+1]])
+                    time_i = np.mean(time[[i - 1, i + 1]])
                     time[i] = time_i
             for i, energy_i in enumerate(energy):
                 if energy_i == 0.0:
-                    energy[i] = energy[i-1]
+                    energy[i] = energy[i - 1]
         data[case_name] = {"time": time, "energy": energy, "cycles": cycles}
 
     plt.figure()
@@ -55,9 +55,9 @@ def plot_convergence_run(data_folder: Path, add_sw: bool = True, figname: str = 
             data[case_name]["energy"],
             marker=marker,
             color=color,
-            fillstyle='none',
+            fillstyle="none",
             label=f"{case_name}: best={en}, time:{time}",
-            linewidth=0.3
+            linewidth=0.3,
         )
     plt.xlabel("Time [s]")
     # plt.xscale("log")
@@ -80,7 +80,7 @@ def plot_convergence_run(data_folder: Path, add_sw: bool = True, figname: str = 
                 marker=marker,
                 # edgecolor=color,
                 facecolor=color,
-                label=f"{case_name}: Avg={mean}"
+                label=f"{case_name}: Avg={mean}",
             )
     plt.xlabel("Iteration")
     plt.ylabel("Cycles/iteration")
@@ -186,24 +186,38 @@ def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxpl
     delta_h_str = int(delta_h_calculation) * "_deltah"
     for model_folder in data_folders:
         ans = load_ans(model_folder)
-        # print(np.mean(np.array(ans.energies["Multiplicative"])/ans.best_found))
-        if ans.config.problem_type == "MIMO":
-            print("MIMO is not supported. Skipping this folder ...")
-            break
-        model: IsingModel = ans.ising_model
-        nb_runs = ans.config.nb_runs
-        energies = []
-        for run in range(int(nb_runs / 2)):
-            run_folder = model_folder / f"run_{run}"
-            for i in range(2):
-                final_state = np.loadtxt(run_folder / f"hw_final_state_{i + 1}{delta_h_str}")
-                energies.append(np.abs(model.evaluate(final_state) / ans.best_found) * 100)
+        energies_csv = model_folder / f"maxcut_raw_energies{delta_h_str}.csv"
+        if energies_csv.is_file():
+            with energies_csv.open() as file:
+                benchmark = file.readline().rstrip("\r\n")
+            energies = np.loadtxt(energies_csv, delimiter=",", skiprows=2, ndmin=1)
+        else:
+            # print(np.mean(np.array(ans.energies["Multiplicative"])/ans.best_found))
+            if ans.config.problem_type == "MIMO":
+                print("MIMO is not supported. Skipping this folder ...")
+                break
+            model: IsingModel = ans.ising_model
+            nb_runs = ans.config.nb_runs
+            energies = []
+            for run in range(int(nb_runs / 2)):
+                run_folder = model_folder / f"run_{run}"
+                for i in range(2):
+                    final_state = np.loadtxt(run_folder / f"hw_final_state_{i + 1}{delta_h_str}")
+                    energies.append(model.evaluate(final_state))
 
-        final_energies[ans.benchmark] = energies
-        # print(f"Max {ans.benchmark}: {np.max(energies)}, Min: {np.min(energies)}, Avg: {np.mean(energies)}")
+            benchmark = ans.benchmark
+            np.savetxt(
+                energies_csv,
+                energies,
+                delimiter=",",
+                header=f"{benchmark}\nenergy",
+                comments="",
+            )
+        energies = [np.abs(energy/ans.best_found)*100 for energy in energies]
+        final_energies[benchmark] = energies
 
     fig, ax = plt.subplots()
-    data  = []
+    data = []
     xticks = []
     for benchmark, energy in final_energies.items():
         data.append(energy)
@@ -211,12 +225,12 @@ def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxpl
         xticks.append(benchmark)
     fig, ax = plt.subplots()
     bplot = ax.boxplot(data, patch_artist=True, tick_labels=xticks)
-    for patch in bplot['boxes']:
+    for patch in bplot["boxes"]:
         patch.set_facecolor("#739cd9")
-    for median in bplot['medians']:
-        median.set_color('black')
-    # ax.set_ybound(60, 105)
-    fig.savefig(data_folders[0] / f"{figname}.svg")
+    for median in bplot["medians"]:
+        median.set_color("black")
+    ax.set_ybound(65, 102)
+    fig.savefig(data_folders[0].parent / f"{figname}.svg")
     plt.close()
     logging.info(f"Saved boxplot to {data_folders[0] / f'{figname}.svg'}")
 
@@ -225,9 +239,48 @@ def plot_mppi(data_folder, add_sw: bool = True, figname: str = "mppi_results"):
     ans = Ans()
     ans.load(data_folder / "ans_result.pkl")
     env, _, _ = create_environment(ans.scene)
-    x_ref = ans.reference_trajectory
-    predicted_traj_hw = ans.predicted_trajectory_hw
-    executed_traj_hw = ans.executed_trajectory_hw
+    trajectory_paths = [
+        data_folder / f"{name}_trajectory.csv"
+        for name in ("reference", "predicted", "executed")
+    ]
+    if all(path.is_file() for path in trajectory_paths):
+        x_ref = np.loadtxt(trajectory_paths[0], delimiter=",", skiprows=1, ndmin=2)
+        predicted_rows = np.loadtxt(trajectory_paths[1], delimiter=",", skiprows=1, ndmin=2)
+        predicted_traj_hw = [
+            rows[np.argsort(rows[:, 1]), 2:4]
+            for iteration in np.unique(predicted_rows[:, 0])
+            for rows in [predicted_rows[predicted_rows[:, 0] == iteration]]
+        ] if predicted_rows.size else []
+        executed_traj_hw = np.loadtxt(trajectory_paths[2], delimiter=",", skiprows=1, ndmin=2)
+    else:
+        x_ref = ans.reference_trajectory
+        predicted_traj_hw = ans.predicted_trajectory_hw
+        executed_traj_hw = ans.executed_trajectory_hw
+
+        for name, trajectory in (
+            ("reference", np.asarray(x_ref)[:, :2]),
+            ("executed", np.asarray(executed_traj_hw)[:, :2]),
+        ):
+            np.savetxt(
+                data_folder / f"{name}_trajectory.csv",
+                trajectory,
+                delimiter=",",
+                header="x-position,y-position",
+                comments="",
+            )
+        predicted_rows = [
+            (iteration, step, state[0], state[1])
+            for iteration, prediction in enumerate(predicted_traj_hw)
+            for step, state in enumerate(prediction)
+        ]
+        np.savetxt(
+            data_folder / "predicted_trajectory.csv",
+            np.asarray(predicted_rows).reshape(-1, 4),
+            delimiter=",",
+            header="iteration,prediction-step,x-position,y-position",
+            fmt=["%d", "%d", "%.18e", "%.18e"],
+            comments="",
+        )
 
     error = executed_traj_hw - x_ref
     rmse = np.sqrt(error**2).mean()
@@ -303,6 +356,15 @@ def load_ans(folder: Path) -> Ans:
 
 
 def compute_BER(ans: Ans, data_folder: Path, delta_h_calculation: bool):
+    delta_h_str = "_deltah" if delta_h_calculation else ""
+    ber_csv = data_folder / f"ber{delta_h_str}.csv"
+    symbols_csv = data_folder / f"symbols{delta_h_str}.csv"
+    if ber_csv.is_file() and symbols_csv.is_file():
+        return float(np.loadtxt(ber_csv, delimiter=",", skiprows=1).item())
+
+    if ans is None:
+        ans = load_ans(data_folder)
+
     N = np.shape(ans.x_tilde)[0]
     if ans.config.dummy_qam == 2:
         r = 1
@@ -319,7 +381,7 @@ def compute_BER(ans: Ans, data_folder: Path, delta_h_calculation: bool):
         T = np.block([[2 ** (r - i) * np.eye(N) for i in range(1, r + 1)]])
     nb_trials = len(ans.MIMO)
     differences = np.zeros((N, nb_trials))
-    delta_h_str = "_deltah" if delta_h_calculation else ""
+    predicted_components = np.zeros((N, nb_trials))
     for trial in range(nb_trials):
         lowest_id = 0
         lowest_en = np.inf
@@ -335,6 +397,8 @@ def compute_BER(ans: Ans, data_folder: Path, delta_h_calculation: bool):
         else:
             xtilde = np.block([np.real(ans.x[:, trial]), np.imag(ans.x[:, trial])])
         state = np.loadtxt(data_folder / f"run_{trial}/hw_final_state_{lowest_id + 1}{delta_h_str}")
+        offset = 1 if is_bpsk else np.sqrt(ans.config.dummy_qam) - 1
+        predicted_components[:, trial] = T @ (state + 1) - offset
         differences[:, trial] = compute_difference(state, T, r, xtilde, ans.config.dummy_qam, N)
     if is_bpsk:
         ber = np.mean(np.sum(np.abs(differences) / 2, axis=1) / (np.log2(ans.config.dummy_qam) * nb_trials))
@@ -344,6 +408,33 @@ def compute_BER(ans: Ans, data_folder: Path, delta_h_calculation: bool):
         diff_imag_half = differences[array_mid:, :]
         diff_of_users = np.hstack((diff_real_half, diff_imag_half))
         ber = np.mean(np.sum(np.abs(diff_of_users) / 2, axis=1) / (np.log2(ans.config.dummy_qam) * nb_trials))
+
+    np.savetxt(
+        data_folder / f"ber{delta_h_str}.csv",
+        [[ber]],
+        delimiter=",",
+        header="BER",
+        comments="",
+    )
+    sent_symbols = np.asarray(ans.x)
+    if is_bpsk:
+        predicted_symbols = predicted_components
+    else:
+        predicted_real, predicted_imag = np.split(predicted_components, 2, axis=0)
+        predicted_symbols = predicted_real + 1j * predicted_imag
+    symbol_rows = [
+        (trial, symbol, sent.real, sent.imag, predicted.real, predicted.imag)
+        for trial in range(nb_trials)
+        for symbol, (sent, predicted) in enumerate(zip(sent_symbols[:, trial], predicted_symbols[:, trial]))
+    ]
+    np.savetxt(
+        data_folder / f"symbols{delta_h_str}.csv",
+        np.asarray(symbol_rows).reshape(-1, 6),
+        delimiter=",",
+        header="trial,symbol,sent-real,sent-imag,predicted-real,predicted-imag",
+        fmt=["%d", "%d", "%.18e", "%.18e", "%.18e", "%.18e"],
+        comments="",
+    )
     return ber
 
 
@@ -368,10 +459,8 @@ if __name__ == "__main__":
         False,
         "boxplot_1it"
     )
-    # plot_mppi(TOP_MEAS / "openising/MPPI_experiment/model_0", False)
-    # BPSK_folder = TOP_MEAS / "openising/MIMO_experiment/model_6"
-    # ans_MIMO_BPSK = load_ans(BPSK_folder)
-    # print("BER sw:" + str(ans_MIMO_BPSK.BER["Multiplicative"]))
-    # BER = compute_BER(ans_MIMO_BPSK, BPSK_folder, True)
-    # print("BER:" + str(BER))
+    plot_mppi(TOP_MEAS / "openising/ISSCC_tests/MPC_experiment/model_0", False)
+    BPSK_folder = TOP_MEAS / "openising/ISSCC_tests/MIMO_experiment/model_6"
+    BER = compute_BER(None, BPSK_folder, True)
+    print("BER:" + str(BER))
     # plot_convergence_run(TOP_MEAS / "openising/convergence_run/run_0", False)

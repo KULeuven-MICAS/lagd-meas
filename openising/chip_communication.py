@@ -14,7 +14,7 @@ import csv
 
 from pathlib import Path
 from tqdm import tqdm
-from __init__ import (
+from openising import (
     TOP_MEAS,
     TOP_LAGD_IM,
     connect_to_host_commands,
@@ -69,7 +69,7 @@ def compile_data_convergence(data_folders: list[Path], nb_iteration: int, core: 
                 [
                     "pixi",
                     "run",
-                    f"make -C ./sw clean tests/lagd_scompute_debug.spm.elf BENDER=bender VERIFICATION_TEST=0\
+                    f"make -C ./sw clean tests/lagd_scompute_debug.spm.elf BENDER=bender VERIFICATION_TEST=0 \
  CORE_TESTED={core}",
                 ]
             )
