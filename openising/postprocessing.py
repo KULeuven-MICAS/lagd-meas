@@ -7,6 +7,7 @@
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
+import logging
 
 from openising import TOP_MEAS
 from submodules.openising.ising.stages.model.MPPI.environment import create_environment, plot_environment
@@ -199,7 +200,7 @@ def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxpl
                 energies.append(np.abs(model.evaluate(final_state) / ans.best_found) * 100)
 
         final_energies[ans.benchmark] = energies
-        print(f"Max {ans.benchmark}: {np.max(energies)}, Min: {np.min(energies)}, Avg: {np.mean(energies)}")
+        # print(f"Max {ans.benchmark}: {np.max(energies)}, Min: {np.min(energies)}, Avg: {np.mean(energies)}")
 
     fig, ax = plt.subplots()
     data  = []
@@ -214,9 +215,10 @@ def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxpl
         patch.set_facecolor("#739cd9")
     for median in bplot['medians']:
         median.set_color('black')
-    ax.set_ybound(60, 105)
+    # ax.set_ybound(60, 105)
     fig.savefig(data_folders[0] / f"{figname}.svg")
     plt.close()
+    logging.info(f"Saved boxplot to {data_folders[0] / f'{figname}.svg'}")
 
 
 def plot_mppi(data_folder, add_sw: bool = True, figname: str = "mppi_results"):
@@ -346,6 +348,7 @@ def compute_BER(ans: Ans, data_folder: Path, delta_h_calculation: bool):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     boxplot(
         [
             TOP_MEAS / "openising/Maxcut_experiment/pm1d_100",
@@ -355,20 +358,20 @@ if __name__ == "__main__":
         ],
         False,
     )
-    # boxplot(
-    #     [
-    #         TOP_MEAS / "openising/Maxcut_experiment/pm1d_100_1it",
-    #         TOP_MEAS / "openising/Maxcut_experiment/pm1s_100_1it",
-    #         TOP_MEAS / "openising/Maxcut_experiment/pm1d_80_1it",
-    #         TOP_MEAS / "openising/Maxcut_experiment/pm1s_80_1it",
-    #     ],
-    #     False,
-    #     "boxplot_1it"
-    # )
-    plot_mppi(TOP_MEAS / "openising/MPPI_experiment/model_0", False)
-    BPSK_folder = TOP_MEAS / "openising/MIMO_experiment/model_6"
-    ans_MIMO_BPSK = load_ans(BPSK_folder)
-    print("BER sw:" + str(ans_MIMO_BPSK.BER["Multiplicative"]))
-    BER = compute_BER(ans_MIMO_BPSK, BPSK_folder, True)
-    print("BER:" + str(BER))
-    plot_convergence_run(TOP_MEAS / "openising/convergence_run/run_0", False)
+    boxplot(
+        [
+            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_100_1it",
+            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_100_1it",
+            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_80_1it",
+            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_80_1it",
+        ],
+        False,
+        "boxplot_1it"
+    )
+    # plot_mppi(TOP_MEAS / "openising/MPPI_experiment/model_0", False)
+    # BPSK_folder = TOP_MEAS / "openising/MIMO_experiment/model_6"
+    # ans_MIMO_BPSK = load_ans(BPSK_folder)
+    # print("BER sw:" + str(ans_MIMO_BPSK.BER["Multiplicative"]))
+    # BER = compute_BER(ans_MIMO_BPSK, BPSK_folder, True)
+    # print("BER:" + str(BER))
+    # plot_convergence_run(TOP_MEAS / "openising/convergence_run/run_0", False)
