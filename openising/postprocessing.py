@@ -351,10 +351,10 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     boxplot(
         [
-            TOP_MEAS / "openising/Maxcut_experiment/pm1d_100",
-            TOP_MEAS / "openising/Maxcut_experiment/pm1s_100",
-            TOP_MEAS / "openising/Maxcut_experiment/pm1d_80",
-            TOP_MEAS / "openising/Maxcut_experiment/pm1s_80",
+            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_100",
+            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_100",
+            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_80",
+            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_80",
         ],
         False,
     )
