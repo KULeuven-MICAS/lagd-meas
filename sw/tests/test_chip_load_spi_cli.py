@@ -62,6 +62,29 @@ class TestChipLoadSpiCli(unittest.TestCase):
         self.assertEqual(args.eoc_initial_delay, 0.5)
 
     @mock.patch("sw.tests.chip_load_spi.SpiProgramLoader")
+    def test_run_elf_with_chip_resets_each_program(self, loader_class):
+        chip = mock.Mock()
+
+        chip_load_spi.run_elf_with_chip(
+            chip,
+            DEFAULT_ELF,
+            sck_hz=12_500_000,
+            run_timeout=5.0,
+        )
+
+        chip.reset_chip.assert_called_once_with(hold=0.001, chip_clk_en=1)
+        chip.set_sck_hz.assert_called_once_with(12_500_000)
+        loader_class.assert_called_once_with(chip)
+        loader_class.return_value.load_and_run.assert_called_once_with(
+            DEFAULT_ELF,
+            init_spi=True,
+            verify=False,
+            wait=True,
+            eoc_timeout=5.0,
+            eoc_initial_delay=DEFAULT_EOC_INITIAL_DELAY,
+        )
+
+    @mock.patch("sw.tests.chip_load_spi.SpiProgramLoader")
     @mock.patch("sw.tests.chip_load_spi.ChipDriver")
     def test_eoc_timeout_returns_nonzero_status(self, chip_driver, loader_class):
         chip_driver.return_value = mock.MagicMock()
