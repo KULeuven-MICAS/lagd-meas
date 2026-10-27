@@ -7,6 +7,7 @@
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
+import logging
 
 from openising import TOP_MEAS
 from submodules.openising.ising.stages.model.MPPI.environment import create_environment, plot_environment
@@ -231,6 +232,7 @@ def boxplot(data_folders: list[Path], add_sw: bool = True, figname: str = "boxpl
     ax.set_ybound(65, 102)
     fig.savefig(data_folders[0].parent / f"{figname}.svg")
     plt.close()
+    logging.info(f"Saved boxplot to {data_folders[0] / f'{figname}.svg'}")
 
 
 def plot_mppi(data_folder, add_sw: bool = True, figname: str = "mppi_results"):
@@ -437,6 +439,7 @@ def compute_BER(ans: Ans, data_folder: Path, delta_h_calculation: bool):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     boxplot(
         [
             TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_100",

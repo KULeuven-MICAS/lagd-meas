@@ -56,6 +56,7 @@ parser.add_argument(
 )
 parser.add_argument("--test", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--clock-speed", help="The speed of the clock", type=float, default=512e6)
+parser.add_argument("--reset-chip", help="Whether to reset the chip before sending the data", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--no_delta_h_calculation", action=argparse.BooleanOptionalAction, default=False)
 args = parser.parse_args()
 
@@ -145,6 +146,7 @@ if problem_type != "MPPI":
                 nb_cores=args.nb_cores,
                 clock_speed=args.clock_speed,
                 delta_h_calculation=not args.no_delta_h_calculation,
+                reset_chip=args.reset_chip if hasattr(args, "reset_chip") else True
             )
 else:
     mppi_experiment(

@@ -269,6 +269,55 @@ def parse_elf(path):
     return e_entry, segments
 
 
+def run_elf_with_fd(fd, elf, chunk_size=1024, verify=False,
+                    do_exec=True, wait=True, timeout=5.0,
+                    run_timeout=60.0, connect_timeout=10.0):
+    """Load and run one ELF using an already-open UART file descriptor.
+
+    The caller owns ``fd`` and is responsible for resetting the chip into the
+    passive boot ROM before calling this function.  Keeping the descriptor open
+    lets a batch runner reuse one UART, Python, and SSH session across ELFs.
+    """
+    entry, segments = parse_elf(elf)
+    total = sum(len(blob) for _, blob in segments)
+    logger.info("ELF      : %s", elf)
+    logger.info("Entry    : 0x%016x", entry)
+    logger.info("Segments : %d, %d bytes total", len(segments), total)
+    for paddr, blob in segments:
+        logger.info("  0x%016x  %d bytes", paddr, len(blob))
+
+    logger.info("Handshake: sending ACK challenge ...")
+    handshake(fd, connect_timeout)
+    logger.info("Handshake: chip responded, debug server is up.")
+
+    for paddr, blob in segments:
+        for offset in range(0, len(blob), chunk_size):
+            data = blob[offset:offset + chunk_size]
+            cmd_write(fd, paddr + offset, data, timeout)
+        logger.info("Loaded   : 0x%016x (%d bytes)", paddr, len(blob))
+        if verify:
+            readback = cmd_read(fd, paddr, len(blob), timeout)
+            if readback != blob:
+                raise ProtoError(f"verify FAILED at 0x{paddr:016x}")
+            logger.info("Verified : 0x%016x OK", paddr)
+
+    if not do_exec:
+        logger.info("Done (load only, --no-exec).")
+        return 0
+
+    cmd_exec(fd, entry, timeout)
+    logger.info("Exec     : jumped to 0x%016x", entry)
+
+    if not wait:
+        logger.info("Done (--no-wait).")
+        return 0
+
+    effective_run_timeout = None if run_timeout == 0 else run_timeout
+    return_code = wait_for_eoc(fd, effective_run_timeout)
+    logger.info("EOC      : return code %d", return_code)
+    return return_code
+
+
 # --- Main --------------------------------------------------------------------
 
 def main():
@@ -362,14 +411,6 @@ def main():
     if args.elf is None:
         ap.error("the 'elf' argument is required unless --ping is given")
 
-    entry, segments = parse_elf(args.elf)
-    total = sum(len(b) for _, b in segments)
-    logger.info("ELF      : %s", args.elf)
-    logger.info("Entry    : 0x%016x", entry)
-    logger.info("Segments : %d, %d bytes total", len(segments), total)
-    for paddr, blob in segments:
-        logger.info("  0x%016x  %d bytes", paddr, len(blob))
-
     logger.info("Port     : %s @ %d 8N1, RTS/CTS=%s",
                 args.device, args.baud, "on" if args.rtscts else "off")
 
@@ -379,36 +420,18 @@ def main():
         logger.error("cannot open %s: %s", args.device, e)
         return 1
     try:
-        logger.info("Handshake: sending ACK challenge ...")
-        handshake(fd, args.connect_timeout)
-        logger.info("Handshake: chip responded, debug server is up.")
-
-        for paddr, blob in segments:
-            for i in range(0, len(blob), args.chunk):
-                chunk = blob[i:i + args.chunk]
-                cmd_write(fd, paddr + i, chunk, args.timeout)
-            logger.info("Loaded   : 0x%016x (%d bytes)", paddr, len(blob))
-            if args.verify:
-                rb = cmd_read(fd, paddr, len(blob), args.timeout)
-                if rb != blob:
-                    raise ProtoError(f"verify FAILED at 0x{paddr:016x}")
-                logger.info("Verified : 0x%016x OK", paddr)
-
-        if not args.do_exec:
-            logger.info("Done (load only, --no-exec).")
-            return 0
-
-        cmd_exec(fd, entry, args.timeout)
-        logger.info("Exec     : jumped to 0x%016x", entry)
-
-        if not args.wait:
-            logger.info("Done (--no-wait).")
-            return 0
-
-        rt = None if args.run_timeout == 0 else args.run_timeout
-        ret = wait_for_eoc(fd, rt)
-        logger.info("EOC      : return code %d", ret)
-        return 0 if ret == 0 else 2
+        return_code = run_elf_with_fd(
+            fd,
+            args.elf,
+            chunk_size=args.chunk,
+            verify=args.verify,
+            do_exec=args.do_exec,
+            wait=args.wait,
+            timeout=args.timeout,
+            run_timeout=args.run_timeout,
+            connect_timeout=args.connect_timeout,
+        )
+        return 0 if return_code == 0 else 2
     except ProtoError as e:
         logger.error("%s", e)
         return 1
