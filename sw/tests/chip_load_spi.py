@@ -155,6 +155,32 @@ def parse_args(argv=None):
     return args
 
 
+def run_elf_with_chip(chip, elf, sck_hz=None, verify=False,
+                      run_timeout=DEFAULT_EOC_TIMEOUT,
+                      eoc_initial_delay=DEFAULT_EOC_INITIAL_DELAY):
+    """Reset, load, launch, and wait using an already-open chip driver."""
+    setup_started = time.monotonic()
+    # Reset the chip and enable the clock before every program launch.
+    chip.reset_chip(hold=0.001, chip_clk_en=1)
+
+    if sck_hz is not None:
+        chip.set_sck_hz(sck_hz)  # takes effect on the next transaction
+    logging.info(
+        "[spi-load] controller setup complete in %.3f s",
+        time.monotonic() - setup_started)
+
+    loader = SpiProgramLoader(chip)
+    # init_spi: enable Quad-SPI; verify: read-back; wait: poll EOC.
+    loader.load_and_run(
+        elf,
+        init_spi=True,
+        verify=verify,
+        wait=True,
+        eoc_timeout=run_timeout,
+        eoc_initial_delay=eoc_initial_delay,
+    )
+
+
 def main(elf=DEFAULT_ELF, sck_hz=None, verify=False,
          run_timeout=DEFAULT_EOC_TIMEOUT,
          eoc_initial_delay=DEFAULT_EOC_INITIAL_DELAY):
@@ -162,24 +188,12 @@ def main(elf=DEFAULT_ELF, sck_hz=None, verify=False,
     chip = ChipDriver(WRITE_DEV, READ_DEV)
     try:
         with chip:
-            setup_started = time.monotonic()
-            # Reset the chip and enable the clock.
-            chip.reset_chip(hold=0.001, chip_clk_en=1)
-
-            if sck_hz is not None:
-                chip.set_sck_hz(sck_hz)  # takes effect on the next transaction
-            logging.info(
-                "[spi-load] controller setup complete in %.3f s",
-                time.monotonic() - setup_started)
-
-            loader = SpiProgramLoader(chip)
-            # init_spi: enable Quad-SPI; verify: read-back; wait: poll EOC.
-            loader.load_and_run(
+            run_elf_with_chip(
+                chip,
                 elf,
-                init_spi=True,
+                sck_hz=sck_hz,
                 verify=verify,
-                wait=True,
-                eoc_timeout=run_timeout,
+                run_timeout=run_timeout,
                 eoc_initial_delay=eoc_initial_delay,
             )
     except EocTimeoutError as error:
