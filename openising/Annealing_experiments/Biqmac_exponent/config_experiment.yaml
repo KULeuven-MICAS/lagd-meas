@@ -1,0 +1,53 @@
+# Chip version of Annealing_galena_comparison_exponent.py
+problem_type: Biqmac
+benchmark:
+  - ./ising/benchmarks/biqmac/beasley/bqp250-1.sparse
+  - ./ising/benchmarks/biqmac/beasley/bqp250-2.sparse
+  - ./ising/benchmarks/biqmac/beasley/bqp250-3.sparse
+  - ./ising/benchmarks/biqmac/beasley/bqp250-4.sparse
+sweep_parameter: exponent
+sweep_values:
+  - 1.0
+  - 0.8
+  - 0.6
+  - 0.4
+  - 0.2
+dummy_qam: 4
+dummy_snr: 10
+dummy_spacing: 1.0
+dummy_user_num: 128
+dummy_ant_num: 256
+dummy_case_num: 1
+initialization_seed: 42
+seed: 100
+dummy_seed: 49
+nb_trials: 1
+nb_runs: 1000  # software experiment: 10000
+dummy_creator: false
+use_ZF: false
+logfile_discrimination: ""
+nb_flipping: 100
+test: "Annealing_experiment"
+bestx:
+  - 1
+  - 2
+  - 5
+  - 10
+  - 50
+  - 100
+
+# Multiplicative parameters
+num_iterations_Multiplicative: 1000
+cluster_threshold: 0.3
+init_cluster_size: 0.9
+end_cluster_size: 0.1
+exponent: 1.0
+cluster_choice: "random"
+size_function: "exponential"
+current: 1.0
+capacitance: 1
+accumulation_delay: 0.
+broadcast_delay: 0.
+delay_offset: 0.0
+# sigma_J: -1.0
+stop_criterion: 1e-6  # 1uV

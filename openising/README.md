@@ -24,3 +24,21 @@ Currently the file `postprocessing.py` holds a few functions with which plots ca
 - `plot_mppi()`: This will plot the trajectories of the mpc experiment. This function is automatically called after the MPPI experiment.
 
 Every function has the boolean argument `add_sw` that allows for the software simulation to also be plotted next to the hardware simulation.
+# Annealing vs Galena experiments
+The folder `Annealing_experiments` holds the on-chip versions of the software experiments in `Measurement_SW_experiments/Annealing_vs_bestx`. Galena (best of x single-iteration runs) is compared to annealing (x flipping iterations) at an equal iteration budget. Every experiment is a folder with a `config_experiment.yaml`:
+
+- `Biqmac`, `Maxcut`: `Annealing_galena_comparison.py` (no sweep)
+- `Biqmac_exponent`, `Maxcut_exponent`: `Annealing_galena_comparison_exponent.py` (sweeps `exponent`)
+- `Biqmac_size`, `Maxcut_size`: `Annealing_galena_comparison_size.py` (sweeps `init_cluster_size`)
+
+TSP is not included, as it needs a higher precision than the 4 bits available on chip.
+
+A parameter is swept by setting `sweep_parameter` and `sweep_values` in the config. Galena is run once per benchmark and shared by all sweep points. The settings of `config_experiment.yaml` take precedence over `base_experiment.yaml`. Run from the top of the repository:
+
+```
+python -m openising.Annealing_experiments.generate_annealing_experiments -config-file openising/Annealing_experiments/Maxcut_exponent --simulate  # simulate + compile
+python -m openising.Annealing_experiments.generate_annealing_experiments -config-file openising/Annealing_experiments/Maxcut_exponent             # send to chip
+python -m openising.Annealing_experiments.postprocess_annealing -config-file openising/Annealing_experiments/Maxcut_exponent                    # plot
+```
+
+Folders that are already compiled or measured are skipped, so an interrupted run can simply be restarted. The post-processing stores the figures and summaries of both the chip (`hw_`) and the quantized software simulation (`sw_`) in `<experiment>/figures`.

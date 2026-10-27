@@ -48,7 +48,19 @@ def compile_data_convergence(data_folders: list[Path], nb_iteration: int, core: 
                 index = data.index(line)
             elif line.find("#define GCFG1_ENABLE_FLIP_DETECTION") != -1:
                 index_deltah = data.index(line)
+            elif line.find("static const uint32_t spin_feedback[8]") != -1:
+                index_feedback = data.index(line)
     data[index_deltah] = f"#define GCFG1_ENABLE_FLIP_DETECTION {int(delta_h_calculation)}\n"
+    ans = Ans()
+    ans.load(data_folders[0].parent / "ans.pkl")
+    if ans.config.problem_type == "MIMO":
+        nb_variables = ans.MIMO[0].ising_model.num_variables
+    else:
+        nb_variables = ans.ising_model.num_variables
+    nb_on = [min(max(nb_variables - 32 * (7 - i), 0), 32) for i in range(8)]
+    feedback = [f"0x{((1 << n) - 1) << (32 - n):08X}U" for n in nb_on]
+    data[index_feedback] = f"static const uint32_t spin_feedback[8] = {{{', '.join(feedback[:4])},\n"
+    data[index_feedback + 1] = f"{' ' * 42}{', '.join(feedback[4:])}}};\n"
     with Reg_file.open("w") as f:
         f.writelines(data)
     delta_h_str = "_deltah" if delta_h_calculation else ""
@@ -93,6 +105,10 @@ def compile_data(data_folders: list[Path], nb_cores: int, core: int, delta_h_cal
     ans = Ans()
     ans.load(data_folders[0].parent / "ans.pkl")
     nb_flipping = ans.config.nb_flipping
+    if ans.config.problem_type == "MIMO":
+        nb_variables = ans.MIMO[0].ising_model.num_variables
+    else:
+        nb_variables = ans.ising_model.num_variables
     Reg_file = TOP_LAGD_IM / "sw/include/lagd_reg_params.h"
     with Reg_file.open("r") as f:
         data = f.readlines()
@@ -101,8 +117,17 @@ def compile_data(data_folders: list[Path], nb_cores: int, core: int, delta_h_cal
                 index = data.index(line)
             elif line.find("#define GCFG1_ENABLE_FLIP_DETECTION") != -1:
                 index_deltah = data.index(line)
+            elif line.find("static const uint32_t spin_feedback[8]") != -1:
+                index_feedback = data.index(line)
+
     data[index] = f"#define ICON_LAST_RADDR_PLUS_ONE {hex(nb_flipping * 2)} // max: 0x0400 (1024)\n"
     data[index_deltah] = f"#define GCFG1_ENABLE_FLIP_DETECTION {int(delta_h_calculation)}\n"
+    # enable only the first nb_variables spins: the last word holds spins 0-31, and within a word the MSB is the
+    # smallest spin
+    nb_on = [min(max(nb_variables - 32 * (7 - i), 0), 32) for i in range(8)]
+    feedback = [f"0x{((1 << n) - 1) << (32 - n):08X}U" for n in nb_on]
+    data[index_feedback] = f"static const uint32_t spin_feedback[8] = {{{', '.join(feedback[:4])},\n"
+    data[index_feedback + 1] = f"{' ' * 42}{', '.join(feedback[4:])}}};\n"
     with Reg_file.open("w") as f:
         f.writelines(data)
 
@@ -227,10 +252,10 @@ def send_chip(
         nb_variables = ans.ising_model.num_variables
         nb_runs = int(ans.config.nb_runs / 2)
     prev_scalings = 1
-    instruments, current_settings, smu_config = setup_smus(smu_config_file, chip, core)
+    # instruments, current_settings, smu_config = setup_smus(smu_config_file, chip, core)
     for run in range(0, nb_runs, nb_cores):
         print(f"Run: {run}")
-        prev_scalings = set_smus(instruments, ans, run, prev_scalings, current_settings, smu_config)
+        # prev_scalings = set_smus(instruments, ans, run, prev_scalings, current_settings, smu_config)
         # Reset board
         top_log = TOP_MEAS / "top.log"
         # subprocess.run(connect_to_host_commands + [f"{remote_python} sw/tests/chip_test.py"])
