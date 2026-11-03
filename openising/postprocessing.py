@@ -247,7 +247,7 @@ def plot_mppi(data_folder, add_sw: bool = True, figname: str = "mppi_results"):
         x_ref = np.loadtxt(trajectory_paths[0], delimiter=",", skiprows=1, ndmin=2)
         predicted_rows = np.loadtxt(trajectory_paths[1], delimiter=",", skiprows=1, ndmin=2)
         predicted_traj_hw = [
-            rows[np.argsort(rows[:, 1]), 2:4]
+            rows[np.argsort(rows[:, 1]), 2:7]
             for iteration in np.unique(predicted_rows[:, 0])
             for rows in [predicted_rows[predicted_rows[:, 0] == iteration]]
         ] if predicted_rows.size else []
@@ -258,32 +258,32 @@ def plot_mppi(data_folder, add_sw: bool = True, figname: str = "mppi_results"):
         executed_traj_hw = ans.executed_trajectory_hw
 
         for name, trajectory in (
-            ("reference", np.asarray(x_ref)[:, :2]),
-            ("executed", np.asarray(executed_traj_hw)[:, :2]),
+            ("reference", np.asarray(x_ref)[:, :]),
+            ("executed", np.asarray(executed_traj_hw)[:, :]),
         ):
             np.savetxt(
                 data_folder / f"{name}_trajectory.csv",
                 trajectory,
                 delimiter=",",
-                header="x-position,y-position",
+                header="x-position,y-position,heading-angle,velocity,steering-angle",
                 comments="",
             )
         predicted_rows = [
-            (iteration, step, state[0], state[1])
+            (iteration, step, state[0], state[1], state[2], state[3], state[4])
             for iteration, prediction in enumerate(predicted_traj_hw)
             for step, state in enumerate(prediction)
         ]
         np.savetxt(
             data_folder / "predicted_trajectory.csv",
-            np.asarray(predicted_rows).reshape(-1, 4),
+            np.asarray(predicted_rows).reshape(-1,7),
             delimiter=",",
-            header="iteration,prediction-step,x-position,y-position",
-            fmt=["%d", "%d", "%.18e", "%.18e"],
+            header="iteration,prediction-step,x-position,y-position,heading-angle,velocity,steering-angle",
+            fmt=["%d", "%d", "%.18e", "%.18e",  "%.18e", "%.18e", "%.18e"],
             comments="",
         )
 
     error = executed_traj_hw - x_ref
-    rmse = np.sqrt(error**2).mean()
+    rmse = np.sqrt(np.mean(error**2))
     r_2 = 1 - (error**2 / np.maximum((error**2).mean(), 10e-4)).mean()
     # Plot environment
     try:
@@ -439,28 +439,28 @@ def compute_BER(ans: Ans, data_folder: Path, delta_h_calculation: bool):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    boxplot(
-        [
-            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_100",
-            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_100",
-            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_80",
-            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_80",
-        ],
-        False,
-    )
-    boxplot(
-        [
-            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_100_1it",
-            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_100_1it",
-            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_80_1it",
-            TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_80_1it",
-        ],
-        False,
-        "boxplot_1it"
-    )
-    plot_mppi(TOP_MEAS / "openising/ISSCC_tests/MPC_experiment/model_0", False)
-    BPSK_folder = TOP_MEAS / "openising/ISSCC_tests/MIMO_experiment/model_6"
-    BER = compute_BER(None, BPSK_folder, True)
-    print("BER:" + str(BER))
+    # logging.basicConfig(level=logging.INFO)
+    # boxplot(
+    #     [
+    #         TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_100",
+    #         TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_100",
+    #         TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_80",
+    #         TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_80",
+    #     ],
+    #     False,
+    # )
+    # boxplot(
+    #     [
+    #         TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_100_1it",
+    #         TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_100_1it",
+    #         TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1d_80_1it",
+    #         TOP_MEAS / "openising/ISSCC_tests/Maxcut_experiment/pm1s_80_1it",
+    #     ],
+    #     False,
+    #     "boxplot_1it"
+    # )
+    plot_mppi(TOP_MEAS / "openising/ISSCC_tests/MPC_experiment/model_0", False, figname="mppi_results")
+    # BPSK_folder = TOP_MEAS / "openising/ISSCC_tests/MIMO_experiment/model_6"
+    # BER = compute_BER(None, BPSK_folder, True)
+    # print("BER:" + str(BER))
     # plot_convergence_run(TOP_MEAS / "openising/convergence_run/run_0", False)

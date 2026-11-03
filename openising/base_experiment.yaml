@@ -6,7 +6,7 @@
 
 # Solver to use: [BRIM, SA, DSA, inSituSA, bSB, dSB, SCA, Multiplicative, CIM, all]
 solvers:
-  - Multiplicative
+  - MultiplicativeEvent
 
 
 # Use gurobi or not
