@@ -18,9 +18,6 @@ from openising import (
     TOP_MEAS,
     TOP_LAGD_IM,
     connect_to_host_commands,
-    default_remote_dir,
-    default_host,
-    default_device,
     remote_python,
 )
 from submodules.openising.ising.stages.simulation_stage import Ans
