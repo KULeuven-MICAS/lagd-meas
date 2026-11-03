@@ -209,7 +209,7 @@ def _stream_uart_output_batch(
         raise ValueError(f"batch interface {interface} is not supported")
     tokens = []
     if reset_chip:
-        tokens.append("python sw/tests/chip_test.py &&")
+        tokens.append("python sw/tests/chip_test.py < /dev/null &&")
     tokens.extend([
         remote_python,
         "-m",
