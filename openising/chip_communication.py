@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import numpy as np
+import threading
 import yaml
 import csv
 
@@ -226,8 +227,7 @@ def _stream_uart_output_batch(
     ])
     if rtscts:
         tokens.append("--rtscts")
-    for elf_file in elf_files:
-        tokens.extend(["-elf", elf_file])
+    tokens.extend(["--elf-list", "-"])
     # The shared SSH command uses ``-t`` for interactive/single-run flows.
     # Batch mode prints progress locally while SSH is running; an allocated PTY
     # puts the local terminal in raw mode, where ``\n`` no longer returns the
@@ -236,14 +236,28 @@ def _stream_uart_output_batch(
     command = [("-T" if token == "-t" else token) for token in connect_to_host_commands] + tokens
     process = subprocess.Popen(
         command,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
     )
-    if process.stdout is None:
+    if process.stdout is None or process.stdin is None:
         raise RuntimeError("failed to capture remote batch output")
+    # Write from a thread so a large ELF list can't deadlock against unread stdout.
+    def _write_elf_list():
+        try:
+            process.stdin.write("\n".join(elf_files) + "\n")
+        except BrokenPipeError:
+            pass
+        finally:
+            try:
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
 
+    stdin_writer = threading.Thread(target=_write_elf_list, daemon=True)
+    stdin_writer.start()
     run_started = {}
     total_runs = len(elf_files)
     with tqdm(
