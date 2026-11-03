@@ -37,6 +37,7 @@ from openising.Annealing_experiments.annealing_comparison import (
 )
 from openising.save_model import store_run
 from openising.chip_communication import compile_data, send_chip
+from openising.Annealing_experiments.plotter import plot_comparison, write_summary
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -62,6 +63,12 @@ parser.add_argument(
 parser.add_argument(
     "--smu-config", help="config file for the smu", default="sw/lib/lab_instruments/config/meas_setup.yaml"
 )
+parser.add_argument(
+    "--plot",
+    help="Wether to plot or not, will only be done when the simulate is turned off",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+)
 parser.add_argument("--clock-speed", help="The speed of the clock", type=float, default=512e6)
 parser.add_argument("--no_delta_h_calculation", action=argparse.BooleanOptionalAction, default=False)
 args = parser.parse_args()
@@ -86,9 +93,7 @@ annealing_path = TOP_ISING / f"./ising/inputs/config/config_annealing_{discrimin
 # Every (benchmark, sweep value, x) combination with its run config, Galena once per benchmark.
 experiments = []
 for benchmark in benchmarks:
-    experiments.append(
-        (galena_config(config, benchmark), galena_path, galena_folder(save_folder, benchmark))
-    )
+    experiments.append((galena_config(config, benchmark), galena_path, galena_folder(save_folder, benchmark)))
     for sweep_value in sweep_points(config):
         for x in bestx:
             experiments.append(
@@ -126,4 +131,41 @@ for run_config, config_path, folder in experiments:
             nb_cores=args.nb_cores,
             clock_speed=args.clock_speed,
             delta_h_calculation=delta_h_calculation,
+        )
+if args.plot and not args.simulate:
+    fig_folder = save_folder / "figures"
+    fig_folder.mkdir(parents=True, exist_ok=True)
+    galena_runs = dict()
+    sweep = sweep_points(config)
+    annealing_runs = {sweep_value: dict() for sweep_value in sweep}
+
+    for bench_ind, benchmark in enumerate(benchmarks):
+        galena_runs[bench_ind] = (benchmark, galena_folder(save_folder, benchmark))
+        for sweep_value in sweep:
+            annealing_runs[sweep_value][bench_ind] = dict()
+            for x in bestx:
+                annealing_runs[sweep_value][bench_ind][x] = (
+                    benchmark,
+                    annealing_folder(save_folder, benchmark, x, sweep_parameter, sweep_value),
+                )
+    for sweep_value in sweep:
+        if sweep_parameter is not None:
+            sweep_str = '_' + sweep_parameter + str(sweep_value)
+        else:
+            sweep_str = ''
+        plot_comparison(
+            galena_runs,
+            annealing_runs[sweep_value],
+            bestx,
+            fig_folder,
+            f"galena_vs_annealing{sweep_str}",
+            delta_h_calculation,
+        )
+        write_summary(
+            galena_runs,
+            annealing_runs[sweep_value],
+            bestx,
+            fig_folder / f"galena_vs_annealing{sweep_str}.csv",
+            True,
+            delta_h_calculation,
         )

@@ -1,3 +1,9 @@
+# Copyright 2026 KU Leuven.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Sofie De Weer <sofie.deweer@kuleuven.be>
+
 import yaml
 import logging
 from copy import deepcopy
@@ -99,7 +105,7 @@ def simulate_run(
 
 def is_compiled(folder: Path, nb_runs: int, delta_h_calculation: bool) -> bool:
     elf_file = "lagd_commands" + ("_deltah.elf" if delta_h_calculation else ".elf")
-    return (folder / f"run_{nb_runs // 2 - 1}" / elf_file).exists()
+    return all((folder / f"run_{run}" / elf_file).exists() for run in range(nb_runs // 2))
 
 
 def is_measured(folder: Path, nb_runs: int, delta_h_calculation: bool) -> bool:
