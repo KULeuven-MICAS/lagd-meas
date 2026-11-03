@@ -259,7 +259,11 @@ def build_parser():
     parser.add_argument("-interface", help="Other interface with which to send all the data.", type=str)
     parser.add_argument(
             "-elf", help="Elf file to send to chip; repeat for batch mode",
-            type=str, action="append", required=True)
+            type=str, action="append",default=[])
+    parser.add_argument(
+            "--elf-list", type=str,
+            help="file with one elf path per line ('-' reads stdin); avoids "
+                 "'Argument list too long' for large batches")
     parser.add_argument(
             "--batch", action="store_true",
             help="run all repeated -elf arguments in one persistent transport session")
@@ -283,9 +287,17 @@ def main(argv=None):
     parser = build_parser()
     args, _ = parser.parse_known_args(argv)
     timeout = args.timeout
-    fd = open_port(args.device, args.baud, args.rtscts)
     interface = args.interface
-    elf_files = args.elf
+    elf_files = list(args.elf)
+    if args.elf_list is not None:
+        if args.elf_list == "-":
+            lines = sys.stdin.read().splitlines()
+        else:
+            lines = Path(args.elf_list).read_text().splitlines()
+        elf_files.extend(line.strip() for line in lines if line.strip())
+    if not elf_files:
+        parser.error("no elf files given; use -elf or --elf-list")
+    fd = open_port(args.device, args.baud, args.rtscts)
     try:
         if args.batch:
             if interface == "spi":
