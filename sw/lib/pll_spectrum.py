@@ -6,8 +6,8 @@
 
 # Spectrum, phase noise and jitter of the locked PLL's output pad on the R&S FSV, shared by the PLL test scripts
 # (sw/tests/pll_spectrum_kvco.py, sw/tests/pll_spectrum_div.py). measure_output() does everything after lock:
-# carrier search and check, phase-noise markers (CALC:DELT2:FUNC:PNO:RES?) and the full phase-noise curve from the
-# exported traces of the same sweeps (RMS detector, power averaging) with spur detection, and an averaged spectrum.
+# carrier search and check, the full phase-noise curve from averaged traces (RMS detector, power averaging) with spur
+# detection, and an averaged spectrum.
 # measure_phase_noise_mode() measures the same pad in the analyzer's Phase Noise application (FSW K40) for a
 # comparison, log_method_comparison() logs the methods side by side.
 #
@@ -30,37 +30,37 @@ import numpy as np
 from sw.lib import vco_measure
 from sw.lib.lab_instruments import instrument as inst
 from sw.lib.lab_instruments.drivers.rohde_schwarz_fsv_spectrum import PNO_MAX_SPOT_MARKERS, RohdeSchwarzFSVSpectrum
-from sw.lib.pll_util import (calculate_integrated_jitter, integrate_phase_noise, phase_noise_from_traces,
-                             split_jitter)
+from sw.lib.pll_util import integrate_phase_noise, phase_noise_from_traces, split_jitter
 
 logger = logging.getLogger(__name__)
 
 RESULTS_DIR = Path(__file__).resolve().parents[2] / "results" / "pll"
 
 FB_DIV = 128  # f_vco = FB_DIV * f_ref, fixed feedback ratio (pll_settings: CFG_REF8, 8 MHz -> 1024 MHz)
-# Offset [Hz] -> analyzer span [Hz] for the phase-noise markers; the offsets are also the integration band of the
-# jitter: 1 kHz - 50 MHz (above the 50 Hz mains harmonics; includes the reference spurs at n x f_ref and the board
-# converter spurs). Above 50 MHz there is < 0.1 % of the phase variance (Kvco sweep 2026-10-05: 250 MHz pad,
-# 100 MHz band).
+# Offset [Hz] -> analyzer span [Hz] of the trace covering the curve up to that offset; the offsets are also the
+# integration band of the jitter: 1 kHz - 20 MHz (above the 50 Hz mains harmonics; includes the reference spurs at
+# n x f_ref and the board converter spurs). 20 MHz is the most a pad of PAD_F_MAX / 2 = 50 MHz shows
+# (OUT_OFFSET_RATIO); above 50 MHz there is < 0.1 % of the phase variance (Kvco sweep 2026-10-05: 250 MHz pad).
 OFFSET_SPAN_MAP = {
     1e3: 21e3,
     1e4: 21e3,
     1e5: 210e3,
     1e6: 2.1e6,
     1e7: 21e6,
-    5e7: 105e6,
+    2e7: 42e6,
 }
 # Offsets are only measured up to f_out / OUT_OFFSET_RATIO: a digital divider passes the phase only at its output
 # edges, so offsets above f_pad / 2 fold back and are not the VCO's noise (2.5: some margin below f_pad / 2).
 OUT_OFFSET_RATIO = 2.5
-# Highest pad frequency: above it the pad does not drive a full-swing carrier (divider sweep 2026-10-05: 125 MHz and
-# below -5..+1 dBm, 250 MHz -16 dBm, 500 MHz / 1 GHz no carrier). pad_divider picks the divider from it.
-PAD_F_MAX = 125e6
+# Usable pad frequencies (2026-10-20): the pad's bandwidth ends at PAD_F_MAX, and the DC blocker at the analyzer
+# input cuts the carrier below PAD_F_MIN. pad_divider picks the internal divider from PAD_F_MAX, which puts the pad
+# at PAD_F_MAX / 2 - PAD_F_MAX; the divider sweep skips settings outside the band.
+PAD_F_MIN, PAD_F_MAX = 20e6, 100e6
 # RBW = span / RBW_SPAN_RATIO (1-2-3-5 steps), VBW = 3 RBW, 5 sweep points per RBW (driver set_bandwidths_for_span):
-# 21 kHz -> 30 Hz, 210 kHz -> 300 Hz, 2.1 MHz -> 3 kHz, 21 MHz -> 30 kHz, 105 MHz -> 100 kHz, 5 MHz spectrum -> 5 kHz.
+# 21 kHz -> 30 Hz, 210 kHz -> 300 Hz, 2.1 MHz -> 3 kHz, 21 MHz -> 30 kHz, 42 MHz -> 50 kHz, 5 MHz spectrum -> 5 kHz.
 # The lowest offset of each span's band (1 kHz, 10 kHz, 100 kHz, 1 MHz, 10 MHz) is then >= ~33 RBW from the carrier.
 RBW_SPAN_RATIO = 700
-# Detector, averaging and video filter for the markers, the full curve (the same sweeps) and the spectrum: RMS detector
+# Detector, averaging and video filter for the full curve and the spectrum: RMS detector
 # + power (linear) averaging + linear video filter, so every trace point is the true noise power in the RBW (no
 # log-average correction). The values the analyzer reports back are recorded per row (detector, average_type,
 # video_filter).
@@ -75,29 +75,25 @@ SPUR_THRESHOLD_DB, SPUR_WINDOW_DECADES, SPUR_MIN_POINTS = 10.0, 0.2, 2
 MIN_CARRIER_DBM = -10.0
 
 # Columns written by measure_output (the scripts add their own setting columns in front).
-#   on the pad:              f_out, f_out_meas, carrier_dbm, L_out_*, phase_jitter_out_mrad,
-#                            phase_jitter_trace_out_mrad, spurs;
-#   referred to the PLL output: f_pll_out, L_pll_*, phase_jitter_pll_mrad;
-#   referred to the VCO:     f_vco_meas, L_vco_*, phase_jitter_vco_mrad;
+#   on the pad:              f_out, f_out_meas, carrier_dbm, phase_jitter_trace_out_mrad, spurs;
+#   referred to the PLL output: f_pll_out, phase_jitter_trace_pll_mrad;
+#   referred to the VCO:     f_vco_meas, phase_jitter_trace_vco_mrad;
 #   time_jitter_*:           the same at all three points.
 #   analyzer_name:           the analyzer measured on (meas_setup.yaml name).
-OUTPUT_COLUMNS = (["analyzer_name", "f_out", "f_pll_out", "pll_div", "ext_div", "offset_max", "f_out_meas",
-                   "f_vco_meas", "n_meas", "divider_ok",
-                   "carrier_dbm", "n_averages", "time_jitter_ps", "phase_jitter_out_mrad", "phase_jitter_pll_mrad",
-                   "phase_jitter_vco_mrad", "time_jitter_trace_ps",
-                   "phase_jitter_trace_out_mrad", "time_jitter_noise_ps", "time_jitter_spur_ps", "n_spurs", "spurs",
-                   "common_band", "time_jitter_common_ps", "time_jitter_trace_common_ps", "detector",
-                   "average_type", "video_filter", "rf_overload", "if_overload"]
-                  + ["L_out_{:.0f}".format(f) for f in OFFSET_SPAN_MAP]
-                  + ["L_pll_{:.0f}".format(f) for f in OFFSET_SPAN_MAP]
-                  + ["L_vco_{:.0f}".format(f) for f in OFFSET_SPAN_MAP] + ["status"])
+# L(f) itself is in the traces ("L_trace", on the pad; + 20 log10 N for the PLL output / VCO).
+OUTPUT_COLUMNS = ["analyzer_name", "f_out", "f_pll_out", "pll_div", "ext_div", "offset_max", "f_out_meas",
+                  "f_vco_meas", "n_meas", "divider_ok", "carrier_dbm", "n_averages", "time_jitter_trace_ps",
+                  "phase_jitter_trace_out_mrad", "phase_jitter_trace_pll_mrad", "phase_jitter_trace_vco_mrad",
+                  "time_jitter_noise_ps", "time_jitter_spur_ps", "n_spurs", "spurs", "common_band",
+                  "time_jitter_trace_common_ps", "detector", "average_type", "video_filter", "rf_overload",
+                  "if_overload", "status"]
 # Traces: one row per point. kind = "spectrum" (averaged wide trace) or "phase_noise" (one per span): freq [Hz],
 # level [dBm]; "L_trace": the full phase-noise curve, freq = offset from the carrier [Hz], level = L(f) on the pad
 # [dBc/Hz]; "L_noise": the same with the spurs replaced by the local noise floor; "spur": one row per spur,
 # freq = offset of its peak [Hz], level = spur power on the pad [dBc, single sideband].
 TRACE_FIELDS = ["kind", "center", "span", "rbw", "vbw", "averages", "freq", "level_dbm"]
 
-# Phase-noise mode (FSW K40, measure_phase_noise_mode), for a comparison with the marker / full-curve method above:
+# Phase-noise mode (FSW K40, measure_phase_noise_mode), for a comparison with the full-curve method above:
 # RBW as % of each half decade's start offset, measurement preset (FAST / NORMal / AVERage: averaging per half
 # decade), trace averages over whole sweeps, spur removal off by default (the trace keeps its spurs, as our full curve
 # does; the spur list and the discrete / random jitter split come either way), timeout of one averaged sweep.
@@ -129,7 +125,8 @@ def open_spectrum(analyzer="spectrum_analyzer"):
 
 
 def pad_divider(f_vco, pad_f_max=PAD_F_MAX):
-    """Smallest 2**n (n = 0..7, set_div_freq) bringing f_vco / 2**n at or below pad_f_max."""
+    """Smallest 2**n (n = 0..7, set_div_freq) bringing f_vco / 2**n at or below pad_f_max (so above pad_f_max / 2:
+    inside PAD_F_MIN - PAD_F_MAX for f_vco from 2 PAD_F_MIN up)."""
     return next((n for n in range(8) if f_vco / 2 ** n <= pad_f_max), 7)
 
 
@@ -168,15 +165,12 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
     total_div / pll_div. None: no external divider (pad = PLL output).
 
     1. Carrier search (center_on_fundamental); below MIN_CARRIER_DBM: status "no_carrier", nothing else measured.
-    2. One pass over the spans of `offset_span_map`, RMS detector + power averaging, `n_averages` sweeps per span:
-       - phase-noise markers (PNO:RES?) at the offsets; RMS jitter over the offsets
-         (pll_util.calculate_integrated_jitter);
-       - the full curve from the traces of the same sweeps, L(f) integrated with the spurs split off
-         (pll_util.split_jitter).
+    2. One averaged trace per span of `offset_span_map`, RMS detector + power averaging, `n_averages` sweeps per
+       span: the full curve L(f) from these traces, integrated with the spurs split off (pll_util.split_jitter).
     3. An averaged spectrum over `span` (`spectrum_averages` sweeps), same detector and averaging.
     detector / average_type in the row: as the analyzer reports them after the sweeps.
-    `common_band` (lo, hi) [Hz]: also integrate the markers and the full curve over only that band, to compare
-    settings whose bands differ (e.g. dividers: the band is limited by the pad frequency).
+    `common_band` (lo, hi) [Hz]: also integrate the full curve over only that band, to compare settings whose bands
+    differ (e.g. dividers: the band is limited by the pad frequency).
     row: the OUTPUT_COLUMNS values; n_meas = f_vco / measured carrier checks the divider (a digital divider is exact,
     so it only catches a wrong N: divider_ok when within 0.1 % of total_div; the ppm-level rest is the reference
     generator's clock against the analyzer's). traces: list of dicts with the TRACE_FIELDS (freq/level as lists).
@@ -191,8 +185,6 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
                common_band="{:g}-{:g}".format(*common_band) if common_band else "",
                status="error")
     traces = []
-    n_db = 20 * math.log10(total_div)  # pad -> VCO
-    ext_db = 20 * math.log10(ext_div)  # pad -> PLL output
     spectrum = open_spectrum(analyzer)  # reset: default detector and averaging
     row["analyzer_name"] = spectrum.info.name  # which analyzer (meas_setup.yaml)
     try:
@@ -206,15 +198,13 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
             row["status"] = "no_carrier"
             return row, traces
 
-        # Markers and full curve from the same sweeps: RMS detector + power averaging + linear video filter
-        pn_traces = []
-        profile = spectrum.measure_phase_noise_profile(averages=n_averages, offset_span_map=offset_span_map,
-                                                       traces=pn_traces, rbw_span_ratio=RBW_SPAN_RATIO,
-                                                       detector=DETECTOR, average_type=AVERAGE_TYPE,
-                                                       video_filter=VIDEO_FILTER)
+        # Traces for the full curve: RMS detector + power averaging + linear video filter
+        pn_traces = spectrum.phase_noise_traces(f_meas, list(offset_span_map.values()), averages=n_averages,
+                                                rbw_span_ratio=RBW_SPAN_RATIO, detector=DETECTOR,
+                                                average_type=AVERAGE_TYPE, video_filter=VIDEO_FILTER)
         row.update(detector=spectrum.get_detector(), average_type=spectrum.get_average_type(),
                    video_filter=spectrum.get_video_filter_type())
-        traces += [dict(t, kind="phase_noise", averages=n_averages) for t in pn_traces]
+        traces += [dict(t, kind="phase_noise") for t in pn_traces]
         # Averaged wide spectrum around the carrier
         t = spectrum.averaged_trace(f_meas, span, averages=spectrum_averages, rbw_span_ratio=RBW_SPAN_RATIO,
                                     detector=DETECTOR, average_type=AVERAGE_TYPE, video_filter=VIDEO_FILTER)
@@ -225,35 +215,23 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
         spectrum.set_sweep_mode(continuous=True)  # screen live again
         spectrum.close()
 
-    t_jit, phi_out = calculate_integrated_jitter(f_meas, list(profile), list(profile.values()))
-    row.update(time_jitter_ps=t_jit * 1e12, phase_jitter_out_mrad=phi_out * 1e3,
-               phase_jitter_pll_mrad=phi_out * ext_div * 1e3, phase_jitter_vco_mrad=phi_out * total_div * 1e3,
-               status="overload" if row["rf_overload"] or row["if_overload"] else "ok")
+    row["status"] = "overload" if row["rf_overload"] or row["if_overload"] else "ok"
     if row["status"] == "overload":
         logger.warning("Analyzer OVERLOAD during the measurement (RF %d, IF %d): the levels are not reliable, status "
                        "\"overload\"", row["rf_overload"], row["if_overload"])
-    for f, l in profile.items():
-        row["L_out_{:.0f}".format(f)] = l
-        row["L_pll_{:.0f}".format(f)] = l + ext_db
-        row["L_vco_{:.0f}".format(f)] = l + n_db
     logger.info("Carrier on the pad %.6f MHz, %.1f dBm (/%g outside the PLL) <- PLL output %.4f MHz (/%g inside) <- "
                 "VCO %.4f MHz (divider check: f_vco / carrier = %.3f, set %d)", f_meas / 1e6, carrier_dbm, ext_div,
                 f_meas * ext_div / 1e6, pll_div, f_meas * total_div / 1e6, row["n_meas"], total_div)
-    for where, add_db in (("on the pad", 0.0), ("at the PLL output", ext_db), ("at the VCO", n_db)):
-        if where == "at the PLL output" and ext_div == 1:
-            continue  # same as the pad
-        logger.info("Phase noise %s (markers): %s", where, ", ".join(
-            "{:g} Hz: {:.1f} dBc/Hz".format(f, l + add_db) for f, l in profile.items()))
-    logger.info("RMS jitter %g-%g Hz (markers): %.3f ps; phase %.3f mrad on the pad, %.3f mrad at the PLL output, "
-                "%.3f mrad at the VCO", min(profile), max(profile), t_jit * 1e12, phi_out * 1e3,
-                phi_out * ext_div * 1e3, phi_out * total_div * 1e3)
 
-    o_tr, l_tr = phase_noise_from_traces(pn_traces, list(profile))  # power-averaged: no log-average correction
+    offsets = sorted(offset_span_map)
+    o_tr, l_tr = phase_noise_from_traces(pn_traces, offsets)  # power-averaged: no log-average correction
     if len(o_tr) > 1:
         jit = split_jitter(f_meas, o_tr, l_tr, threshold_db=SPUR_THRESHOLD_DB, window_decades=SPUR_WINDOW_DECADES,
                            min_points=SPUR_MIN_POINTS)
         spurs = jit["spurs"]
         row.update(time_jitter_trace_ps=jit["total"] * 1e12, phase_jitter_trace_out_mrad=jit["total_rad"] * 1e3,
+                   phase_jitter_trace_pll_mrad=jit["total_rad"] * ext_div * 1e3,
+                   phase_jitter_trace_vco_mrad=jit["total_rad"] * total_div * 1e3,
                    time_jitter_noise_ps=jit["noise"] * 1e12, time_jitter_spur_ps=jit["spur"] * 1e12,
                    n_spurs=len(spurs), spurs="; ".join("{:.0f} Hz: {:.1f} dBc".format(s["offset"], s["power"])
                                                       for s in spurs))
@@ -264,26 +242,20 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
                    dict(kind="spur", center=f_meas, span=None, rbw=None, averages=n_averages,
                         freq=[s["offset"] for s in spurs], level=[s["power"] for s in spurs])]
         logger.info("RMS jitter %g-%g Hz (full curve on the pad, %d points): %.3f ps total = %.3f ps noise + %.3f ps "
-                    "from %d spurs (%.3f mrad on the pad)", o_tr[0], o_tr[-1], len(o_tr), jit["total"] * 1e12,
-                    jit["noise"] * 1e12, jit["spur"] * 1e12, len(spurs), jit["total_rad"] * 1e3)
+                    "from %d spurs; phase %.3f mrad on the pad, %.3f mrad at the PLL output, %.3f mrad at the VCO",
+                    o_tr[0], o_tr[-1], len(o_tr), jit["total"] * 1e12, jit["noise"] * 1e12, jit["spur"] * 1e12,
+                    len(spurs), jit["total_rad"] * 1e3, jit["total_rad"] * ext_div * 1e3,
+                    jit["total_rad"] * total_div * 1e3)
         for s in spurs:
             logger.info("  spur at %.0f Hz offset (%.0f-%.0f Hz): %.1f dBc on the pad, peak %.1f dB above the noise "
                         "floor", s["offset"], s["f_lo"], s["f_hi"], s["power"], s["above_floor"])
-        logger.info("Full curve vs marker L(f) on the pad: %s", ", ".join(
-            "{:g} Hz: {:.1f} / {:.1f} dBc/Hz".format(f, float(np.interp(f, o_tr, l_tr)), l)
-            for f, l in profile.items()))
 
     if common_band:
         lo, hi = common_band
-        marks = {f: l for f, l in profile.items() if lo <= f <= hi}
-        if len(marks) > 1:
-            row["time_jitter_common_ps"] = calculate_integrated_jitter(f_meas, list(marks),
-                                                                      list(marks.values()))[0] * 1e12
         keep = (o_tr >= lo) & (o_tr <= hi) if len(o_tr) else np.array([], dtype=bool)
         if keep.sum() > 1:
             row["time_jitter_trace_common_ps"] = integrate_phase_noise(f_meas, o_tr[keep], l_tr[keep])[0] * 1e12
-        logger.info("RMS jitter over the common band %g-%g Hz: %s ps (markers), %s ps (full curve)", lo, hi,
-                    "{:.3f}".format(row["time_jitter_common_ps"]) if "time_jitter_common_ps" in row else "-",
+        logger.info("RMS jitter over the common band %g-%g Hz (full curve): %s ps", lo, hi,
                     "{:.3f}".format(row["time_jitter_trace_common_ps"]) if "time_jitter_trace_common_ps" in row
                     else "-")
     return row, traces
@@ -291,7 +263,8 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
 
 def measure_phase_noise_mode(f_vco, total_div, offsets, carrier_dbm=None, averages=PNM_AVERAGES,
                              preset=PNM_PRESET, rbw_percent=PNM_RBW_PERCENT, spur_removal=False,
-                             spur_threshold_db=SPUR_THRESHOLD_DB, our_traces=None, analyzer="spectrum_analyzer"):
+                             spur_threshold_db=SPUR_THRESHOLD_DB, our_traces=None, analyzer="spectrum_analyzer",
+                             freq_tolerance_hz=10e3, level_tolerance_db=10.0):
     """Measure the locked PLL's pad (f_vco / total_div) in the analyzer's Phase Noise application (FSW option K40),
     for a comparison with measure_output on the same lock. Returns (row, traces).
 
@@ -306,6 +279,8 @@ def measure_phase_noise_mode(f_vco, total_div, offsets, carrier_dbm=None, averag
     row: the PNM_COLUMNS values; traces: "L_pnmode" (its L(f) curve, freq = offset) and "pnm_spur" (its spur list,
     freq = offset, level = dBc), with the TRACE_FIELDS. The analyzer is left in single sweep and closed at the end,
     also on an error.
+    `freq_tolerance_hz`, `level_tolerance_db`: how far the carrier may be from f_vco / total_div and from
+    `carrier_dbm` (a locked PLL: 10 kHz, 10 dB; a free-running VCO wanders, so more).
     """
     offsets = sorted(offsets)
     f_out = f_vco / total_div
@@ -317,6 +292,8 @@ def measure_phase_noise_mode(f_vco, total_div, offsets, carrier_dbm=None, averag
     try:
         spectrum.start_phase_noise_mode(f_out, offsets[0], f_out / OUT_OFFSET_RATIO,
                                         carrier_level_dbm=0.0 if carrier_dbm is None else round(carrier_dbm),
+                                        freq_tolerance_hz=freq_tolerance_hz,
+                                        level_tolerance_db=level_tolerance_db,
                                         tracking=True, rbw_percent=rbw_percent, preset=preset, averages=averages,
                                         spur_removal=spur_removal, spur_threshold_db=spur_threshold_db,
                                         continuous=False)
@@ -369,24 +346,24 @@ def measure_phase_noise_mode(f_vco, total_div, offsets, carrier_dbm=None, averag
 
 
 def log_method_comparison(row, traces):
-    """Log the marker method, the full curve (measure_output) and the phase-noise mode (measure_phase_noise_mode) side
-    by side: L(f) per offset on the pad and the RMS jitter of each, from a row with the OUTPUT_COLUMNS and PNM_COLUMNS
-    and the traces of both (the "L_trace" curve)."""
+    """Log the full curve (measure_output) and the phase-noise mode (measure_phase_noise_mode) side by side: L(f) per
+    offset on the pad and the RMS jitter of each, from a row with the OUTPUT_COLUMNS and PNM_COLUMNS and the traces of
+    both (the "L_trace" curve)."""
     curve = next((t for t in traces if t["kind"] == "L_trace"), None)
-    logger.info("Phase noise on the pad [dBc/Hz]:  offset    markers  full curve  phase-noise mode")
+    logger.info("Phase noise on the pad [dBc/Hz]:  offset  full curve  phase-noise mode")
     for f in OFFSET_SPAN_MAP:
-        marker, pnm = row.get("L_out_{:.0f}".format(f)), row.get("L_pnm_{:.0f}".format(f))
-        if marker is None and pnm is None:
+        pnm = row.get("L_pnm_{:.0f}".format(f))
+        on_curve = curve is not None and len(curve["freq"]) and curve["freq"][0] <= f <= curve["freq"][-1]
+        full = float(np.interp(f, curve["freq"], curve["level"])) if on_curve else None
+        if full is None and pnm is None:
             continue
-        full = float(np.interp(f, curve["freq"], curve["level"])) if curve and len(curve["freq"]) else None
-        logger.info("  %10g Hz  %8s  %10s  %16s", f, *("-" if v is None else "{:.1f}".format(v)
-                                                         for v in (marker, full, pnm)))
+        logger.info("  %10g Hz  %10s  %16s", f, *("-" if v is None else "{:.1f}".format(v) for v in (full, pnm)))
 
     def ps(key):
         return "-" if row.get(key) is None else "{:.3f} ps".format(row[key])
 
-    logger.info("RMS jitter on the pad: markers %s; full curve %s (noise %s + spurs %s); phase-noise mode %s (random "
-                "%s + discrete %s; from its IPN %s, its trace integrated by us %s)", ps("time_jitter_ps"),
+    logger.info("RMS jitter on the pad: full curve %s (noise %s + spurs %s); phase-noise mode %s (random "
+                "%s + discrete %s; from its IPN %s, its trace integrated by us %s)",
                 ps("time_jitter_trace_ps"), ps("time_jitter_noise_ps"), ps("time_jitter_spur_ps"),
                 ps("time_jitter_pnm_ps"), ps("time_jitter_pnm_random_ps"), ps("time_jitter_pnm_discrete_ps"),
                 ps("time_jitter_pnm_ipn_ps"), ps("time_jitter_pnm_trace_ps"))

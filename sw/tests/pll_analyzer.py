@@ -12,7 +12,7 @@
 # The PLL settings (VCO frequency, divider) are taken from pll_manual.CFG / F_REF, so the carrier search and the
 # divider check use the config that is on the chip.
 #
-# Per entry of MEASUREMENTS: lib/pll_spectrum.measure_output on that analyzer (carrier, phase-noise markers, full
+# Per entry of MEASUREMENTS: lib/pll_spectrum.measure_output on that analyzer (carrier, full phase-noise
 # curve with spurs, averaged spectrum, RMS jitter also over COMMON_BAND). The notebook
 # sw/tools/notebooks/pll_analyzer.ipynb overlays two of them.
 #

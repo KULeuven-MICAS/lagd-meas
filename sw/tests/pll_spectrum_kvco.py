@@ -8,8 +8,8 @@
 # Influence of Kvco on the locked PLL's spectrum and jitter. The VCO codes come from the lookup table
 # (lib/vco_lut.py, VcoLUT) for f_vco and a requested |Kvco|; the loop is closed on a reference of
 # f_vco / FB_DIV from the 33600A, the PLL supply is the 2450 SMU (current and power recorded). The output pad
-# (VCO / 2**set_div_freq) is measured on the R&S FSV with lib/pll_spectrum.measure_output: phase-noise markers,
-# the full phase-noise curve with spur detection, an averaged spectrum, and the RMS jitter from both. With
+# (VCO / 2**set_div_freq) is measured on the R&S FSV with lib/pll_spectrum.measure_output: the full
+# phase-noise curve with spur detection, an averaged spectrum, and the RMS jitter from it. With
 # phase_noise_mode=True the same lock is then also measured in the analyzer's Phase Noise application (FSW K40,
 # pll_spectrum.measure_phase_noise_mode: L_pnm_*, *_pnm_* columns, "L_pnmode" / "pnm_spur" traces), and the methods
 # are logged side by side.
@@ -48,9 +48,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 LOG_DIR = Path(__file__).resolve().parents[2] / "results" / "logs"
 
 # Band integrated for every setting, so settings with different pad frequencies (and so different bands, up to
-# pad / OUT_OFFSET_RATIO) can be compared: fits every pad frequency from PAD_F_MAX / 2 = 62.5 MHz up.
+# pad / OUT_OFFSET_RATIO) can be compared: fits every pad frequency from 25 MHz up (pad_divider: 50-100 MHz).
 COMMON_BAND = (1e3, 1e7)
-# Frequencies of frequency_sweep (8: one notebook colour each); reference f / 128 = 2.3-31 MHz.
+# Frequencies of frequency_sweep (8: one notebook colour each); reference f / 128 = 2.3-31 MHz. 1 GHz and 4 GHz
+# stay in: their phase-noise spectra look completely different (pll_manual, 2026-10-20). Pads (pad_divider): 75,
+# 62.5, 93.75, 62.5, 93.75, 62.5, 93.75, 62.5 MHz.
 FREQ_SWEEP = (300e6, 500e6, 750e6, 1e9, 1.5e9, 2e9, 3e9, 4e9)
 
 RESULT_COLUMNS = (["time", "lut_csv", "f_vco", "kvco_request", "kvco_target"] + list(vco_lut.LUT_FIELDS)
@@ -62,7 +64,7 @@ TRACE_COLUMNS = ["f_vco", "kvco_target"] + TRACE_FIELDS
 
 def loop_cfg(f_vco):
     """Closed-loop config (CFG_REF8_LOOP: CFG_REF8 with the loop filter LOOP_FILTER, internal Vctrl) on the direct
-    output (no external divider: pad = PLL output), divided inside the PLL to at most PAD_F_MAX on the pad
+    output (no external divider: pad = PLL output), divided inside the PLL to PAD_F_MAX / 2 - PAD_F_MAX on the pad
     (pll_spectrum.pad_divider). The VCO codes are added by VcoLUT.update_config."""
     return dict(CFG_REF8_LOOP, pll_clk_o_en=1, set_div_freq=pad_divider(f_vco))
 
@@ -71,7 +73,7 @@ def measure_pll_kvco(f_vco=1e9, kvco="middle", sample=None, lut=None, csv_path=N
                      span=5e6, spectrum_averages=20, n_averages=10, offset_span_map=None, lock_timeout=3.0,
                      skip_unlocked=True, common_band=COMMON_BAND, phase_noise_mode=False):
     """Lock the PLL at `f_vco` [Hz] with VCO codes from the lookup table for |Kvco| `kvco` [Hz/V] (or "middle"),
-    then measure the output pad with pll_spectrum.measure_output (markers, full curve with spurs, spectrum, jitter).
+    then measure the output pad with pll_spectrum.measure_output (full curve with spurs, spectrum, jitter).
 
     `phase_noise_mode`: afterwards, on the same lock, also measure in the analyzer's Phase Noise application
     (pll_spectrum.measure_phase_noise_mode: spot noise, its jitter, spur list; the PNM_COLUMNS and the "L_pnmode" /
@@ -79,7 +81,7 @@ def measure_pll_kvco(f_vco=1e9, kvco="middle", sample=None, lut=None, csv_path=N
     (pnm_status "error") without losing the measure_output results; a VISA error stops as everywhere.
 
     `skip_unlocked`: no analyzer measurement when the PLL did not lock (status "not_locked").
-    `common_band`: also integrate the jitter over only this band (time_jitter_common_ps / time_jitter_trace_common_ps).
+    `common_band`: also integrate the jitter over only this band (time_jitter_trace_common_ps).
     The reference (f_vco / FB_DIV from the 33600A) is started here and turned off at the end; the PLL supply
     `supply` (pll_setup.pll_supply) must already be on. Every connection is closed at the end, also on an error.
     `lut`: the lookup table (vco_lut.VcoLUT); None = the newest table of `sample`.
@@ -183,7 +185,7 @@ def kvco_sweep(f_vco=1e9, n_kvco=8, sample=None, lut=None, supply=None, **kwargs
 def frequency_sweep(freqs=FREQ_SWEEP, kvco=2e9, sample=None, lut=None, supply=None, **kwargs):
     """measure_pll_kvco at every f_vco in `freqs` [Hz] with the same requested |Kvco| `kvco` [Hz/V], all into one CSV:
     the lookup table picks per frequency the setting closest to that Kvco (the log shows what it reached and the
-    possible range). The reference follows (f_vco / FB_DIV), the output divider too (pad <= PAD_F_MAX; the band stops at
+    possible range). The reference follows (f_vco / FB_DIV), the output divider too (pad 50-100 MHz; the band stops at
     pad / OUT_OFFSET_RATIO). A frequency that fails is recorded and the sweep continues; a VISA error stops it.
     `lut`: the lookup table (vco_lut.VcoLUT); None = the newest table of `sample`.
     `kwargs` go to measure_pll_kvco. Returns the CSV path.
@@ -225,18 +227,20 @@ def main():
     parser = Parser()
     with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
-        # 1 GHz (ref 7.8125 MHz), |Kvco| in the geometric middle of what the S5 table offers at 1 GHz
-        # phase-noise markers + full curve with spur detection, averaged spectrum
-        # phase_noise_mode=True: then also the analyzer's Phase Noise application (FSW K40) on the same lock, the
-        # methods compared side by side in the log
-        measure_pll_kvco(1e9, "middle", sample="S5", phase_noise_mode=True)
+        # Pads 20-100 MHz (DC blocker at the analyzer below 20 MHz, pad bandwidth 100 MHz): pad_divider puts every
+        # f_vco at 50-100 MHz on the pad. phase_noise_mode=True: every setting also in the analyzer's Phase Noise
+        # application (FSW K40) on the same lock, compared in pll_spectrum_kvco.ipynb (~3 min per setting).
 
-        # Kvco sweep at 1 GHz: 8 |Kvco| targets log-spaced over the S5 table's range, everything measured per
-        # setting, one CSV for sw/tools/notebooks/pll_spectrum_kvco.ipynb (~2 min per setting)
-        # kvco_sweep(1e9, n_kvco=8, sample="S5")
+        # Kvco sweep at 1 GHz (ref 7.8125 MHz, pad 62.5 MHz): 8 |Kvco| targets log-spaced over the S5 table's range,
+        # one CSV for sw/tools/notebooks/pll_spectrum_kvco.ipynb
+        kvco_sweep(1e9, n_kvco=8, sample="S5", phase_noise_mode=True)
 
-        # Frequency sweep at |Kvco| ~2 GHz/V: FREQ_SWEEP (300 MHz - 4 GHz), everything measured per frequency
-        # frequency_sweep(FREQ_SWEEP, kvco=2e9, sample="S5")
+        # Frequency sweep at |Kvco| ~2 GHz/V: FREQ_SWEEP (300 MHz - 4 GHz, 1 GHz and 4 GHz included), one CSV for
+        # sw/tools/notebooks/pll_spectrum_freq.ipynb
+        frequency_sweep(FREQ_SWEEP, kvco=2e9, sample="S5", phase_noise_mode=True)
+
+        # One setting: 1 GHz, |Kvco| in the geometric middle of what the S5 table offers at 1 GHz
+        # measure_pll_kvco(1e9, "middle", sample="S5", phase_noise_mode=True)
 
 
 if __name__ == "__main__":

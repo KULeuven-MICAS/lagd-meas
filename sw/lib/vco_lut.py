@@ -9,6 +9,7 @@
 #   lut = VcoLUT(sample="S5")                     # newest results/vco/vco_lut_S5_*.csv (or VcoLUT(csv_path))
 #   cfg = lut.update_config(CFG_REF8, 1e9, 1e9)   # start config + the VCO codes for 1 GHz, |Kvco| ~1 GHz/V
 #   op = lut.predict(cfg, 1e9)                    # {"vctrl_pred", "kvco_pred"}: expected operating point
+#   cfg = lut.update_config_vctrl(CFG_REF8, 1e9, 0.55)  # or: the codes for 1 GHz with Vctrl ~0.55 V
 #   pll = pll_setup.open_pll(cfg)                 # load it on the chip
 #
 # VcoLUT is plain Python and imports no instrument code, so it runs on the lab machines' Python 3.6 and in the
@@ -149,6 +150,40 @@ class VcoLUT:
                         alt["kvco"] / 1e6)
         return dict(cfg, **vco_codes(best))
 
+    def update_config_vctrl(self, cfg, f_vco, vctrl, kvco=None, tol=0.01, fixed=None):
+        """A copy of `cfg` with the VCO codes for `f_vco` [Hz] whose expected Vctrl is closest to `vctrl` [V]: picks
+        an operating point instead of a Kvco. Among the settings within `tol` [V] of the closest one, the |Kvco|
+        closest to `kvco` [Hz/V] wins (None: the closest Vctrl). `fixed`: only settings with these codes, e.g.
+        {"vco_current_max": 14}. Logs the pick.
+        Raises ValueError when no setting reaches f_vco inside the window."""
+        found = self._candidates(f_vco)
+        if fixed:
+            found = [s for s in found if all(s[k] == v for k, v in fixed.items())]
+        if not found:
+            raise ValueError("no VCO setting%s reaches %.1f MHz inside Vctrl %.2f-%.2f V (margin %.0f mV), table %s"
+                             % (" with %s" % fixed if fixed else "", f_vco / 1e6, self.window[0], self.window[1],
+                                self.margin * 1e3, self.path.name))
+        closest = min(abs(s["vctrl"] - vctrl) for s in found)
+        near = [s for s in found if abs(s["vctrl"] - vctrl) <= closest + tol]
+        if kvco is None:
+            best = min(near, key=lambda s: abs(s["vctrl"] - vctrl))
+        else:
+            best = min(near, key=lambda s: abs(math.log(s["kvco"] / kvco)))
+        logger.info("%.1f MHz, Vctrl target %.3f V: coarse %d, min %d, max %d -> expected Vctrl %.3f V, "
+                    "|Kvco| %.0f MHz/V (%d settings within %.0f mV)",
+                    f_vco / 1e6, vctrl, best["vco_tune_coarse"], best["vco_current_min"], best["vco_current_max"],
+                    best["vctrl"], best["kvco"] / 1e6, len(near), (closest + tol) * 1e3)
+        return dict(cfg, **vco_codes(best))
+
+    def vctrl_range(self, f_vco):
+        """(lowest, highest) expected Vctrl [V] among the settings that reach `f_vco` [Hz] under the rules.
+        Raises ValueError when none does."""
+        vctrls = [s["vctrl"] for s in self._candidates(f_vco)]
+        if not vctrls:
+            raise ValueError("no VCO setting reaches %.1f MHz inside Vctrl %.2f-%.2f V (table %s)"
+                             % (f_vco / 1e6, self.window[0], self.window[1], self.path.name))
+        return min(vctrls), max(vctrls)
+
     def predict(self, cfg, f_vco):
         """Expected operating point of the VCO codes in `cfg` at `f_vco` [Hz]: {"vctrl_pred": [V], "kvco_pred":
         |Kvco| [Hz/V]}. For codes from update_config this is the point it picked; for other codes the crossing
@@ -178,6 +213,15 @@ class VcoLUT:
         """(vctrls, f_vcos) of the VCO codes in `cfg` in the table, sorted by Vctrl, points with a clock only."""
         pts = [(v, f) for v, f in self._curve_points(cfg) if not math.isnan(f)]
         return [v for v, _ in pts], [f for _, f in pts]
+
+    def frequency_at(self, cfg, vctrl):
+        """f_vco [Hz] of the VCO codes in `cfg` at `vctrl` [V], linear between the table points; NaN when `vctrl` is
+        outside the measured curve (or the curve has no clock there)."""
+        vctrls, f_vcos = self.curve(cfg)
+        for v0, v1, f0, f1 in zip(vctrls, vctrls[1:], f_vcos, f_vcos[1:]):
+            if v0 <= vctrl <= v1:
+                return f0 + (vctrl - v0) * (f1 - f0) / (v1 - v0)
+        return math.nan
 
     def fastest_setting(self):
         """The VCO codes ({LUT_FIELDS: code}) with the highest frequency anywhere in the table (at any Vctrl)."""

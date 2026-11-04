@@ -12,7 +12,7 @@
 # the simulation (S5 table of 2026-10-01: Vctrl ~0.52 V, |Kvco| ~34 GHz/V).
 # The reference comes from the 33600A, the PLL supply is the 2450 SMU (current and power recorded). The output pad
 # (VCO / 2**set_div_freq, <= PAD_F_MAX) is measured on the R&S FSV with lib/pll_spectrum.measure_output:
-# phase-noise markers, the full phase-noise curve with spur detection, an averaged spectrum, and the RMS jitter
+# the full phase-noise curve with spur detection, an averaged spectrum, and the RMS jitter
 # (also over COMMON_BAND, comparable with the pll_spectrum_kvco.py runs).
 #
 # Results:
@@ -68,11 +68,11 @@ def measure_pll_sim(cfg=SIM_CFG, f_ref=SIM_F_REF, sample=None, lut=None, csv_pat
                     spectrum_averages=20, n_averages=10, offset_span_map=None, lock_timeout=3.0,
                     common_band=COMMON_BAND):
     """Lock the PLL with `cfg` on a reference of `f_ref` [Hz] (VCO at FB_DIV x f_ref), then measure the output pad
-    with pll_spectrum.measure_output (markers, full curve with spurs, spectrum, jitter) and the PLL supply power.
+    with pll_spectrum.measure_output (full curve with spurs, spectrum, jitter) and the PLL supply power.
 
     `lut`: the lookup table (vco_lut.VcoLUT) for the expected Vctrl and |Kvco| of the codes in `cfg`; None = the
     newest table of `sample`. Codes the table does not reach f_vco with are logged and recorded as NaN.
-    `common_band`: also integrate the jitter over only this band (time_jitter_common_ps / time_jitter_trace_common_ps).
+    `common_band`: also integrate the jitter over only this band (time_jitter_trace_common_ps).
     No analyzer measurement when the PLL did not lock (status "not_locked").
     The reference (33600A) is started here and turned off at the end; the PLL supply `supply`
     (pll_setup.pll_supply) must already be on. Every connection is closed at the end, also on an error.

@@ -64,15 +64,15 @@ power_supply_pll:
   IP: "10.91.16.86"
   channels:
     -
-      name: "CH1"
+      name: "CH1" # powers something else on the PCB: keep on, never touched by the PLL scripts
       voltage: 5.0
       current: 0.1
     -
-      name: "CH2"
+      name: "CH2" # PLL supply since 2026-10-21 (pll_setup.PllSupplyChannel, sw/tests/pll_test_vdd.py)
       voltage: 0.75
       current: 0.01
     -
-      name: "CH3" # PLL supply: current and power logged per configuration
+      name: "CH3" # the PLL supply before 2026-10-21
       voltage: 0.75
       current: 0.2
 
@@ -86,7 +86,7 @@ function_generator:
 # Source meter driving the external VCO control voltage (Vctrl pad)
 smu_vctrl:
   name: "Keithley 2450 SMU - Vctrl"
-  IP: "10.91.16.51"
+  IP: "10.91.16.9" # since 2026-10-21 the former PLL-supply SMU (smu_vdd_pll, not used any more)
   args:
     v_min: 0.0
     v_max: 0.75 # PLL VDD, never drive Vctrl above it
@@ -115,7 +115,8 @@ spectrum_analyzer_fsv:
   IP: "10.91.16.56"
 
 
-# Oscilloscope with 50 Ohm inputs: the PLL output clock as it arrives in a 50 Ohm load (sw/tests/pll_waveform.py)
+# Oscilloscope with 50 Ohm inputs: the PLL output clock as it arrives in a 50 Ohm load (sw/tests/pll_waveform.py,
+# time-domain jitter: sw/tests/pll_td.py)
 scope_mxr:
   name: "Keysight MXR058A Scope"
   IP: "0.0.0.0" # TODO: the scope's IP address

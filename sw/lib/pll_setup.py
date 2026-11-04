@@ -98,6 +98,33 @@ def open_pll(cfg):
     return pll
 
 
+class FpgaUnplug:
+    """Interactive: the FPGA unplugged from the chip board during a measurement (it pollutes the spectrum, 2026-10-26)
+    and plugged back in before the chip is configured again. The config stays on the chip while it is unplugged; the
+    lock bit cannot be read then.
+
+        fpga = pll_setup.FpgaUnplug()
+        fpga.plug()      # asks only if unplugged
+        pll = pll_setup.open_pll(cfg)
+        ...wait for lock...
+        fpga.unplug()    # asks only if plugged in
+        ...measure...
+    """
+
+    def __init__(self):
+        self.unplugged = False
+
+    def unplug(self):
+        if not self.unplugged:
+            input("\n>>> PLL configured. Unplug the FPGA, then press Enter to measure...")
+            self.unplugged = True
+
+    def plug(self):
+        if self.unplugged:
+            input("\n>>> Plug the FPGA back in, then press Enter to configure the chip...")
+            self.unplugged = False
+
+
 def open_reference_generator():
     """The Keysight 33600A of meas_setup.yaml (`function_generator`), reset: all outputs off. Needs the lab network
     (iclab_session)."""
@@ -150,6 +177,19 @@ def open_mxr_scope():
     with cfg_path.open(encoding="utf-8") as f:
         config = yaml.safe_load(f)
     return KeysightScopeMXR058A(inst.BaseInstrumentData.from_mapping(config["scope_mxr"]))
+
+
+def open_rtb_scope():
+    """The R&S RTB2004 of meas_setup.yaml (`scope`, 1 MOhm inputs), reset. Needs the lab network (iclab_session)."""
+    import yaml  # instrument imports only when the scope is used
+    from pathlib import Path
+    from sw.lib.lab_instruments import instrument as inst
+    from sw.lib.lab_instruments.drivers.rs_scope_rtb2000 import RSScopeRTB2000
+
+    cfg_path = Path(__file__).resolve().parent / "lab_instruments" / "config" / "meas_setup.yaml"
+    with cfg_path.open(encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    return RSScopeRTB2000(inst.BaseInstrumentData.from_mapping(config["scope"]))
 
 
 def open_pll_smu():
@@ -237,6 +277,60 @@ def pll_supply(vdd=0.75, settle=0.5):
     finally:
         smu.close()  # back to 0 V, output off, connection closed
         logger.info("PLL supply off")
+
+
+class PllSupplyChannel:
+    """The PLL supply as one channel of the E36312A triple supply (meas_setup.yaml `power_supply_pll`, CH2 since
+    2026-10-21), attached without a reset: the other channels power the board and are never touched, and no output
+    is switched on or off here. Remembers the voltage it found (`nominal`); close() programs it again, then releases
+    the connection. Use it with measure_pll_supply (measure_stats, in_compliance). Needs the lab network."""
+
+    V_LIMITS = (0.55, 0.90)  # [V] set() refuses anything outside: the PLL is a 0.75 V design
+
+    def __init__(self, channel=2, cfg_key="power_supply_pll"):
+        import yaml  # instrument imports only when the supply is used
+        from pathlib import Path
+        from sw.lib.lab_instruments import instrument as inst
+        from sw.lib.lab_instruments.drivers.keysight_psu_e36300 import KeysightPSUE36300
+
+        cfg_path = Path(__file__).resolve().parent / "lab_instruments" / "config" / "meas_setup.yaml"
+        with cfg_path.open(encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)[cfg_key]
+        self.channel = channel
+        self.psu = KeysightPSUE36300(inst.BasePowerSupplyData.from_mapping(cfg), reset=False)
+        if not self.psu.is_output_on(channel):
+            self.psu.close()
+            raise RuntimeError("PLL supply CH%d is off: switch it on first (nothing is switched on here)" % channel)
+        self.nominal = self.psu.get_setpoint(channel)
+        logger.info("PLL supply: %s CH%d, set to %.4f V (kept as the nominal)", cfg["name"], channel, self.nominal)
+
+    def set(self, vdd, settle=2.0):
+        """Program `vdd` [V] (inside V_LIMITS), wait `settle` s; returns the measured voltage [V]."""
+        import time
+
+        if not self.V_LIMITS[0] <= vdd <= self.V_LIMITS[1]:
+            raise ValueError("PLL supply %.3f V outside %s V" % (vdd, self.V_LIMITS))
+        self.psu.set_voltage(self.channel, vdd)
+        time.sleep(settle)
+        v = self.psu.get_voltage(self.channel)
+        logger.info("PLL supply set to %.4f V, measured %.4f V", vdd, v)
+        return v
+
+    def measure_stats(self, n=10):
+        """(voltage [V], current [A], power [W]): voltage once, current the mean of `n` readings."""
+        return self.psu.measure(self.channel, n)
+
+    def in_compliance(self):
+        """Not read from this supply: always False."""
+        return False
+
+    def close(self):
+        """Program the nominal voltage again and release the connection (the outputs stay as they are)."""
+        try:
+            self.psu.set_voltage(self.channel, self.nominal)
+            logger.info("PLL supply back to %.4f V", self.nominal)
+        finally:
+            self.psu.close()
 
 
 def measure_pll_supply(supply, n=10, label=""):

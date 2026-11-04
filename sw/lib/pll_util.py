@@ -8,65 +8,11 @@
 
 import numpy as np
 
-def calculate_integrated_jitter(fc, offsets, L_f):
-    """
-    Calculates the integrated RMS jitter from discrete phase noise measurements.
-
-    Parameters:
-    fc (float): Carrier frequency of the clock signal in Hz.
-    offsets (array-like): Offset frequencies from the carrier in Hz.
-    L_f (array-like): Single-sideband phase noise at the given offsets in dBc/Hz.
-
-    Returns:
-    tuple: (rms_time_jitter_seconds, rms_phase_jitter_radians)
-    """
-    offsets = np.array(offsets, dtype=float)
-    L_f = np.array(L_f, dtype=float)
-
-    if len(offsets) != len(L_f):
-        raise ValueError("Offsets and phase noise arrays must be the same length.")
-
-    if np.any(offsets <= 0):
-        raise ValueError("Offset frequencies must be strictly greater than zero.")
-
-    total_integral = 0.0
-
-    # Iterate through adjacent pairs of measurement points
-    for i in range(len(offsets) - 1):
-        f1, f2 = offsets[i], offsets[i+1]
-        L1, L2 = L_f[i], L_f[i+1]
-
-        # Slope of the log-log segment (dB / decade)
-        slope = (L2 - L1) / (np.log10(f2) - np.log10(f1))
-        a = slope / 10.0
-
-        # Linear power at the start of the interval
-        P1 = 10.0 ** (L1 / 10.0)
-
-        # Integrate the power-law profile over the interval
-        if np.isclose(a, -1.0):
-            A = P1 * f1 * np.log(f2 / f1)
-        else:
-            A = P1 * f1 * ((f2 / f1)**(a + 1.0) - 1.0) / (a + 1.0)
-
-        total_integral += A
-
-    # Double sideband phase variance (multiply by 2)
-    phi_variance = 2.0 * total_integral
-
-    # RMS Phase Jitter (in radians)
-    rms_phase_radians = np.sqrt(phi_variance)
-
-    # RMS Time Jitter (in seconds)
-    rms_time_seconds = rms_phase_radians / (2.0 * np.pi * fc)
-
-    return rms_time_seconds, rms_phase_radians
-
 
 # Trace-based phase noise: the analyzer trace is the power in the RBW filter. The measurements take it with the RMS
 # detector and power averaging (true noise power, no correction). ENBW_FACTOR: noise bandwidth / RBW of the analyzer's
 # Gaussian RBW filter. LOG_AVG_CORR_DB: only for traces averaged as dB values (log / video averaging), which read noise
-# 2.51 dB low (Rayleigh statistics). Compare the trace result with the marker values at the same offsets to check.
+# 2.51 dB low (Rayleigh statistics).
 ENBW_FACTOR = 1.065
 LOG_AVG_CORR_DB = 2.51
 
@@ -75,10 +21,10 @@ def phase_noise_from_traces(traces, offsets, enbw_factor=ENBW_FACTOR, log_avg_co
     """Single-sideband phase noise L(f) [dBc/Hz] from analyzer traces centered on the carrier.
 
     traces: list of {'center', 'rbw', 'freq', 'level'} (dBm), e.g. one per span from
-        RohdeSchwarzFSVSpectrum.measure_phase_noise_profile(..., traces=[]). Each trace covers the offset band
+        RohdeSchwarzFSVSpectrum.phase_noise_traces. Each trace covers the offset band
         from the previous trace's top offset (or offsets[0]) up to the highest offset in `offsets` it can show
         (< half its span), so narrow spans (small RBW) cover the close-in part.
-    offsets: the integration limits / marker offsets [Hz] (sorted).
+    offsets: the integration limits and the band edges of the spans [Hz] (sorted).
     Per trace: carrier = trace maximum; L = mean of both sidebands (linear) - carrier - 10 log10(ENBW)
         + log_avg_corr_db; points closer than `min_rbw_offset` * RBW to the carrier are skipped.
     log_avg_corr_db: 0 for power-averaged traces (the default measurement); LOG_AVG_CORR_DB for log-averaged ones.
@@ -200,27 +146,3 @@ def split_jitter(fc, offsets, L_f, **spur_kwargs):
     t_spur, p_spur = (np.sqrt(max(t_tot ** 2 - t_noise ** 2, 0.0)), np.sqrt(max(p_tot ** 2 - p_noise ** 2, 0.0)))
     return dict(total=t_tot, noise=t_noise, spur=t_spur, total_rad=p_tot, noise_rad=p_noise, spur_rad=p_spur,
                 spurs=spurs, L_noise=l_noise)
-
-
-if __name__ == "__main__":
-    carrier_freq = 37499975
-
-    # Frequency offsets: 10 kHz, 100 kHz, 1 MHz, 10 MHz, 100 MHz
-    #offsets_hz = [10e3, 100e3, 532e3, 857e3, 1e6]
-    offsets_hz = [100, 1e3, 10e3, 100e3, 500e3, 1e6]
-
-    # Phase noise in dBc/Hz at the given offsets
-    #phase_noise_dBc = [-106, -105, -94]
-    #phase_noise_dBc = [-106, -105, -107, -94,-95]
-    #phase_noise_dBc = [-104.11, -115.6, -120.2, -119.9, -132.1, -142.4]
-    phase_noise_dBc = [-103.2, -102.4, -106.9, -105.8, -100.6, -85.6]
-
-    t_jitter, phase_jitter = calculate_integrated_jitter(
-        carrier_freq,
-        offsets_hz,
-        phase_noise_dBc
-    )
-
-    print(f"Integration Bandwidth: {offsets_hz[0]/1e3:.0f} kHz to {offsets_hz[-1]/1e6:.0f} MHz")
-    print(f"RMS Time Jitter:       {t_jitter * 1e12:.3f} ps  ({t_jitter * 1e15:.1f} fs)")
-    print(f"RMS Phase Jitter:      {phase_jitter * 1e3:.3f} mrad")

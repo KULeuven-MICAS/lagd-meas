@@ -37,6 +37,33 @@ CLOCK_MEASUREMENTS = {
     "preshoot": ":MEASure:PREShoot?",
 }
 
+# Jitter measurements of jitter_statistics: result key -> (Infiniium command adding the measurement, `{ch}` = channel
+# number; a word of the label the scope gives it in :MEASure:RESults?, lower case). TIE and cycle-to-cycle need the
+# EZJIT option: a measurement the scope rejects is skipped (NaN). Not yet tried on the instrument: check the labels in
+# the raw reply (scope_results) on the first run.
+JITTER_MEASUREMENTS = {
+    "period": (":MEASure:PERiod CHANnel{ch}", "period"),
+    "ctc": (":MEASure:CTCJitter CHANnel{ch},RISing", "cycle"),
+    "tie": (":MEASure:TIEClock2 CHANnel{ch},SECond,RISing,AUTO", "tie"),
+}
+# Statistics per measurement in :MEASure:RESults? with :MEASure:STATistics ON, in the order the scope sends them
+STAT_FIELDS = ("current", "min", "max", "mean", "std", "count")
+
+
+def _parse_results(raw: str) -> list:
+    """(label, [values]) per measurement of a :MEASure:RESults? reply: every non-numeric field starts a measurement,
+    the numeric fields after it are its values."""
+    out = []
+    for field in raw.strip().split(","):
+        try:
+            value = float(field)
+        except ValueError:
+            out.append((field.strip().strip('"'), []))
+            continue
+        if out:
+            out[-1][1].append(math.nan if abs(value) >= INVALID_RESULT else value)
+    return out
+
 
 class KeysightScopeMXR058A(inst.BaseInstrument):
     """
@@ -195,6 +222,44 @@ class KeysightScopeMXR058A(inst.BaseInstrument):
         self.set_edge_trigger(channel, level=mid)
         time.sleep(settle)
         return True
+
+    def _try_write(self, command: str) -> bool:
+        """Write `command`; False (logged, error queue cleared) when the scope rejects it, e.g. a missing option."""
+        try:
+            self.write(command)
+            return True
+        except ValueError as e:
+            logger.warning(f"{self.info.name}: {command} rejected ({e})")
+            self.write('*CLS', check=False)
+            return False
+
+    def jitter_statistics(self, channel: int, accumulate: float = 10.0) -> dict:
+        """The scope's own jitter measurements (JITTER_MEASUREMENTS) on `channel`, over every edge of every
+        acquisition during `accumulate` [s] of continuous acquisition: {<key>_<STAT_FIELDS>} [s] (count: number of
+        edges), NaN for a measurement the scope rejected (TIE / cycle-to-cycle without EZJIT), and "scope_results",
+        the raw :MEASure:RESults? reply. Also turns on the scope's jitter histogram when it offers one (it then shows on
+        a screenshot). Leaves the scope stopped."""
+        channel = self._validate_channel(channel)
+        self.write(':MEASure:CLEar')
+        self._try_write(':ANALyze:AEDGes ON')  # measure every edge in the record, not only the first one
+        added = [key for key, (cmd, _) in JITTER_MEASUREMENTS.items() if self._try_write(cmd.format(ch=channel))]
+        self.write(':MEASure:STATistics ON')
+        if "tie" in added:
+            self._try_write(':MEASure:JITTer:HISTogram ON')
+        self.write(':CDISplay')  # clears the display and the measurement statistics
+        self.run()
+        time.sleep(accumulate)
+        self.stop()
+        raw = self.query(':MEASure:RESults?')
+        result = {f"{key}_{s}": math.nan for key in JITTER_MEASUREMENTS for s in STAT_FIELDS}
+        for label, values in _parse_results(raw):
+            key = next((k for k in added if JITTER_MEASUREMENTS[k][1] in label.lower()), None)
+            if key is not None and len(values) >= len(STAT_FIELDS):
+                result.update({f"{key}_{s}": v for s, v in zip(STAT_FIELDS, values[-len(STAT_FIELDS):])})
+        result["scope_results"] = raw.strip()
+        logger.info(f"{self.info.name}: jitter statistics over {accumulate:g} s ({', '.join(added) or 'none'}): "
+                    f"{raw.strip()}")
+        return result
 
     # --- Data ---
 

@@ -160,6 +160,29 @@ class RSScopeRTB2000(inst.BaseInstrument):
         std = statistics.stdev(vals) if len(vals) > 1 else 0.0
         return statistics.mean(vals), std, len(vals)
 
+    def setup_dc_level(self, channel: int, scale: float, offset: float, timebase: float = 1e-6,
+                       probe_att: float = 10, slots: tuple = (1, 2, 3)):
+        """Watch a (nearly) DC node on `channel`, e.g. a PLL control voltage: DC coupling, `scale` [V/div] around
+        `offset` [V] (screen centre), `timebase` [s/div], free-running (auto trigger on the channel at `offset`),
+        probe attenuation `probe_att`. Measurement slots `slots` = MEAN, PEAK (peak-to-peak) and STDDev (the AC RMS
+        around the mean); read them with read_dc_level. Starts the acquisition."""
+        self.set_probe_attenuation(channel, probe_att)
+        self.set_channel(channel, scale=scale, offset=offset)
+        self.set_timebase(timebase)
+        self.set_edge_trigger(channel, level=offset)
+        for slot, meas_type in zip(slots, ("MEAN", "PEAK", "STDD")):
+            self.set_measurement(slot, channel, meas_type)
+        self.run()
+
+    def read_dc_level(self, n: int = 10, interval: float = 0.1, slots: tuple = (1, 2, 3)) -> dict:
+        """The level set up with setup_dc_level, each slot read `n` times `interval` [s] apart:
+        {"mean": [V], "mean_std": spread of the mean readings [V], "pkpk": [V], "ac_rms": [V], "n_valid"}.
+        NaN where the scope cannot compute it (e.g. the signal is off screen)."""
+        mean, mean_std, n_valid = self.measure_stats(slots[0], n, interval)
+        pkpk, _, _ = self.measure_stats(slots[1], n, interval)
+        ac_rms, _, _ = self.measure_stats(slots[2], n, interval)
+        return {"mean": mean, "mean_std": mean_std, "pkpk": pkpk, "ac_rms": ac_rms, "n_valid": n_valid}
+
     def _close(self):
         """Release the VISA session."""
         self.tool.close()

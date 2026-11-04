@@ -18,9 +18,13 @@ class KeysightPSUE36300(inst.BasePowerSupply):
     It implements the specific methods for this instrument.
     info: inst.BasePowerSupplyData: The data class containing the instrument's information.
     info.args: dict: Additional arguments for the instrument. Expects a list of channels
+    reset: True (default): *RST at connect (every output off, settings to default). False: attach to the running
+           supply without changing anything (outputs stay as they are), e.g. when one channel powers the board and
+           only another one is to be adjusted; close() then switches off only the channels turned on here.
 
     """
-    def __init__(self, info: inst.BasePowerSupplyData, verbose: bool = False):
+    def __init__(self, info: inst.BasePowerSupplyData, verbose: bool = False, reset: bool = True):
+        self._reset = reset
         self._num_channels = 3 # It has 3 channels
         self._channel_names = [
             "CH1", "P6V",  # Channel 1: 6V output
@@ -41,8 +45,21 @@ class KeysightPSUE36300(inst.BasePowerSupply):
         return rm.open_resource(f"TCPIP::{self.info.IP}::inst0::INSTR")
 
     def _init_instrument(self):
-        self.write('*RST')  # Reset the instrument to default settings
+        if self._reset:
+            self.write('*RST')  # Reset the instrument to default settings (every output off)
         self.write('SYST:REM')  # Set to remote mode
+
+    def get_setpoint(self, channel) -> float:
+        """Programmed voltage [V] of one channel (VOLT?, not the measured output)."""
+        channel = self._validate_channel(channel)
+        self._select_channel(channel)
+        return float(self.query('VOLT?'))
+
+    def is_output_on(self, channel) -> bool:
+        """True when the output of one channel is on (OUTP?)."""
+        channel = self._validate_channel(channel)
+        self._select_channel(channel)
+        return self.query('OUTP?').strip() in ('1', 'ON')
 
     def measure_current_stats(self, channel, n: int = 10) -> tuple:
         """Mean and standard deviation [A] of `n` current readings of one channel."""

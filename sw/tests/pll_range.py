@@ -15,7 +15,7 @@
 #     the PLL supply is fixed on the board, no SMU);
 #   - when locked: the output pad (VCO / 2**set_div_freq, <= PAD_F_MAX) on the R&S FSV with
 #     lib/pll_spectrum.measure_output: carrier and divider check (f_vco_meas = carrier x N, so a "lock" on a wrong
-#     frequency shows), phase-noise markers, full curve with spurs, averaged spectrum, RMS jitter (also over
+#     frequency shows), full phase-noise curve with spurs, averaged spectrum, RMS jitter (also over
 #     COMMON_BAND, the same band for every point).
 # Points the lookup table has no VCO setting for inside the Vctrl window: above what its fastest setting gives at the
 # top of the window (the top of the range, or a gap in it), that fastest setting is tried (vco_pick "fastest" instead
@@ -32,6 +32,7 @@
 #
 
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -55,7 +56,10 @@ LOG_DIR = Path(__file__).resolve().parents[2] / "results" / "logs"
 # lock, not the table, should set the edges; points above the table get its fastest setting (vco_pick "fastest").
 # ~2 min per locked point.
 REF_SWEEP = tuple(np.geomspace(1e6, 100e6, 41))
-# Band integrated for every point, so the jitter can be compared: the pad is always 62.5-125 MHz (pad_divider), so
+# Quick test: VCO 400 MHz - 6.4 GHz in octaves and 12 GHz (near the ~12.5 GHz top of the fastest setting), 6 points;
+# ~10 min per sweep.
+REF_QUICK = tuple(f_vco / FB_DIV for f_vco in (400e6, 800e6, 1.6e9, 3.2e9, 6.4e9, 12e9))
+# Band integrated for every point, so the jitter can be compared: the pad is always 50-100 MHz (pad_divider), so
 # 10 MHz fits everywhere. The same band as pll_spectrum_kvco.COMMON_BAND.
 COMMON_BAND = (1e3, 1e7)
 
@@ -88,12 +92,12 @@ def fastest_cfg(lut, f_vco, loop_filter=LOOP_FILTER):
 
 def range_sweep(f_refs=REF_SWEEP, kvco="max", loop_filter=LOOP_FILTER, sample=None, lut=None, supply=None, span=5e6,
                 spectrum_averages=20, n_averages=10, lock_timeout=3.0, common_band=COMMON_BAND, cfg_overrides=None,
-                csv_path=None):
+                csv_path=None, measure=True, hold=5.0):
     """For every reference frequency in `f_refs` [Hz]: VCO codes from the lookup table for f_vco = FB_DIV x f_ref and
     |Kvco| `kvco` (pll_spectrum.kvco_target_for: [Hz/V], "max", "middle", "min" or None = central Vctrl),
     with the loop filter `loop_filter` (FILTER_FIELDS dict, e.g. pll_settings.LOOP_FILTER or DEFAULT_FILTER),
     load the config, wait for lock (`lock_timeout` [s]), record the PLL supply power and, when locked, measure the pad
-    with measure_output (markers, full curve with spurs, spectrum, jitter, also over `common_band`).
+    with measure_output (full curve with spurs, spectrum, jitter, also over `common_band`).
 
     No analyzer measurement when the PLL did not lock (status "not_locked"). Without a table setting for f_vco the
     fastest setting is tried where it can help (fastest_cfg), else the point is not configured (status
@@ -107,6 +111,9 @@ def range_sweep(f_refs=REF_SWEEP, kvco="max", loop_filter=LOOP_FILTER, sample=No
     point, e.g. dict(vco_tune_coarse=0, vco_current_min=10, vco_current_max=6) or dict(set_current=3). With all
     three VCO codes (vco_lut.LUT_FIELDS) in it the table is not used for the pick (vco_pick "manual"). The overrides
     are recorded in the column cfg_overrides, the resulting codes and filter in their own columns.
+
+    `measure` False: lock check only, no analyzer (a quick debug sweep): when locked, wait `hold` [s] and read the lock
+    bit again (locked_end); status "lock_only".
     """
     lut = lut or vco_lut.VcoLUT(sample=sample)
     cfg_overrides = dict(cfg_overrides or {})
@@ -179,6 +186,12 @@ def range_sweep(f_refs=REF_SWEEP, kvco="max", loop_filter=LOOP_FILTER, sample=No
                     logging.warning("Not locked: not measured")
                     row["status"] = "not_locked"
                     continue
+                if not measure:
+                    time.sleep(hold)
+                    row["locked_end"] = pll.read_lock()
+                    row["status"] = "lock_only"
+                    logging.info("Lock bit after %.1f s: %s (lock check only, not measured)", hold, row["locked_end"])
+                    continue
 
                 meas, traces = measure_output(f_vco, total_div, offsets_for(f_vco / total_div), n_averages=n_averages,
                                               span=span, spectrum_averages=spectrum_averages, common_band=common_band)
@@ -201,6 +214,142 @@ def range_sweep(f_refs=REF_SWEEP, kvco="max", loop_filter=LOOP_FILTER, sample=No
     return csv_path
 
 
+# Edges of the lock range (2026-11-03), lock check only (range_sweep measure=False). Filters: DEFAULT_FILTER with the
+# fields of each entry forced (cfg_overrides); a higher code = more current / capacitance / resistance (the low-end
+# debug of 2026-11-03, pll_range_lowend_S5_20261103_163916: Icp 0 locks VCO 200 MHz, Icp 3 not; LOOP_FILTER, Icp 7,
+# never below 1 GHz).
+# Floor: VCO 50-200 MHz (ref 0.39-1.56 MHz); the VCO reaches ~50 MHz open loop, the table's window ~55 MHz. The weak
+# loops that locked 200 MHz, plus C2 7.
+FLOOR_VCO = (50e6, 60e6, 70e6, 85e6, 100e6, 128e6, 160e6, 200e6)
+FLOOR_FILTERS = [
+    dict(set_current=0),
+    dict(set_current=0, set_c1=7),
+    dict(set_current=0, set_c1=7, set_c2=7),
+    dict(set_current=0, set_c1=7, set_r1=1),
+]
+FLOOR_KVCO = (2e9, "min")
+# Upper end: VCO 11.4-12.5 GHz (ref 89-98 MHz) on the table's fastest setting (c0 min 0 max 0, ~12.5 GHz at Vctrl 0
+# open loop): 11.4 GHz locked on 2026-10-13, 12 GHz locked with LOOP_FILTER on 2026-11-03 but lost the lock during the
+# measurement. A strong loop is safe at these references and makes up for the flattening Kvco; a higher PLL supply
+# speeds up the VCO and the divider. Longer hold to see whether the lock holds.
+UPPER_VCO = (11.4e9, 11.7e9, 12.0e9, 12.25e9, 12.5e9)
+UPPER_FILTERS = [
+    dict(LOOP_FILTER),  # Icp 7 C1 0 C2 0 R1 7
+    dict(),  # DEFAULT_CFG filter: Icp 3 C1 3 C2 3 R1 3
+    dict(set_current=7),  # Icp 7 C1 3 C2 3 R1 3
+    dict(set_current=7, set_r1=7),  # Icp 7 C1 3 C2 3 R1 7
+]
+UPPER_VDDS = (0.75, 0.80, 0.85)  # [V] PLL supply (PllSupplyChannel, inside its V_LIMITS)
+UPPER_HOLD = 15.0  # [s] between the two lock reads
+
+
+def floor_search(supply=None, sample="S5"):
+    """Lock check (no analyzer) at FLOOR_VCO for every |Kvco| of FLOOR_KVCO and filter of FLOOR_FILTERS, one CSV
+    results/pll/pll_range_floor_<sample>_<stamp>.csv; ~10 s per point. Returns the CSV path."""
+    csv_path = result_csv_path(sample, prefix="pll_range_floor")
+    f_refs = [f_vco / FB_DIV for f_vco in FLOOR_VCO]
+    for kvco in FLOOR_KVCO:
+        for overrides in FLOOR_FILTERS:
+            range_sweep(f_refs, kvco=kvco, loop_filter=DEFAULT_FILTER, sample=sample, supply=supply,
+                        cfg_overrides=overrides, csv_path=csv_path, measure=False)
+    return csv_path
+
+
+def upper_search(supply, sample="S5"):
+    """Lock check (no analyzer, UPPER_HOLD s between the lock reads) at UPPER_VCO for every PLL supply of UPPER_VDDS
+    (`supply`: PllSupplyChannel; set here, back to its nominal at the end, also on an error) and filter of
+    UPPER_FILTERS, one CSV results/pll/pll_range_upper_<sample>_<stamp>.csv (pll_vdd: the measured supply);
+    ~10-25 s per point. Returns the CSV path."""
+    csv_path = result_csv_path(sample, prefix="pll_range_upper")
+    f_refs = [f_vco / FB_DIV for f_vco in UPPER_VCO]
+    try:
+        for vdd in UPPER_VDDS:
+            supply.set(vdd)
+            for overrides in UPPER_FILTERS:
+                range_sweep(f_refs, kvco=2e9, loop_filter=DEFAULT_FILTER, sample=sample, supply=supply,
+                            cfg_overrides=overrides, csv_path=csv_path, measure=False, hold=UPPER_HOLD)
+    finally:
+        supply.set(supply.nominal)  # what follows runs at the nominal supply again
+    return csv_path
+
+
+# Loop filter and |Kvco| per reference frequency (FB_DIV fixed: the loop must slow down with f_ref), from the lock
+# checks of 2026-11-03 (pll_range_lowend_S5_20261103_163916, pll_range_floor_S5_20261103_165653,
+# pll_range_upper_S5_20261103_170454) and the range sweeps of 2026-10-13; lock only, the jitter decides the
+# breakpoints later:
+#   - VCO 128 MHz (ref 1.0 MHz): holds lock only with Icp 0 + C1 7 at the table's lowest |Kvco| (~280 MHz/V);
+#     100 MHz locks and loses it again, 85 MHz and below never (the weakest loop the codes offer);
+#   - 160-200 MHz: Icp 0 + C1 7 at either |Kvco|; 400 MHz (3.1 MHz): Icp 0 / Icp 1 / C1 7, the DEFAULT_CFG filter
+#     not; 800 MHz (6.25 MHz): DEFAULT_CFG, LOOP_FILTER not, the lowest |Kvco| (86 MHz/V) not at all;
+#   - from ~1 GHz LOOP_FILTER (Oct 13: solid from 720 MHz), the lower jitter at 1.6 GHz (102 vs 182 ps); at the top
+#     (nominal supply) Icp 7 holds 11.7 GHz, the DEFAULT_CFG filter only 11.4 GHz.
+# Entries: (f_ref upper bound [Hz], filter, |Kvco| request of kvco_target_for), the first whose bound exceeds f_ref.
+FILTER_SCHEDULE = [
+    (1.4e6, dict(DEFAULT_FILTER, set_current=0, set_c1=7), "min"),  # VCO < 180 MHz
+    (2.5e6, dict(DEFAULT_FILTER, set_current=0, set_c1=7), 2e9),  # VCO 180-320 MHz
+    (5e6, dict(DEFAULT_FILTER, set_current=0), 2e9),  # VCO 320-640 MHz
+    (8e6, dict(DEFAULT_FILTER), 2e9),  # VCO 640 MHz - 1 GHz
+    (float("inf"), dict(LOOP_FILTER), 2e9),  # VCO > 1 GHz
+]
+# Coarse measured sweep over the lock range at the nominal supply: VCO 128 MHz - 11.7 GHz (the edges of 2026-11-03),
+# 15 points log-spaced (~1/2 octave), ~2 min per locked point (~30 min).
+COARSE_VCO = tuple(np.geomspace(128e6, 11.7e9, 15))
+
+
+def filter_for(f_ref, schedule=FILTER_SCHEDULE):
+    """(loop filter as a FILTER_FIELDS dict, |Kvco| request) of `schedule` for the reference frequency `f_ref` [Hz]."""
+    return next((flt, kvco) for bound, flt, kvco in schedule if f_ref < bound)
+
+
+def coarse_sweep(supply=None, sample="S5", f_vcos=COARSE_VCO, schedule=FILTER_SCHEDULE):
+    """Full measurement (range_sweep, analyzer) at every VCO frequency of `f_vcos`, each with the loop filter and
+    |Kvco| of `schedule` for its reference (filter_for); one CSV results/pll/pll_range_coarse_<sample>_<stamp>.csv (the
+    filter and |Kvco| request of each point in its columns). Returns the CSV path."""
+    csv_path = result_csv_path(sample, prefix="pll_range_coarse")
+    for f_vco in f_vcos:
+        f_ref = f_vco / FB_DIV
+        loop_filter, kvco = filter_for(f_ref, schedule)
+        range_sweep([f_ref], kvco=kvco, loop_filter=loop_filter, sample=sample, supply=supply, csv_path=csv_path)
+    return csv_path
+
+
+# Highest |Kvco| above VCO ~1 GHz (2026-11-03): in the coarse sweep (pll_range_coarse_S5_20261103_174312, |Kvco|
+# ~2 GHz/V) only the points where the table picked a high |Kvco| had a low jitter (3.2 / 6.1 / 8.5 GHz: 5-37 GHz/V,
+# 19-39 ps); the ~2 GHz/V picks gave 88-524 ps (1.2 / 1.7 GHz) or no lock (2.3 / 4.4 GHz). On 2026-10-13 a high |Kvco|
+# locked from 1.8 GHz with the DEFAULT_CFG filter (_151724) but only from 5.1 GHz with LOOP_FILTER (_150230): with
+# both strong the loop is too fast for its reference. Measured here with the table's highest |Kvco| at the coarse
+# points of 1.2-6.1 GHz, once per filter (one CSV each, results/pll/pll_range_kvmax_<sample>_<stamp>.csv), ~12 min
+# per filter.
+KVMAX_VCO = tuple(f for f in COARSE_VCO if 1e9 < f < 7e9)
+KVMAX_FILTERS = (DEFAULT_FILTER, LOOP_FILTER)
+
+
+def kvmax_check(supply=None, sample="S5"):
+    """Full measurement at KVMAX_VCO with the table's highest |Kvco| ("max"), once per filter of KVMAX_FILTERS, one
+    CSV per filter. Returns the CSV paths."""
+    paths = []
+    for loop_filter in KVMAX_FILTERS:
+        paths.append(range_sweep([f / FB_DIV for f in KVMAX_VCO], kvco="max", loop_filter=loop_filter,
+                                 sample=sample, supply=supply,
+                                 csv_path=result_csv_path(sample, prefix="pll_range_kvmax")))
+    return paths
+
+
+# Top of the usable range (2026-11-03): the highest VCO where jitter and power still hold. The power scales linearly
+# (0.21-0.23 mW/GHz from 3 to 11.7 GHz); the jitter held 15-18 ps (14-16 % of the period) at 8.1-10.2 GHz on
+# 2026-10-13 (_161640), 29 ps (33 %) at 11.4 GHz, and 11.7 GHz lost the lock in the coarse sweep: where between
+# 10 and 11.7 GHz does it break? Measured at the nominal supply, LOOP_FILTER (Icp 7 held the top best in upper_search),
+# the table's fastest VCO setting above ~9.2 GHz; one CSV results/pll/pll_range_top_<sample>_<stamp>.csv, ~16 min.
+TOP_VCO = (8.5e9, 9.0e9, 9.5e9, 10.0e9, 10.5e9, 11.0e9, 11.4e9, 11.7e9)
+
+
+def top_sweep(supply=None, sample="S5"):
+    """Full measurement at TOP_VCO with LOOP_FILTER and the table's highest |Kvco| (the fastest setting where the
+    table runs out). Returns the CSV path."""
+    return range_sweep([f / FB_DIV for f in TOP_VCO], kvco="max", loop_filter=LOOP_FILTER, sample=sample,
+                       supply=supply, csv_path=result_csv_path(sample, prefix="pll_range_top"))
+
+
 def result_csv_path(sample, prefix="pll_range"):
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     return RESULTS_DIR / "{}_{}_{}.csv".format(prefix, sample or "nosample", datetime.now().strftime("%Y%m%d_%H%M%S"))
@@ -221,7 +370,67 @@ def main():
     # IC-LAB firewall login: opens the lab network to the instruments
     parser = Parser()
     with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
-        # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
+        # PLL supply from the E36312A CH2 (pll_setup.PllSupplyChannel: voltage, current, power per point; only
+        # upper_search changes the voltage, close() programs the nominal it found again, also on an error).
+        # supply = None: PLL supply from a battery / fixed on the board, power columns NaN (not with upper_search).
+        supply = pll_setup.PllSupplyChannel(channel=2)
+        try:
+            # Highest |Kvco| at the coarse points of 1.2-6.1 GHz, DEFAULT_CFG filter and LOOP_FILTER (~25 min), to
+            # set the |Kvco| and filter of FILTER_SCHEDULE above VCO ~1 GHz; see KVMAX_* above
+            kvmax_check(supply)
+            # Top of the usable range: VCO 8.5-11.7 GHz, measured (~16 min); see TOP_* above
+            top_sweep(supply)
+
+            # Coarse measured sweep over the lock range (VCO 128 MHz - 11.7 GHz, 15 points, ~30 min): jitter,
+            # spectrum and power with the loop filter and |Kvco| of FILTER_SCHEDULE per point, for the first curves
+            # and to pick the frequency for the detailed paper measurement (done 2026-11-03:
+            # pll_range_coarse_S5_20261103_174312)
+            # coarse_sweep(supply)
+
+            # Edges of the lock range (done 2026-11-03: pll_range_floor_S5_20261103_165653,
+            # pll_range_upper_S5_20261103_170454): floor (VCO 50-200 MHz, weak loops, ~11 min), then the upper end (VCO
+            # 11.4-12.5 GHz, strong loops, PLL supply 0.75 / 0.80 / 0.85 V, back to the nominal at the end, ~20 min).
+            # Lock check only; see FLOOR_* / UPPER_* above. Floor 128 MHz (100 MHz locks, then loses it); top
+            # 11.7 GHz at 0.75 V, 12.0 GHz at 0.80 V, 12.25 GHz at 0.85 V
+            # floor_search(supply)
+            # upper_search(supply)
+
+            # Debug of the low end (2026-11-03, done: pll_range_lowend_S5_20261103_163916; Icp 0 locks 200 MHz): no
+            # lock below ~510 MHz VCO (ref ~4 MHz), although the VCO runs down to ~50 MHz open loop (vco_lut_S5_20261001_161638). The lowest lock moves with the loop gain: 1.8 GHz at
+            # |Kvco| 5-28 GHz/V, 510 MHz at ~2 GHz/V with the DEFAULT_CFG filter, 642 MHz (lost again) with the
+            # stronger LOOP_FILTER. Suspect: FB_DIV fixed at 128, so the loop bandwidth stays while f_ref drops with
+            # the VCO, until the loop is too fast for its reference (discrete-time stability limit, ~f_ref / 10).
+            # Test: weaken the loop at VCO 200 / 400 / 800 MHz, lock check only (measure=False, ~10 s per point,
+            # ~8 min). Filters: DEFAULT_FILTER with the fields of each entry forced (cfg_overrides); assumes a higher
+            # code = more current / capacitance / resistance (consistent with LOOP_FILTER, Icp 7 C 0 R 7, being the
+            # faster loop). Both the |Kvco| ~2 GHz/V pick and the table's lowest |Kvco| ("min").
+            # f_refs = [f_vco / FB_DIV for f_vco in (200e6, 400e6, 800e6)]
+            # LOW_END_FILTERS = [
+            #     dict(),  # DEFAULT_CFG filter: Icp 3 C1 3 C2 3 R1 3 (lowest lock 510 MHz on 2026-10-13)
+            #     dict(set_current=1),
+            #     dict(set_current=0),
+            #     dict(set_c1=7),
+            #     dict(set_current=0, set_c1=7),
+            #     dict(set_r1=1),
+            #     dict(set_current=0, set_c1=7, set_r1=1),
+            #     dict(LOOP_FILTER),  # Icp 7 C1 0 C2 0 R1 7: the strong loop, expected to fail
+            # ]
+            # csv_path = result_csv_path("S5", prefix="pll_range_lowend")
+            # for kvco in (2e9, "min"):
+            #     for overrides in LOW_END_FILTERS:
+            #         range_sweep(f_refs, kvco=kvco, loop_filter=DEFAULT_FILTER, sample="S5", supply=supply,
+            #                     cfg_overrides=overrides, csv_path=csv_path, measure=False)
+
+            # Quick rerun of the range sweeps of 2026-10-13 (pll_range_S5_20261013_160525 / _161640) with this supply
+            # (done 2026-11-03: _155029 / _155259): REF_QUICK (VCO 400 MHz - 6.4 GHz in octaves and 12 GHz;
+            # REF_SWEEP for the full ~1 h sweep), VCO codes from the S5 table for |Kvco| ~2 GHz/V, first the
+            # DEFAULT_CFG filter, then LOOP_FILTER; ~2 min per locked point, ~10 min per sweep.
+            # range_sweep(REF_QUICK, kvco=2e9, loop_filter=DEFAULT_FILTER, sample="S5", supply=supply)
+            # range_sweep(REF_QUICK, kvco=2e9, loop_filter=LOOP_FILTER, sample="S5", supply=supply)
+        finally:
+            if supply is not None:
+                supply.close()  # back to the voltage it found (nominal), connection released
+
         # Debug of a failed point of the range sweeps of 2026-10-13: ref 22.387 MHz -> VCO 2865.6 MHz
         # (REF_SWEEP[27]). At |Kvco| ~2 GHz/V the table picks coarse 3, min 0, max 0 (Vctrl pred 0.521 V,
         # 1.7 GHz/V): not locked with either filter (pll_range_S5_20261013_160525 / _161640). With central Vctrl
@@ -229,23 +438,19 @@ def main():
         # (_151724). Each entry of DEBUG_CONFIGS is one try, recorded as one row of one
         # pll_range_debug_S5_<stamp>.csv: cfg_overrides is forced on top of the table pick (any config field;
         # all three VCO codes = no table pick), lock_timeout [s] is how long to wait for the lock bit.
-        f_ref = REF_SWEEP[27]
-        loop_filter = LOOP_FILTER  # or DEFAULT_FILTER (Icp 3, C1 3, C2 3, R1 3)
-        DEBUG_CONFIGS = [
-            dict(),  # the table pick as in the sweep (coarse 3, min 0, max 0)
-            dict(vco_tune_coarse=0, vco_current_min=10, vco_current_max=6),  # the setting that locked in _151724
-            # dict(vco_tune_coarse=3, vco_current_min=0, vco_current_max=0, set_current=3),  # weaker charge pump
-        ]
-        lock_timeout = 3.0
-        csv_path = result_csv_path("S5", prefix="pll_range_debug")
-        for cfg_overrides in DEBUG_CONFIGS:
-            range_sweep([f_ref], kvco=2e9, loop_filter=loop_filter, sample="S5",
-                        cfg_overrides=cfg_overrides, lock_timeout=lock_timeout, csv_path=csv_path)
-
-        # Full range sweeps of 2026-10-13: reference 1-100 MHz (REF_SWEEP, 41 points), VCO codes from the S5
-        # table for |Kvco| ~2 GHz/V, first the DEFAULT_CFG filter, then LOOP_FILTER
-        # range_sweep(REF_SWEEP, kvco=2e9, loop_filter=DEFAULT_FILTER, sample="S5")
-        # range_sweep(REF_SWEEP, kvco=2e9, loop_filter=LOOP_FILTER, sample="S5")
+        # (not run yet)
+        # f_ref = REF_SWEEP[27]
+        # loop_filter = LOOP_FILTER  # or DEFAULT_FILTER (Icp 3, C1 3, C2 3, R1 3)
+        # DEBUG_CONFIGS = [
+        #     dict(),  # the table pick as in the sweep (coarse 3, min 0, max 0)
+        #     dict(vco_tune_coarse=0, vco_current_min=10, vco_current_max=6),  # the setting that locked in _151724
+        #     # dict(vco_tune_coarse=3, vco_current_min=0, vco_current_max=0, set_current=3),  # weaker charge pump
+        # ]
+        # lock_timeout = 3.0
+        # csv_path = result_csv_path("S5", prefix="pll_range_debug")
+        # for cfg_overrides in DEBUG_CONFIGS:
+        #     range_sweep([f_ref], kvco=2e9, loop_filter=loop_filter, sample="S5",
+        #                 cfg_overrides=cfg_overrides, lock_timeout=lock_timeout, csv_path=csv_path)
 
 
 if __name__ == "__main__":

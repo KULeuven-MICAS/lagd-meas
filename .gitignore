@@ -20,6 +20,8 @@ openising/**/run_*/**
 **.pkl
 **.out
 
+# ignore results folder/
+results/
 
 # Put pdf documentation of instruments here
 doc/ 

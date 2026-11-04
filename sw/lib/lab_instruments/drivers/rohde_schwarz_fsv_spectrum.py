@@ -9,7 +9,6 @@ import subprocess
 import pyvisa
 import logging
 import math
-import time
 from typing import Union, Dict, List
 
 from sw.lib.lab_instruments import instrument as inst
@@ -35,6 +34,17 @@ STAT_POW_IF_OVERLOAD = 1 << 2
 # spot-noise markers it has.
 PNO_CHANNEL_NAME = 'Phase Noise'
 PNO_MAX_SPOT_MARKERS = 5
+
+
+def _numbers(response: str) -> List[float]:
+    """The numbers in a comma-separated SCPI response; text such as '"No Spurs Found"' gives none."""
+    out = []
+    for v in response.strip().split(','):
+        try:
+            out.append(float(v))
+        except ValueError:
+            pass
+    return out
 
 
 class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
@@ -138,6 +148,31 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         """Keep the screen updating while under remote control (pyvisa-py over LAN cannot send go-to-local;
         press LOCAL on the front panel to take over)."""
         self.write(f'SYST:DISP:UPD {"ON" if on else "OFF"}')
+
+    def live_view(self, center: float, span: float, averages: int = None):
+        """
+        Show the spectrum live on the screen: continuous sweep around `center` over `span` (auto RBW / VBW and
+        attenuation, a marker on the peak every sweep), e.g. to tune a carrier by hand while watching it.
+
+        Args:
+            center: Centre frequency (Hz).
+            span: Span (Hz).
+            averages: Moving average over this many sweeps (trace mode AVERage), to steady a wandering carrier;
+                      None: every sweep as it comes (WRITe).
+        """
+        self.set_center_frequency(center)
+        self.set_span(span)
+        self.set_bandwidths_auto()
+        self.set_attenuation_auto()
+        if averages:
+            self.set_sweep_count(int(averages))
+            self.set_trace_mode(trace=1, mode='AVERage')
+        else:
+            self.set_trace_mode(trace=1, mode='WRITe')
+        self.write('CALC:MARK1 ON')
+        self.write('CALC:MARK1:MAX:AUTO ON')  # marker 1 follows the peak
+        self.set_sweep_mode(continuous=True)
+        self.set_display_update(True)
 
     def _close(self):
         """Release the VISA session (the analyzer has no outputs to switch off)."""
@@ -269,112 +304,32 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         trace['averages'] = averages
         return trace
 
-    def get_phase_noise_marker(self, marker: int = 2) -> float:
-        """Phase-noise marker function result [dBc/Hz] of a delta marker (enable_phase_noise_marker): the noise
-        at the marker relative to the carrier, normalized to 1 Hz with the analyzer's own RBW / detector
-        corrections."""
-        marker = self._validate_marker(marker)
-        return float(self.query(f'CALC:DELT{marker}:FUNC:PNO:RES?').strip())
-
-    def measure_phase_noise_profile(self,
-                                    averages: int,
-                                    offset_span_map: Dict[float, float],
-                                    traces: List[Dict] = None,
-                                    rbw_span_ratio: float = None,
-                                    detector: str = 'RMS',
-                                    average_type: str = 'POWer',
-                                    video_filter: str = 'LINear') -> Dict[float, float]:
+    def phase_noise_traces(self, center: float, spans: List[float], averages: int, rbw_span_ratio: float,
+                           detector: str = 'RMS', average_type: str = 'POWer',
+                           video_filter: str = 'LINear') -> List[Dict]:
         """
-        Execute phase noise measurements over a set of offset frequencies
+        Averaged traces around the carrier for the phase-noise curve (pll_util.phase_noise_from_traces): one
+        averaged_trace per span, narrowest first, so the close-in offsets get a small RBW.
 
         Args:
-            averages: Number of sweeps to average before taking the measurement.
-            offset_span_map: Dictionary mapping target offset frequencies (Hz)
-                             to the required measurement span (Hz).
-                             Example: {100: 2.1e3, 1000: 2.1e3, 10000: 21e3}
-            traces: Optional list; when given, the averaged trace of every span (get_trace) is appended to it.
-            rbw_span_ratio: Optional; RBW, VBW and sweep points per span from set_bandwidths_for_span(span,
-                            rbw_span_ratio) instead of the fixed 1 Hz / 10 Hz RBW (VBW = VBW_RBW_RATIO x RBW).
-            detector, average_type: set_detector / set_average_type before the sweeps; default RMS detector +
-                                    power averaging, for the markers and the traces alike (each trace point is then
-                                    the true noise power in the RBW, no log-average bias); None leaves them as they
-                                    are. Read back with get_detector / get_average_type to record them.
-            video_filter: set_video_filter_type before the sweeps (default 'LINear'); None leaves it as it is.
+            center: Carrier frequency (Hz), e.g. after center_on_fundamental.
+            spans: Spans (Hz); repeated spans are measured once.
+            averages: Number of sweeps averaged per span.
+            rbw_span_ratio: RBW, VBW and sweep points per span from set_bandwidths_for_span(span, rbw_span_ratio).
+            detector, average_type, video_filter: as in averaged_trace; default RMS detector + power averaging +
+                                                  linear video filter (each trace point is the true noise power in
+                                                  the RBW). Read back with get_detector / get_average_type /
+                                                  get_video_filter_type to record them.
 
         Returns:
-            Dictionary mapping the evaluated offsets to their phase noise in dBc/Hz: the phase-noise marker
-            function result (CALC:DELT2:FUNC:PNO:RES?, normalized to 1 Hz by the analyzer, independent of the RBW).
+            List of averaged_trace() dictionaries, one per span.
         """
-
-        results = {}
-
-        # Activate phase noise measurement
-        self.set_delta_marker_state(marker=2, state=True)
-        self.enable_phase_noise_marker(marker=2, state=True)
-
-        if detector is not None:
-            self.set_detector(detector)
-        if average_type is not None:
-            self.set_average_type(average_type)
-        if video_filter is not None:
-            self.set_video_filter_type(video_filter)
-
-        # Enable trace averaging
-        self.set_sweep_count(averages)
-        self.set_trace_mode(trace=1, mode='AVERage')
-
-        # Iterate through required spans and evaluate offsets
-        current_span = None
-
-        for offset, required_span in offset_span_map.items():
-            logger.info(f"[{self.info.name}] Evaluating Phase Noise at {offset} Hz offset...")
-
-            # Only trigger a new averaged sweep sequence if the span needs to change
-            if required_span != current_span:
-                self.set_span(required_span)
-
-                if rbw_span_ratio is not None:
-                    rbw = self.set_bandwidths_for_span(required_span, rbw_span_ratio)
-                    logger.info(f"[{self.info.name}] RBW {rbw} Hz for {required_span} Hz span")
-                # Dynamically adjust RBW to prevent timeout on wide spans
-                else:
-                    if required_span > 1e6:
-                        logger.info(f"[{self.info.name}] Span > 1 MHz detected. Increasing RBW to 10 Hz.")
-                    rbw = 10.0 if required_span > 1e6 else 1.0
-                    self.set_rbw(rbw)
-                    self.set_vbw(self.snap_bandwidth(VBW_RBW_RATIO * rbw))  # not the 1 Hz of center_on_fundamental
-
-                # To clear the previous average buffer, toggle trace mode
-                self.set_trace_mode(trace=1, mode='WRITe')
-                self.set_trace_mode(trace=1, mode='AVERage')
-
-                logger.info(f"[{self.info.name}] Acquiring {averages} sweeps at {required_span} Hz span...")
-                self.trigger_single_sweep(wait=True)
-                current_span = required_span
-                # Reference of the phase-noise marker: marker 1 on the carrier of this sweep, and the function switched
-                # off and on so it takes its (fixed) reference level from there. It takes the reference when it is
-                # switched on; at the start above, after center_on_fundamental's move to center without a new sweep,
-                # the FSW43 read marker 1 beside the carrier at 100-125 MHz (-55 instead of -1 dBm), so every marker
-                # read up to ~50 dB too high (2026-10-19).
-                self.peak_search(marker=1)
-                self.enable_phase_noise_marker(marker=2, state=False)
-                self.enable_phase_noise_marker(marker=2, state=True)
-                if traces is not None:
-                    traces.append(self.get_trace(1))
-
-            # Move the marker to the specific offset frequency.
-            self.set_delta_marker_x(marker=2, offset=offset)
-
-            # Allow a brief moment for the instrument to calculate the marker function result
-            time.sleep(0.1)
-
-            # Phase noise in dBc/Hz: the phase-noise function result. (CALC:DELT2:Y? is the plain delta level in the
-            # RBW; it only equals dBc/Hz at 1 Hz RBW: verified on 2026-10-05 by scaling the RBW x1..x30.)
-            pno_val = self.get_phase_noise_marker(marker=2)
-            results[offset] = pno_val
-            logger.info(f"[{self.info.name}] Phase noise at {offset:g} Hz: {pno_val:.1f} dBc/Hz")
-
-        return results
+        traces = []
+        for span in sorted(set(spans)):
+            traces.append(self.averaged_trace(center, span, averages=averages, rbw_span_ratio=rbw_span_ratio,
+                                              detector=detector, average_type=average_type,
+                                              video_filter=video_filter))
+        return traces
 
     # --- Phase Noise application (FSW option K40) ---
     # A separate measurement channel: the analyzer finds the carrier, sweeps the offset range in half decades with an
@@ -509,10 +464,10 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         result['jitter_s'] = float(self.query('FETC:PNO:RMS?').strip())
         result['residual_pm'] = float(self.query('FETC:PNO:RPM?').strip())
         result['residual_fm_hz'] = float(self.query('FETC:PNO:RFM?').strip())
-        spurs = [float(v) for v in self.query('FETC:PNO:SPUR?').strip().split(',') if v.strip()]
+        spurs = _numbers(self.query('FETC:PNO:SPUR?'))  # "No Spurs Found" when there are none
         result['spurs'] = list(zip(spurs[0::2], spurs[1::2]))  # offset / level pairs
-        result['jitter_discrete_s'] = float(self.query('FETC:PNO:SPUR:DISC?').strip())
-        result['jitter_random_s'] = float(self.query('FETC:PNO:SPUR:RAND?').strip())
+        result['jitter_discrete_s'] = (_numbers(self.query('FETC:PNO:SPUR:DISC?')) or [0.0])[0]
+        result['jitter_random_s'] = (_numbers(self.query('FETC:PNO:SPUR:RAND?')) or [math.nan])[0]
         self.write('FORM ASC')
         xy = [float(v) for v in self.query('TRAC:DATA? TRACE1').strip().split(',')]
         result['offset'], result['level'] = xy[0::2], xy[1::2]  # offset / level pairs

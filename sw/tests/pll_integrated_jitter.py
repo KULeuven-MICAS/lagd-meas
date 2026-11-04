@@ -38,7 +38,8 @@ from sw.lib.lab_instruments.drivers.rohde_schwarz_fsv_spectrum import RohdeSchwa
 from sw.lib.lab_instruments.drivers.keysight_fg_33600 import KeysightFG33600
 from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
-from sw.lib.pll_util import calculate_integrated_jitter
+from sw.lib.pll_spectrum import RBW_SPAN_RATIO
+from sw.lib.pll_util import integrate_phase_noise, phase_noise_from_traces
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
@@ -191,19 +192,15 @@ def measure_integrated_jitter(spectrum: RohdeSchwarzFSVSpectrum, center_freq: fl
         1000000.0: 2.1e6    # 1 MHz offset measured at 2.1 MHz span
     }
 
-    # Measure the phase noise profile: RMS detector + power averaging (true noise power, no log-average bias)
-    phase_noise_profile = spectrum.measure_phase_noise_profile(averages=n_averages, offset_span_map=offset_span_map,
-                                                               detector="RMS", average_type="POWer")
+    # One averaged trace per span: RMS detector + power averaging (true noise power, no log-average bias)
+    traces = spectrum.phase_noise_traces(carrier_freq, list(offset_span_map.values()), averages=n_averages,
+                                         rbw_span_ratio=RBW_SPAN_RATIO, detector="RMS", average_type="POWer")
     logging.info("Detector %s, averaging %s (as reported by the analyzer)", spectrum.get_detector(),
                  spectrum.get_average_type())
 
-    freq_offsets = list(phase_noise_profile.keys())
-    phase_noise_values = list(phase_noise_profile.values())
-    logging.info("Frequency offsets: %s", freq_offsets)
-    logging.info("Phase noise values: %s", phase_noise_values)
-
-    # Integrated jitter calculation
-    rms_time_jitter, rms_phase_jitter = calculate_integrated_jitter(carrier_freq, freq_offsets, phase_noise_values)
+    # Phase-noise curve stitched from the traces, integrated over the offsets
+    freq_offsets, phase_noise_values = phase_noise_from_traces(traces, sorted(offset_span_map))
+    rms_time_jitter, rms_phase_jitter = integrate_phase_noise(carrier_freq, freq_offsets, phase_noise_values)
 
     logging.info("Phase Noise Measurements Complete")
     logging.info("Carrier Frequency (Hz): %f", carrier_freq)

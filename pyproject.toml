@@ -9,9 +9,11 @@ dependencies = [
     "jupyter",
     "kaleido",
     "matplotlib",
+    "mplcursors>=0.7.1",
     "numpy",
     "pandas",
     "plotly",
+    "seaborn>=0.13.2",
 ]
 
 [tool.uv]

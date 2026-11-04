@@ -14,11 +14,12 @@
 # Per divider the pad is measured with lib/pll_spectrum.measure_output. Checks:
 #   - n_meas = f_vco / measured carrier vs the set total divider (a digital divider is exact: this only catches a
 #     wrong N; the ppm-level rest is the reference generator's clock against the analyzer's);
-#   - L_vco_*: phase noise referred to the VCO (+20 log10 N) should be the same for every divider (as long as the
+#   - L(f) referred to the VCO (pad curve + 20 log10 N) should be the same for every divider (as long as the
 #     divider and the pad add less noise than the divided VCO);
 #   - time jitter over the common band (COMMON_BAND, fits every divider) should be the same too.
 # The offsets of each divider stop at f_out / OUT_OFFSET_RATIO (a 7.8 MHz carrier cannot show 50 MHz offsets).
-# Dividers that put more than PAD_F_MAX on the pad are skipped (the pad does not drive them: no usable carrier).
+# Dividers that put the pad outside PAD_F_MIN - PAD_F_MAX are skipped (above: beyond the pad's bandwidth; below: cut
+# by the DC blocker at the analyzer input).
 #
 # Results:
 #   results/pll/pll_spectrum_div_<sample>_<stamp>.csv          one row per divider
@@ -41,7 +42,7 @@ from sw.lib.os_utils.iclab_session import iclab_session
 from sw.lib.os_utils.parser import Parser
 from sw.lib.pll_command_api import calculate_div_factor
 from sw.lib.pll_settings import CFG_REF8_LOOP, FILTER_FIELDS
-from sw.lib.pll_spectrum import (FB_DIV, OUTPUT_COLUMNS, PAD_F_MAX, RESULTS_DIR,
+from sw.lib.pll_spectrum import (FB_DIV, OUTPUT_COLUMNS, PAD_F_MAX, PAD_F_MIN, RESULTS_DIR,
                                  TRACE_FIELDS, append_rows, kvco_target_for, measure_output, offsets_for,
                                  trace_csv_path, trace_rows)
 
@@ -49,14 +50,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 
 LOG_DIR = Path(__file__).resolve().parents[2] / "results" / "logs"
 
-# Divider settings, all <= PAD_F_MAX (125 MHz) on the pad at 1 GHz: inside the PLL /8../128; outside /10 and /100;
-# both together /2 x /4 = /8 (same total as inside /8: compares the paths) and /4 x /10 = /40.
+# Divider settings, all inside PAD_F_MIN - PAD_F_MAX (20-100 MHz) on the pad at 1 GHz: inside the PLL /16 (62.5 MHz)
+# and /32 (31.25 MHz); outside /10 (100 MHz) and /20 (50 MHz); both together /2 x /8 = /16 and /4 x /8 = /32 (same
+# totals as inside /16 and /32: compares the paths at the same pad frequency) and /4 x /10 = /40 (25 MHz).
 # The external divider input (f_vco / 2**set_div_freq) stays <= 1.25 GHz (vco_measure.EXT_DIV_F_MAX).
-DIVIDERS = ([dict(pll_clk_o_en=1, set_div_freq=n) for n in range(3, 8)]
-            + [dict(pll_clk_o_en=0, clk_div_en=1, set_div_freq=0, clk_div_val=k) for k in (4, 49)]
-            + [dict(pll_clk_o_en=0, clk_div_en=1, set_div_freq=s, clk_div_val=k) for s, k in ((1, 1), (2, 4))])
-# Band integrated for every divider, so the jitter can be compared: fits the smallest pad frequency (1 GHz / 128).
-COMMON_BAND = (1e3, 1e6)
+DIVIDERS = ([dict(pll_clk_o_en=1, set_div_freq=n) for n in (4, 5)]
+            + [dict(pll_clk_o_en=0, clk_div_en=1, set_div_freq=0, clk_div_val=k) for k in (4, 9)]
+            + [dict(pll_clk_o_en=0, clk_div_en=1, set_div_freq=s, clk_div_val=k) for s, k in ((1, 3), (2, 3), (2, 4))])
+# Band integrated for every divider, so the jitter can be compared: fits the smallest pad frequency (25 MHz, /40).
+COMMON_BAND = (1e3, 1e7)
 
 RESULT_COLUMNS = (["time", "lut_csv", "divider", "pll_clk_o_en", "clk_div_en", "set_div_freq", "clk_div_val",
                    "total_div", "f_vco", "kvco_target"] + list(vco_lut.LUT_FIELDS) + list(FILTER_FIELDS)
@@ -121,9 +123,13 @@ def divider_sweep(f_vco=1e9, kvco="middle", sample=None, lut=None, supply=None, 
                 row.update(pll_setup.measure_pll_supply(supply, label=label))
                 offsets = offsets_for(f_vco / total_div)
                 if f_vco / total_div > PAD_F_MAX:
-                    logging.warning("%s: %.1f MHz on the pad > %.0f MHz, which the pad does not drive: not measured",
+                    logging.warning("%s: %.1f MHz on the pad > %.0f MHz, beyond the pad's bandwidth: not measured",
                                     label, f_vco / total_div / 1e6, PAD_F_MAX / 1e6)
                     row["status"] = "pad_too_high"
+                elif f_vco / total_div < PAD_F_MIN:
+                    logging.warning("%s: %.1f MHz on the pad < %.0f MHz, cut by the DC blocker: not measured",
+                                    label, f_vco / total_div / 1e6, PAD_F_MIN / 1e6)
+                    row["status"] = "pad_too_low"
                 elif not locked:
                     logging.warning("%s: not locked, not measured", label)
                     row["status"] = "not_locked"
@@ -160,7 +166,7 @@ def hold_divider(f_vco=1e9, divider=None, kvco="middle", sample=None, lut=None, 
     """Lock the PLL at `f_vco` [Hz] with the operating point of divider_sweep (VCO codes from the lookup table for
     |Kvco| `kvco`, loop filter of CFG_REF8_LOOP, reference f_vco / FB_DIV from the 33600A) and output divider
     `divider` (a dict like the DIVIDERS entries, e.g. dict(pll_clk_o_en=1, set_div_freq=3) for /8 inside the PLL),
-    then hold it until Enter, for measurements by hand. Pads above PAD_F_MAX are set too (only a warning).
+    then hold it until Enter, for measurements by hand. Pads outside PAD_F_MIN - PAD_F_MAX are set too (only a warning).
 
     Logs the setting, the lock bit and the PLL supply (`supply`: pll_setup.pll_supply, None = not measured); after
     Enter the lock bit and the supply once more. The reference is turned off and the FPGA link closed, also on an
@@ -176,9 +182,9 @@ def hold_divider(f_vco=1e9, divider=None, kvco="middle", sample=None, lut=None, 
     f_ref = f_vco / FB_DIV
     f_pad = f_vco / total_div
     label = divider_label(divider)
-    if f_pad > PAD_F_MAX:
-        logging.warning("%s: %.1f MHz on the pad > %.0f MHz, which the pad is not specified for", label, f_pad / 1e6,
-                        PAD_F_MAX / 1e6)
+    if not PAD_F_MIN <= f_pad <= PAD_F_MAX:
+        logging.warning("%s: %.1f MHz on the pad, outside %.0f-%.0f MHz (DC blocker / pad bandwidth)", label,
+                        f_pad / 1e6, PAD_F_MIN / 1e6, PAD_F_MAX / 1e6)
 
     fg = pll = None
     try:
@@ -219,7 +225,7 @@ def main():
     parser = Parser()
     with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # PLL supply: fixed on the board, always on (no SMU since 2026-10-19): power columns stay NaN
-        # 1 GHz, |Kvco| in the geometric middle of the S5 table's range; all DIVIDERS (~1.5 min each)
+        # 1 GHz, |Kvco| in the geometric middle of the S5 table's range; all DIVIDERS (pads 25-100 MHz, ~1.5 min each)
         divider_sweep(1e9, "middle", sample="S5")
 
         # Debug steps of the in-band noise of /8 vs /128 (sw/tools/notebooks/pll_div_debug.ipynb):

@@ -535,12 +535,6 @@ class BaseSpectrumAnalyzer(BaseInstrument):
         marker = self._validate_marker(marker)
         self.write(f'CALC:MARK{marker}:FUNC:REF')
 
-    def enable_phase_noise_marker(self, marker: int = 2, state: bool = True):
-        """Enable or disable the Phase Noise marker function (dBc/Hz) on a delta marker."""
-        marker = self._validate_marker(marker)
-        state_str = 'ON' if state else 'OFF'
-        self.write(f'CALC:DELT{marker}:FUNC:PNO {state_str}')
-
     def _close(self):
         """Close the spectrum analyzer resource if needed."""
         pass
