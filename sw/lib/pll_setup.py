@@ -165,6 +165,18 @@ def open_pll_smu():
         config = yaml.safe_load(f)
     return KeithleySMU2450(inst.BaseInstrumentData.from_mapping(config["smu_vdd_pll"]))
 
+def open_current_bias_smu():
+    """The 2450 SMU supplying the bias current for the PLL (meas_setup.yaml `smu_vctrl`). Needs the lab
+    network (iclab_session)."""
+    import yaml  # instrument imports only when the supply is used
+    from pathlib import Path
+    from sw.lib.lab_instruments import instrument as inst
+    from sw.lib.lab_instruments.drivers.keithley_smu_2450 import KeithleySMU2450_current
+
+    cfg_path = Path(__file__).resolve().parent / "lab_instruments" / "config" / "meas_setup.yaml"
+    with cfg_path.open(encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    return KeithleySMU2450_current(inst.BaseInstrumentData.from_mapping(config["smu_vctrl"]))
 
 def start_pll_supply(vdd=0.75, settle=0.5, smu=None):
     """PLL supply from the 2450 SMU (meas_setup.yaml `smu_vdd_pll`): output on at `vdd` [V]. Start it before
@@ -190,6 +202,30 @@ def start_pll_supply(vdd=0.75, settle=0.5, smu=None):
     logger.info("PLL supply on: %.3f V from %s", vdd, smu.info.name)
     return smu
 
+def start_current_bias(ibias=-50e-6, settle=0.5, smu=None):
+    """Bias current supply from the 2450 SMU (meas_setup.yaml `smu_vctrl`): output on at `ibias` [A].
+
+    `smu`: an already open SMU (open_current_bias_smu), e.g. to change the current of a running supply; None opens one.
+    Returns the SMU: keep it open while the circuit runs, close() goes back to 0 A and turns the output off.
+    Needs the lab network (iclab_session).
+    """
+    import time
+
+    opened_here = smu is None
+    smu = smu or open_current_bias_smu()
+    try:
+        smu.set_current(ibias)
+        smu.output_on()
+        smu.wait_settled(ibias)
+        time.sleep(settle)
+    except BaseException:
+        if opened_here:
+            smu.close()  # back to 0 A, output off; a passed-in SMU is closed by its owner
+        raise
+
+    # Assuming logger is configured in your main file as it is in the instrument files
+    logger.info("Current bias on: %.2e A from %s", ibias, smu.info.name)
+    return smu
 
 @contextlib.contextmanager
 def pll_supply(vdd=0.75, settle=0.5):

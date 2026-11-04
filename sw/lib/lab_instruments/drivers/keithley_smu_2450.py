@@ -118,3 +118,101 @@ class KeithleySMU2450(inst.BaseInstrument):
             self.write(':SOUR:VOLT 0')
             self.output_off()
         self.tool.close()
+
+class KeithleySMU2450_current(inst.BaseInstrument):
+    """
+    Class for the Keithley 2450 SourceMeter, configured as a current source.
+    The instrument must be set to the SCPI command set (not TSP).
+    info: inst.BaseInstrumentData: The data class containing the instrument's information.
+    info.args: dict: Additional arguments for the instrument. Accepts
+        i_min, i_max: float, software clamp on the source current [A] (default -100e-6, 100e-6).
+        v_limit: float, voltage compliance limit [V] (default 2.0).
+        v_range: float, fixed voltage measure range [V] (default 2.0).
+        terminals: str, 'FRON' or 'REAR' (default 'FRON').
+        remote_sense: bool, 4-wire sensing (default False).
+    """
+    def __init__(self, info: inst.BaseInstrumentData, verbose: bool = False):
+        self._i_min = info.args.get("i_min", -100e-6)
+        self._i_max = info.args.get("i_max", 100e-6)
+        self._output_on = False
+        super().__init__(info, verbose=verbose)
+
+    def _open_resource(self):
+        rm = pyvisa.ResourceManager()
+        logger.info(f"Reaching {self.info.name} at: TCPIP::{self.info.IP}::inst0::INSTR")
+        return rm.open_resource(f"TCPIP::{self.info.IP}::inst0::INSTR")
+
+    def _init_instrument(self):
+        """Reset, then configure as a current source measuring voltage at 0 A, output off."""
+        args = self.info.args
+        self.write('*RST')
+        self.write('*CLS')
+        self.write(f':ROUT:TERM {args.get("terminals", "FRON")}')
+
+        # Set to Current Source
+        self.write(':SOUR:FUNC CURR')
+        self.write(':SOUR:CURR:RANG 100e-6')  # 100 uA range covers the 50 uA requirement
+        self.write(':SOUR:CURR 0')
+        self.set_voltage_limit(args.get("v_limit", 2.0)) # 2.0V limit safely covers the 300-400mV expected
+
+        # Set to Voltage Measure
+        self.write(':SENS:FUNC "VOLT"')
+        self.write(':SENS:VOLT:RANG:AUTO OFF')
+        self.write(f':SENS:VOLT:RANG {args.get("v_range", 2.0)}')
+        self.write(f':SENS:VOLT:RSEN {"ON" if args.get("remote_sense", False) else "OFF"}')
+
+    def set_voltage_limit(self, v_limit: float):
+        """Set the voltage compliance limit [V]."""
+        self.write(f':SOUR:CURR:VLIM {v_limit}')
+
+    def set_nplc(self, nplc: float):
+        """Set the measurement integration time in power-line cycles (0.01..10)."""
+        self.write(f':SENS:VOLT:NPLC {nplc}')
+
+    def set_current(self, current: float):
+        """Set the source current [A]; refuses values outside [i_min, i_max]."""
+        if not self._i_min <= current <= self._i_max:
+            raise ValueError(
+                f"{self.info.name}: {current} A outside allowed range [{self._i_min}, {self._i_max}] A")
+        self.write(f':SOUR:CURR {current}')
+
+    def measure(self) -> tuple:
+        """Trigger one measurement; returns (measured voltage [V], measured current [A])."""
+        # SOUR is now current, READ is now voltage
+        ret = self.query(':READ? "defbuffer1", SOUR, READ')
+        i, v = (float(x) for x in ret.strip().split(','))
+        return v, i
+
+    def in_compliance(self) -> bool:
+        """True when the source is limited by the voltage compliance."""
+        return self._ret_to_int(self.query(':SOUR:CURR:VLIM:TRIP?')) == 1
+
+    def output_on(self):
+        self.write(':OUTP ON')
+        self._output_on = True
+
+    def output_off(self):
+        self.write(':OUTP OFF')
+        self._output_on = False
+
+    def wait_settled(self, i_set: float, tol: float = 1e-7, timeout: float = 5.0, poll: float = 0.1) -> tuple:
+        """Measure until the output is within `tol` [A] of `i_set` or `timeout` [s] passes.
+        Returns the last (voltage, current); logs a warning when it did not settle."""
+        import time
+        t_end = time.time() + timeout
+        while True:
+            v, i = self.measure()
+            if abs(i - i_set) <= tol:
+                return v, i
+            if time.time() > t_end:
+                logger.warning(f"{self.info.name}: not settled to {i_set} A after {timeout} s "
+                               f"(at {v:.4f} V, {i:.2e} A)")
+                return v, i
+            time.sleep(poll)
+
+    def _close(self):
+        """Ramp to 0 A and turn the output off, then release the VISA session."""
+        if self._output_on:
+            self.write(':SOUR:CURR 0')
+            self.output_off()
+        self.tool.close()

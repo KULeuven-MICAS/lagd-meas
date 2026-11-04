@@ -366,7 +366,7 @@ def sweep_grid_measure_output(cfgs: list, f_vco: float,
             pll_div, total_div = calculate_div_factor(current_cfg)
 
             # Record PLL supply current and power
-            row.update(pll_setup.measure_pll_supply(supply, label=label))
+            #row.update(pll_setup.measure_pll_supply(supply, label=label))
 
             # Filter offsets that fit within the carrier bounds
             offsets = offsets_for(f_vco / total_div)
@@ -423,6 +423,7 @@ if __name__ == "__main__":
     cfg_fast = CFG_COARSE0_FAST.copy()
     cfg_fast.update(
         set_div_freq=0b110,
+        pll_clk_o_en=0b1,
         set_v_ctrl=0b00,
         set_current=0b111,
         set_c1=0b000,
@@ -443,22 +444,29 @@ if __name__ == "__main__":
         set_v_ctrl=0b00,
     )
 
-    f_ref = 75e6
+    f_ref = 37.5e6
 
     # Reference clock: 18.75 MHz (Fvco = 128 * Fref = 2.4 GHz -> 37.5 MHz on the pad with set_div_freq /64),
     # 0 -> 1.8 V square, 50 % duty, 50 Ohm load. Stays on for the whole run, off when the generator is closed.
     # PLL supply: 0.75 V from the 2450 SMU (smu_vdd_pll), on before the PLL is configured; its current and power
     # are recorded per configuration.
     with iclab_session(Parser().get_credentials()):
-        supply = pll_setup.start_pll_supply(0.75)
+        fg = pll_setup.start_reference(f_ref, vpp=1.8, channel=1, load=50)
+        '''supply = pll_setup.start_pll_supply(0.75)
+        #current_smu = pll_setup.start_current_bias(ibias=-50e-6, settle=0.5, smu=None)
         try:
             fg = pll_setup.start_reference(f_ref, vpp=1.8, channel=1, load=50)
         except BaseException:
             supply.close()
-            raise
+            #current_smu.close()
+            raise'''
     try:
         start_pll()
 
+        time.sleep(2)
+        config_pll(cfg_fast)
+        time.sleep(1)
+        '''
         # Spectrum of bypassed clock
         cfg_bypass_list = []
         for div in (0b000, 0b001, 0b010):
@@ -475,7 +483,7 @@ if __name__ == "__main__":
             supply=supply,
             common_band=(1e2, 100e6),
         )
-
+        '''
         '''
         # Sweep different division factors
         cfg_div_list = []
@@ -494,9 +502,9 @@ if __name__ == "__main__":
             common_band=(1e2, 100e6),
         )
         '''
-        '''
-        # Sweep the different filter parameters for the 'fast' configuration
 
+        # Sweep the different filter parameters for the 'fast' configuration
+        cfg_fast.update(set_div_freq=0b101)
         # Current sweep
         sweep_grid_measure_output(
             cfgs=[cfg_fast],
@@ -508,10 +516,10 @@ if __name__ == "__main__":
             n_averages=10,
             span=41e6,
             spectrum_averages=10,
-            supply=supply,
+            supply=None,
             common_band=(1e2, 100e6),
         )
-
+        '''
         # Sweep R1
         sweep_grid_measure_output(
             cfgs=[cfg_fast],
@@ -590,6 +598,7 @@ if __name__ == "__main__":
         fg.close()
         if "pll" in globals():
             pll.close()
-        supply.close()
+        #supply.close()
+        #current_smu.close()
 
     sys.exit(0)
