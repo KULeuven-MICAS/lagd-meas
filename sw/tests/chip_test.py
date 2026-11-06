@@ -163,8 +163,8 @@ def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32,
     # tune the chip clock and spi clock
     # SCK must stay at or below the chip clock: the slave's RX FIFO is 8 words
     # deep and cannot backpressure SPI, so an AXI side slower than the SPI silently drops words.
-    # chip.set_chip_clk_hz(10e6) # 10 MHz (FPGA clock is not used for now. Use the on-PCB oscillator instead)
-    # chip.set_sck_hz(5e6)  # 5 MHz (SPI clock is not used for now. Use the external pulse generator instead)
+    # chip.set_chip_clk_hz(10e6) # 10 MHz (Outdated: FPGA clock is not used anymore)
+    chip.set_sck_hz(5e6)  # 5 MHz SPI clock
 
     # enable the chip clock and reset the chip
     chip.reset_chip(hold=0.01, chip_clk_en=1)
@@ -173,7 +173,7 @@ def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32,
     chip.init_spi()
 
     # set FDTI channel a to JTAG mode and scan the IDCODE
-    # subprocess.Popen("openocd -f testcases/jtag/01_idcode/openocd.scan.tcl > /dev/null 2>&1 &", shell=True)
+    subprocess.Popen("openocd -f testcases/jtag/01_idcode/openocd.scan.tcl > /dev/null 2>&1 &", shell=True)
 
     # run a memory test
     if mem_test:
