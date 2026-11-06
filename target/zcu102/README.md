@@ -46,3 +46,5 @@ measurement host (e.g. `--rtscts` to keep hardware flow control).
   defaults live at the top of each script.
 - The ELF path in `top.sh` is resolved on the **remote** measurement host, relative
   to its `REMOTE_DIR`, not locally.
+- If you are using the ZCU board in the IClab of ESAT, KU Leuven, please first build a secure connection by logging in the website [https://securewww.esat.kuleuven.be/iclab/](https://securewww.esat.kuleuven.be/iclab/) and keep the page opened.
+- Before triggering the top.py, please first mount your files under the remote target folder. For details, please read the scripts in [top.py](./top.py).
