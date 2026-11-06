@@ -36,6 +36,8 @@ import target.zcu102.zcu102_reload as zcu102_reload
 logger = logging.getLogger(__name__)
 
 DEFAULT_ELF = "sw/inputs/helloworld.spm.elf"
+DEFAULT_INTF = "uart"  # or "spi"
+DEFAULT_SCK_HZ = 5_000_000  # 5MHz, SPI clock frequency (only used if --intf=spi)
 
 # Defaults come from config.ini / config.local.ini -- see lab_config.py.
 DEFAULT_HOST = lab_config.get("measurement-host", "host")
@@ -44,10 +46,10 @@ DEFAULT_DEVICE = lab_config.get("measurement-host", "device")
 REMOTE_PYTHON = lab_config.get("measurement-host", "python")
 
 
-def run_elf(host, remote_dir, elf, device, extra_args, stdout=sys.stdout):
+def run_elf_uart(host, remote_dir, elf, device, extra_args, stdout=sys.stdout):
     """Load & run an ELF on the chip over UART from the measurement host."""
     tokens = [
-        REMOTE_PYTHON, "-m", "sw.uart.reset_plus_uart", elf,
+        REMOTE_PYTHON, "-m", "sw.uart.send_uart", elf,
         "--device", device,
         *extra_args,
     ]
@@ -55,15 +57,34 @@ def run_elf(host, remote_dir, elf, device, extra_args, stdout=sys.stdout):
     subprocess.run(["ssh", "-t", host, remote_cmd], stdout=stdout, check=True)
 
 
+
+def run_elf_spi(host, remote_dir, elf, sck, stdout=sys.stdout):
+    """Load & run an ELF on the chip over SPI from the measurement host."""
+    tokens = [
+        REMOTE_PYTHON, "-m", "sw.tests.chip_load_spi", elf,
+        "--sck", str(sck),
+    ]
+    remote_cmd = f"cd {shlex.quote(remote_dir)}/ && source env.sh &&" + " ".join(shlex.quote(t) for t in tokens)
+    subprocess.run(["ssh", "-t", host, remote_cmd], stdout=stdout, check=True)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Reload the ZCU102, then load & run an ELF on the chip over UART.",
+        description="Reload the ZCU102, then load & run an ELF on the chip.",
         epilog="Unrecognised arguments are forwarded to send_uart on the measurement host.",
     )
     # Stage 2 (ELF over UART on the measurement host).
     parser.add_argument(
         "--elf", default=DEFAULT_ELF,
         help=f"ELF to run (path on the measurement host; default: {DEFAULT_ELF})",
+    )
+    parser.add_argument(
+        "--intf", default=DEFAULT_INTF,
+        help=f"Interface to use (default: {DEFAULT_INTF})",
+    )
+    parser.add_argument(
+        "--sck", type=int, default=DEFAULT_SCK_HZ,
+        help=f"SPI clock frequency (default: {DEFAULT_SCK_HZ} Hz)",
     )
     parser.add_argument(
         "--host", default=DEFAULT_HOST,
@@ -107,8 +128,13 @@ def main(argv=None):
     try:
         # Stage 1: (re)program the ZCU102 and reset the chip.
         zcu102_reload.reload_board(host=args.reload_host, bit=args.bit)
-        # Stage 2: load & run the ELF on the chip over UART.
-        run_elf(args.host, args.remote_dir, args.elf, args.device, uart_args)
+        # Stage 2: load & run the ELF on the chip.
+        if args.intf == "uart":
+            run_elf_uart(args.host, args.remote_dir, args.elf, args.device, uart_args)
+        elif args.intf == "spi":
+            run_elf_spi(args.host, args.remote_dir, args.elf, args.sck)
+        else:
+            raise ValueError("unsupported interface")
     except FileNotFoundError as err:
         logger.error("%s", err)
         return 1
