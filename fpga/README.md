@@ -7,6 +7,8 @@ To generate the Vivado project, run `make` under `fpga/`.
 The generated `xillydemo.bit` should be placed under `/mnt/pl_sd/xillydemo.bit`
 (mount first with `mount_pl_sd.sh`). Reboot Xillinux to load the new bitstream.
 
+A backup of a known-good bitstream file is placed at [`xillydemo.bit`](./backup/xillydemo.bit).
+
 The Xillinux template is from: xillybus.com/downloads/xillinux-eval-zedboard-2.0c.zip
 
 > Note: in the FPGA project all resets are active-high (aligning with the Vivado

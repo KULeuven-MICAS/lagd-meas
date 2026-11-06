@@ -18,21 +18,23 @@ and JTAG debug work.
 
 ## Repository layout
 
-- [`fpga/`](fpga/) — Vivado project for the Zedboard/Xillinux bitstream. Build with
+- [`fpga/`](fpga/) - Vivado project for the Zedboard/Xillinux bitstream. Build with
   `make`; simulate with `make sim`. See [`fpga/README.md`](fpga/README.md).
-- [`sw/`](sw/) — Python libraries, test scripts, ELF loaders, and UART/JTAG helpers
-  that run on the Zynq Linux host. See [`sw/README.md`](sw/README.md).
-- [`testcases/`](testcases/) — runnable chip test sequences (SPI, UART, JTAG, soak scripts).
-- [`tools/`](tools/) — lint and support tools.
-- [`target/`](target/) — target/board-specific files (e.g., `zcu102/`).
-- [`xillinux/`](xillinux/) — Xillinux root filesystem overlays and workspace files.
-- [`openising/`](openising/) — Application-level scripts (MaxCut/MIMO/MPC) for chip measurement.
-- [`env.sh`](env.sh) — environment setup: `source env.sh` from the repo root before running any
-  Python scripts.
-- [`pyproject.toml`](pyproject.toml) — Python linting configuration (Ruff targets Python 3.7 for the lab
-  measurement machines).
-- [`measurement_ladder.md`](measurement_ladder.md) — full measurement plan and checklist for the LAGD chip.
+- [`openising/`](openising/) - Application-level scripts (MaxCut/MIMO/MPC) for chip measurement.
 - [`openising/ISSCC_tests`](openising/ISSCC_tests) - all measurement data for the ISSCC'27 submission.
+- [`submodules`](submodules/) - submodules including RTL and algorithm repositories. The RTL is fully functional and measured under TSMC 7nm.
+- [`sw/`](sw/) - Python libraries, test scripts, ELF loaders, and UART/JTAG helpers
+  that run on the Zynq Linux host. See [`sw/README.md`](sw/README.md).
+- [`target/`](target/) - target/board-specific files (e.g., `zcu102/`).
+- [`testcases/`](testcases/) - runnable chip test sequences (SPI, UART, JTAG, soak scripts).
+- [`tools/`](tools/) - lint and support tools.
+- [`xillinux/`](xillinux/) - Xillinux root filesystem overlays and workspace files.
+- [`env.sh`](env.sh) - environment setup: `source env.sh` from the repo root before running any
+  Python scripts.
+- [`pyproject.toml`](pyproject.toml) - Python linting configuration (Ruff targets Python 3.7 for the lab
+  measurement machines).
+- [`measurement_ladder.md`](measurement_ladder.md) - full measurement plan and checklist for the LAGD chip.
+
 
 ## Quick start
 
@@ -41,8 +43,8 @@ and JTAG debug work.
    cd lagd-meas/
    source env.sh
    ```
-2. Build and load the FPGA bitstream — see [`fpga/README.md`](fpga/README.md).
-3. Run host scripts and tests — see [`sw/README.md`](sw/README.md) and
+2. Build and load the FPGA bitstream - see [`fpga/README.md`](fpga/README.md).
+3. Run host scripts and tests - see [`sw/README.md`](sw/README.md) and
    [`measurement_ladder.md`](measurement_ladder.md).
 
 ## Lab instrument control
