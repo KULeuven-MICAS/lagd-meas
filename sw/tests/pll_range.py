@@ -350,6 +350,242 @@ def top_sweep(supply=None, sample="S5"):
                        supply=supply, csv_path=result_csv_path(sample, prefix="pll_range_top"))
 
 
+# Operating edges of the lock range against the PLL supply (2026-11-06), lock check only (no analyzer, no jitter): per
+# supply of EDGE_VDDS the lowest and highest VCO frequency that locks and still holds the lock after EDGE_HOLD s, with
+# the PLL supply power at every probe. Per edge (find_edge):
+#   1. bracket: from the seed EDGE_SEEDS (the same at every supply) step outward by EDGE_STEP while the probe holds
+#      the lock, inward while it does not, until a held probe sits next to a failed one;
+#   2. bisect between the two until they are EDGE_TOL apart (10 MHz at the bottom, 100 MHz at the top).
+# A probe without any VCO setting to try it with (no_vco_setting) is unknown, not failed: the bracket steps over it
+# and it is never taken as an edge (an unknown midpoint ends the bisection early, the bracket stays wider). Loop per
+# probe (edge_loops): the filter and |Kvco| of FILTER_SCHEDULE, but the table's highest |Kvco| above VCO 1 GHz for
+# the top (mid curve, away from the knees where the ~2 GHz/V picks failed at 2.3 / 4.4 GHz; the fastest setting
+# above the table). The table was measured at 0.75 V: at other supplies the VCO curves shift and the picks land
+# elsewhere on them. A bottom probe tries every filter of EDGE_LOWER_FILTERS with every |Kvco| of EDGE_LOWER_KVCOS
+# (one CSV row per try) and holds when one of them holds, to keep a failed VCO pick or a filter switch of the
+# schedule apart from the loop limit. Without a setting inside the table's Vctrl window a probe takes one inside
+# EDGE_WIDE_WINDOW (vco_pick "lut_wide"). Assumes one locked stretch between the edges: a hole shows only where a
+# probe lands in it (every probe is in the CSV). ~10-25 probes of ~5-25 s per edge, ~30-60 min for both edges.
+# Full run of 2026-11-06 (pll_edges_S5_20261106_101806), before the unknown probes, the wide window, the fixed seeds
+# and the bottom filters: a gap of the table at VCO 5.63-5.9 GHz (no setting inside 0.5-0.7 V, below the fastest
+# setting) counted as failed, so the top stuck at 5.56 GHz from 0.60 V on (the previous edge was the next seed); the
+# bottom at 0.90 V failed with Icp 0 up to 636 MHz and held 643 MHz, the schedule's switch to Icp 3.
+#   results/pll/pll_edges_<sample>_<stamp>.csv           one row per try (EDGE_COLUMNS): supply set (vdd_set) and
+#       measured (pll_vdd), which search (edge), frequencies, table pick (VCO codes, |Kvco| request / target,
+#       predicted Vctrl / |Kvco|), loop filter, divider, lock bit after lock_timeout (locked) and after hold s
+#       (locked_end, held), status, PLL current and power: measured after the hold when locked, else right after
+#       the lock timeout (VCO free running, not at f_vco)
+#   results/pll/pll_edges_<sample>_<stamp>_summary.csv   one row per supply: the search settings (tol_*, hold), per
+#       edge the outermost held and innermost failed frequency (f_fail empty: nothing failed up to the limit; both
+#       empty: nothing held), the supply, current and power of the held try, the number of probed frequencies
+EDGE_VDDS = tuple(np.round(np.arange(0.50, 0.90 + 1e-9, 0.05), 2))  # [V] 0.50-0.90 V in 50 mV
+EDGE_TOL = dict(lower=10e6, upper=100e6)  # [Hz] final gap between the held and the failed probe
+EDGE_STEP = dict(lower=0.85, upper=1.05)  # outward factor per bracket step (~20 MHz at the bottom, ~550 MHz at the top)
+EDGE_SEEDS = dict(lower=128e6, upper=11.7e9)  # [Hz] seeds at every supply: the edges at 0.75 V of 2026-11-03
+# [Hz] outward limits: 40 MHz (the table ends at ~55 MHz: below it no VCO setting, a failed probe) and the 33600A's
+# 100 MHz reference (VCO 12.8 GHz); an edge held at the limit is recorded with an empty failed frequency
+EDGE_LIMITS = dict(lower=40e6, upper=FB_DIV * 100e6)
+EDGE_INWARD_STOP = dict(lower=2e9, upper=500e6)  # [Hz] inward walk gives up here: nothing locks at this supply
+EDGE_HOLD = 15.0  # [s] between the two lock reads (11.7 GHz held 15 s on 2026-11-03, lost it within ~2 min)
+EDGE_LOWER_KVCOS = ("min", 2e9)  # |Kvco| requests a bottom probe tries in turn (after the schedule's)
+EDGE_LOWER_FILTERS = (  # filters a bottom probe tries in turn, each with every request of EDGE_LOWER_KVCOS
+    dict(DEFAULT_FILTER, set_current=0, set_c1=7),
+    dict(DEFAULT_FILTER, set_current=0),
+    dict(DEFAULT_FILTER),
+)
+EDGE_WIDE_WINDOW = (0.40, 0.80)  # [V] Vctrl window of the fallback pick (the top held down to Vctrl ~0.40 V)
+# Quick run to check the setup and the notebook (~5-8 min): three supplies, coarse tolerances, short hold
+EDGE_QUICK_VDDS = (0.65, 0.75, 0.85)
+EDGE_QUICK_TOL = dict(lower=40e6, upper=500e6)
+EDGE_QUICK_HOLD = 3.0
+EDGE_COLUMNS = (["vdd_set", "edge", "time", "lut_csv", "f_ref", "f_vco", "kvco_request", "kvco_target", "vco_pick"]
+                + list(vco_lut.LUT_FIELDS) + list(FILTER_FIELDS)
+                + ["vctrl_pred", "kvco_pred", "kvco_min", "kvco_max", "set_div_freq", "total_div", "locked",
+                   "locked_end", "held", "status", "lock_timeout", "hold"] + list(pll_setup.SUPPLY_COLUMNS))
+EDGE_SUMMARY_COLUMNS = (["vdd_set", "vdd_meas", "tol_lower", "tol_upper", "hold"]
+                        + ["{}_{}".format(edge, k) for edge in ("lower", "upper")
+                           for k in ("f", "f_fail", "vdd", "i", "p", "n_probes")])
+
+
+def edge_loops(f_ref, edge):
+    """[(loop filter, |Kvco| request), ...] tried in turn for a probe of the `edge` ("lower" / "upper") search at
+    `f_ref` [Hz], until one holds: the schedule's (with "max" above VCO 1 GHz for the top), then for the bottom every
+    other filter of EDGE_LOWER_FILTERS with every request of EDGE_LOWER_KVCOS."""
+    loop_filter, kvco = filter_for(f_ref)
+    if edge == "upper":
+        return [(loop_filter, "max" if FB_DIV * f_ref > 1e9 else kvco)]
+    tries = [(loop_filter, kvco)]
+    tries += [(flt, k) for flt in EDGE_LOWER_FILTERS for k in EDGE_LOWER_KVCOS if (flt, k) not in tries]
+    return tries
+
+
+def lock_probe(pll, fg, lut, f_vco, loop_filter, kvco, supply=None, lock_timeout=3.0, hold=EDGE_HOLD,
+               wide_lut=None):
+    """One lock check at `f_vco` [Hz] on an open link `pll` and reference `fg`: VCO codes from the table `lut` for
+    |Kvco| `kvco` (else its fastest setting where that can help, fastest_cfg, else the pick of `wide_lut`, the same
+    table with a wider Vctrl window, vco_pick "lut_wide"), filter `loop_filter`; wait for lock, when locked wait
+    `hold` s and read the lock bit again, then the PLL supply power. Returns the row (EDGE_COLUMNS; held = 1 when
+    still locked after `hold`; status "no_vco_setting" when nothing was configured)."""
+    f_ref = f_vco / FB_DIV
+    row = dict(time=datetime.now().isoformat(timespec="seconds"), lut_csv=lut.path.name, f_ref=f_ref, f_vco=f_vco,
+               kvco_request=kvco, status="error", held=0, lock_timeout=lock_timeout, hold=hold, **loop_filter)
+    pick_lut = lut
+    try:
+        target, kvco_min, kvco_max = kvco_target_for(lut, f_vco, kvco)
+        cfg = lut.update_config(loop_cfg(f_vco, loop_filter), f_vco, target)
+        row["vco_pick"] = "lut"
+    except ValueError as e:
+        cfg = fastest_cfg(lut, f_vco, loop_filter)
+        target = kvco_min = kvco_max = float("nan")
+        row["vco_pick"] = "fastest"
+        if cfg is None and wide_lut is not None:
+            try:
+                target, kvco_min, kvco_max = kvco_target_for(wide_lut, f_vco, kvco)
+                cfg = wide_lut.update_config(loop_cfg(f_vco, loop_filter), f_vco, target)
+                pick_lut, row["vco_pick"] = wide_lut, "lut_wide"
+            except ValueError:
+                pass
+        if cfg is None:
+            logging.warning("No VCO setting for %.1f MHz: not configured (%s)", f_vco / 1e6, e)
+            row.update(status="no_vco_setting", vco_pick="")
+            return row
+    _, total_div = calculate_div_factor(cfg)
+    try:
+        op = pick_lut.predict(cfg, f_vco)
+    except ValueError:  # the fastest setting does not reach f_vco in the table at all
+        op = dict(vctrl_pred=float("nan"), kvco_pred=float("nan"))
+    row.update(vco_lut.vco_codes(cfg), **op, kvco_target=target, kvco_min=kvco_min, kvco_max=kvco_max,
+               set_div_freq=cfg["set_div_freq"], total_div=total_div)
+
+    pll_setup.start_reference(f_ref, vpp=1.8, channel=1, load=50, fg=fg)
+    pll_setup.load_config(pll, cfg)
+    row["locked"] = int(pll.wait_lock(timeout=lock_timeout))
+    if row["locked"]:
+        time.sleep(hold)
+        row["locked_end"] = pll.read_lock()
+        row["held"] = int(row["locked_end"] == 1)
+    row["status"] = "lock_only" if row["locked"] else "not_locked"
+    row.update(pll_setup.measure_pll_supply(supply, label="VCO %.1f MHz" % (f_vco / 1e6)))
+    logging.info("VCO %.1f MHz (%s, coarse %d min %d max %d, Vctrl ~%.3f V, Icp %d C1 %d C2 %d R1 %d): %s",
+                 f_vco / 1e6, row["vco_pick"], cfg["vco_tune_coarse"], cfg["vco_current_min"],
+                 cfg["vco_current_max"], row["vctrl_pred"], cfg["set_current"], cfg["set_c1"], cfg["set_c2"],
+                 cfg["set_r1"], "HELD" if row["held"] else "lost after %.0f s" % hold if row["locked"]
+                 else "NOT LOCKED")
+    return row
+
+
+def find_edge(probe, f_seed, outward, tol, f_limit, f_stop):
+    """Edge of the lock range by bracketing and bisection. `probe(f)` [Hz] -> True: f holds the lock, False: it does
+    not, None: unknown (nothing to try it with). From `f_seed` step inward by the factor `outward` (> 1: the top
+    edge, < 1: the bottom) until a probe holds, then outward while it holds, then bisect the bracket down to `tol`
+    [Hz]. Unknown probes are stepped over and never taken as an edge; an unknown midpoint ends the bisection (the
+    bracket stays wider than `tol`). Outward never past `f_limit`, inward never past `f_stop`.
+    Returns (f_in, f_out): the outermost held and the innermost failed frequency (f_out None: nothing failed up to
+    f_limit; both None: nothing held between f_seed and f_stop)."""
+    clamp = min if outward > 1 else max
+    f, f_out = f_seed, None
+    while True:  # inward until a probe holds
+        held = probe(f)
+        if held:
+            f_in = f
+            break
+        if held is False:
+            f_out = f  # the innermost failure so far
+        f = f / outward
+        if (f < f_stop) if outward > 1 else (f > f_stop):
+            return None, None
+    f = f_in
+    while f_out is None and f != f_limit:  # held at the seed (or only unknowns outward): outward until a failure
+        f = clamp(f * outward, f_limit)
+        held = probe(f)
+        if held:
+            f_in = f
+        elif held is False:
+            f_out = f
+    while f_out is not None and abs(f_out - f_in) > tol:
+        f = (f_in + f_out) / 2
+        held = probe(f)
+        if held is None:
+            logging.warning("No VCO setting at %.1f MHz: bisection stops, edge between %.1f and %.1f MHz",
+                            f / 1e6, f_in / 1e6, f_out / 1e6)
+            break
+        if held:
+            f_in = f
+        else:
+            f_out = f
+    return f_in, f_out
+
+
+def edge_search(supply, sample="S5", vdds=EDGE_VDDS, tol=EDGE_TOL, hold=EDGE_HOLD, edges=("lower", "upper")):
+    """Lowest and highest held VCO frequency (find_edge, see EDGE_* above) at every PLL supply of `vdds` [V]
+    (`supply`: PllSupplyChannel; back to its nominal at the end, also on an error), down to `tol` (dict
+    lower / upper [Hz]) with `hold` [s] between the two lock reads; only the edges in `edges` (the summary columns
+    of the other stay empty). Every probe is a row of results/pll/pll_edges_<sample>_<stamp>.csv, one row per
+    supply in <stem>_summary.csv (the edges, the power at each held edge). Returns the CSV path."""
+    csv_path = result_csv_path(sample, prefix="pll_edges")
+    summary_path = csv_path.with_name(csv_path.stem + "_summary.csv")
+    lut = vco_lut.VcoLUT(sample=sample)
+    wide_lut = vco_lut.VcoLUT(sample=sample, window=EDGE_WIDE_WINDOW)
+    fg = pll = None
+    try:
+        fg = pll_setup.open_reference_generator()
+        pll = pll_setup.connect()
+        for vdd in vdds:
+            summary = dict(vdd_set=vdd, vdd_meas=supply.set(vdd), tol_lower=tol["lower"], tol_upper=tol["upper"],
+                           hold=hold)
+            for edge in edges:
+                logging.info("=== PLL supply %.2f V: %s edge, from %.1f MHz ===", vdd, edge, EDGE_SEEDS[edge] / 1e6)
+                rows, results = {}, {}
+
+                def probe(f_vco):
+                    """True: held with one of the tries, False: none held, None: no try had a VCO setting."""
+                    if f_vco in results:
+                        return results[f_vco]
+                    statuses = []
+                    for loop_filter, kvco in edge_loops(f_vco / FB_DIV, edge):
+                        try:
+                            row = lock_probe(pll, fg, lut, f_vco, loop_filter, kvco, supply=supply, hold=hold,
+                                             wide_lut=wide_lut)
+                        except pyvisa.VisaIOError:
+                            raise  # instrument connection lost: stop
+                        except Exception:
+                            logging.exception("VCO %.1f MHz failed, counted as not held", f_vco / 1e6)
+                            row = dict(time=datetime.now().isoformat(timespec="seconds"), lut_csv=lut.path.name,
+                                       f_ref=f_vco / FB_DIV, f_vco=f_vco, kvco_request=kvco, status="error", held=0,
+                                       hold=hold, **loop_filter)
+                        row.update(vdd_set=vdd, edge=edge)
+                        append_rows(csv_path, EDGE_COLUMNS, [row])
+                        rows[f_vco] = row  # the held try, else the last one
+                        statuses.append(row["status"])
+                        if row["held"]:
+                            break
+                    results[f_vco] = (True if rows[f_vco]["held"]
+                                      else None if all(s == "no_vco_setting" for s in statuses) else False)
+                    return results[f_vco]
+
+                f_in, f_out = find_edge(probe, EDGE_SEEDS[edge], EDGE_STEP[edge], tol[edge], EDGE_LIMITS[edge],
+                                        EDGE_INWARD_STOP[edge])
+                held = rows[f_in] if f_in is not None else {}
+                summary.update({"{}_f".format(edge): f_in, "{}_f_fail".format(edge): f_out,
+                                "{}_vdd".format(edge): held.get("pll_vdd"), "{}_i".format(edge): held.get("pll_i"),
+                                "{}_p".format(edge): held.get("pll_p"), "{}_n_probes".format(edge): len(rows)})
+                if f_in is None:
+                    logging.warning("PLL supply %.2f V: nothing held on the %s side", vdd, edge)
+                else:
+                    logging.info("PLL supply %.2f V: %s edge %.1f MHz (fails at %s), %.3f mW, %d probes", vdd, edge,
+                                 f_in / 1e6, "%.1f MHz" % (f_out / 1e6) if f_out else "- (nothing failed)",
+                                 held.get("pll_p", float("nan")) * 1e3, len(rows))
+            append_rows(summary_path, EDGE_SUMMARY_COLUMNS, [summary])
+    finally:
+        if pll is not None:
+            pll.close()
+        if fg is not None:
+            fg.close()  # reference off
+        supply.set(supply.nominal)
+    logging.info("Edge search written to %s (summary: %s)", csv_path, summary_path.name)
+    return csv_path
+
+
 def result_csv_path(sample, prefix="pll_range"):
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     return RESULTS_DIR / "{}_{}_{}.csv".format(prefix, sample or "nosample", datetime.now().strftime("%Y%m%d_%H%M%S"))
@@ -371,15 +607,32 @@ def main():
     parser = Parser()
     with iclab_session(parser.get_credentials()), pll_setup.core_in_reset():  # core in reset: no pollution
         # PLL supply from the E36312A CH2 (pll_setup.PllSupplyChannel: voltage, current, power per point; only
-        # upper_search changes the voltage, close() programs the nominal it found again, also on an error).
+        # upper_search and edge_search change the voltage, close() programs the nominal it found again, also on an
+        # error).
         # supply = None: PLL supply from a battery / fixed on the board, power columns NaN (not with upper_search).
         supply = pll_setup.PllSupplyChannel(channel=2)
         try:
+            # Operating edges against the PLL supply: 0.50-0.90 V in 50 mV, lowest (to 10 MHz) and highest (to
+            # 100 MHz) VCO frequency that holds the lock, with the power; lock check only, ~30-40 min. See EDGE_*
+            # above; plots: sw/tools/notebooks/pll_edges.ipynb
+            # Bottom edge only (~20-30 min), every weak filter per probe (EDGE_LOWER_FILTERS); combined with the top
+            # of pll_edges_S5_20261106_110104 in the notebook (BOTTOM_CSV)
+            edge_search(supply, edges=("lower",))
+            # Rerun of the top edge only (done 2026-11-06: pll_edges_S5_20261106_110104; 3.54 GHz at 0.50 V to
+            # >= 12.8 GHz at 0.90 V): the full run pll_edges_S5_20261106_101806 stuck at a gap of the table (see
+            # EDGE_* above)
+            # edge_search(supply, edges=("upper",))
+            # edge_search(supply)
+            # Quick check of the setup and the notebook: 0.65 / 0.75 / 0.85 V, bottom to 40 MHz, top to 500 MHz,
+            # 3 s hold (~4 min); same CSV names, so the notebook picks it up as the newest run (done 2026-11-06:
+            # pll_edges_S5_20261106_100452)
+            # edge_search(supply, vdds=EDGE_QUICK_VDDS, tol=EDGE_QUICK_TOL, hold=EDGE_QUICK_HOLD)
+
             # Highest |Kvco| at the coarse points of 1.2-6.1 GHz, DEFAULT_CFG filter and LOOP_FILTER (~25 min), to
             # set the |Kvco| and filter of FILTER_SCHEDULE above VCO ~1 GHz; see KVMAX_* above
-            kvmax_check(supply)
+            # kvmax_check(supply)
             # Top of the usable range: VCO 8.5-11.7 GHz, measured (~16 min); see TOP_* above
-            top_sweep(supply)
+            # top_sweep(supply)
 
             # Coarse measured sweep over the lock range (VCO 128 MHz - 11.7 GHz, 15 points, ~30 min): jitter,
             # spectrum and power with the loop filter and |Kvco| of FILTER_SCHEDULE per point, for the first curves
