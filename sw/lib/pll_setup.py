@@ -285,7 +285,7 @@ class PllSupplyChannel:
     is switched on or off here. Remembers the voltage it found (`nominal`); close() programs it again, then releases
     the connection. Use it with measure_pll_supply (measure_stats, in_compliance). Needs the lab network."""
 
-    V_LIMITS = (0.55, 0.90)  # [V] set() refuses anything outside: the PLL is a 0.75 V design
+    V_LIMITS = (0.50, 0.90)  # [V] set() refuses anything outside: the PLL is a 0.75 V design
 
     def __init__(self, channel=2, cfg_key="power_supply_pll"):
         import yaml  # instrument imports only when the supply is used
