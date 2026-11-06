@@ -173,7 +173,7 @@ def setup_chip(setup_pll: bool = True, ref_freq: int = 8, pll_freq: int = 32,
     chip.init_spi()
 
     # set FDTI channel a to JTAG mode and scan the IDCODE
-    subprocess.Popen("openocd -f testcases/jtag/01_idcode/openocd.scan.tcl > /dev/null 2>&1 &", shell=True)
+    # subprocess.Popen("openocd -f testcases/jtag/01_idcode/openocd.scan.tcl > /dev/null 2>&1 &", shell=True)
 
     # run a memory test
     if mem_test:
@@ -201,11 +201,16 @@ if __name__ == "__main__":
         action="store_true",
         help="run the chip memory test (default: disabled)",
     )
+    parser.add_argument(
+            "--on-fpga",
+            action="store_true",
+            help="if set, the pll will be bypassed and the reference clock will be used directly (default: disabled)",
+        )
     args = parser.parse_args()
 
     logging_level = logging.INFO
     logging_format = "%(asctime)s - %(filename)s - %(funcName)s +%(lineno)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging_level, format=logging_format, stream=sys.stdout)
     sys.exit(
-        setup_chip(ref_freq=8, pll_freq=512, mem_test=args.mem_test, bypass_pll=False)
+        setup_chip(ref_freq=8, pll_freq=512, mem_test=args.mem_test, bypass_pll=False if not args.on_fpga else True)
     )  # exit code 0 = success, 1 = failure

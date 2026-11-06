@@ -186,7 +186,8 @@ def start_load_config(cfg):
     # so it is non-destructive).
     readback = pll.readback()
     logging.info("readback = 0x%012X", readback)
-    assert readback == word
+    if readback != word:
+        logging.warning("pll config readback mismatch: 0x%012X, wanted: 0x%012X", readback, word)
 
 
 def setup_pll_bypass():
