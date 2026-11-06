@@ -10,6 +10,7 @@
 #   python3 sw/tests/chip_load_spi.py                      # default helloworld.spm.elf
 #   python3 sw/tests/chip_load_spi.py path/to/other.elf    # load a different ELF
 #   python3 sw/tests/chip_load_spi.py path/to/other.elf --verify
+#   python3 sw/tests/chip_load_spi.py path/to/other.elf --sck freq_in_hz
 #   python3 sw/tests/chip_load_spi.py path/to/other.elf --smoke-test
 #   python3 sw/tests/chip_load_spi.py path/to/other.elf --run-timeout 60
 #   python3 sw/tests/chip_load_spi.py path/to/other.elf --eoc-initial-delay 0.5
