@@ -80,6 +80,79 @@ class RSScopeRTB2000(inst.BaseInstrument):
         self.write('TRIG:A:EDGE:SLOP POS')
         self.write(f'TRIG:A:LEV{channel}:VAL {level}')
 
+    def set_trigger(self, channel: int, level: float, slope: str = "POS", mode: str = "NORM"):
+        """Edge trigger on a channel at `level` [V], `slope` 'POS' / 'NEG', `mode` 'NORM' (waits for the edge, for
+        single acquisitions) or 'AUTO' (free-runs without one)."""
+        channel = self._validate_channel(channel)
+        self.write(f'TRIG:A:MODE {mode}')
+        self.write('TRIG:A:TYPE EDGE')
+        self.write(f'TRIG:A:SOUR CH{channel}')
+        self.write(f'TRIG:A:EDGE:SLOP {slope}')
+        self.write(f'TRIG:A:LEV{channel}:VAL {level}')
+
+    def set_horizontal_position(self, position: float):
+        """Time [s] of the screen centre relative to the trigger (positive: the trigger moves left on screen)."""
+        self.write(f'TIM:POS {position}')
+
+    def set_record_length(self, points: int):
+        """Fixed record length [samples] (the scope offers 10 k - 20 M in 1-2-5 steps); raises ValueError when
+        refused."""
+        self.write('ACQ:POIN:AUT OFF')
+        self.write(f'ACQ:POIN {int(points)}')
+
+    def sample_rate(self) -> float:
+        """Current sample rate [Sa/s]."""
+        return float(self.query('ACQ:SRAT?'))
+
+    def set_bandwidth_limit(self, channel: int, limit: str = "FULL"):
+        """Input bandwidth of a channel: 'FULL' or 'B20' (20 MHz limit)."""
+        channel = self._validate_channel(channel)
+        self.write(f'CHAN{channel}:BAND {limit}')
+
+    def channel_off(self, channel: int):
+        channel = self._validate_channel(channel)
+        self.write(f'CHAN{channel}:STAT OFF')
+
+    def single(self, timeout: float = 5.0) -> bool:
+        """One acquisition on the trigger set up (set_trigger, mode NORM); waits until it is done. Returns False when
+        nothing triggered within `timeout` [s] (acquisition stopped)."""
+        old = self.tool.timeout
+        self.tool.timeout = int(timeout * 1000)
+        try:
+            self.tool.write('SING')
+            self.tool.query('*OPC?')
+            return True
+        except pyvisa.errors.VisaIOError as e:
+            if e.error_code != pyvisa.constants.StatusCode.error_timeout:
+                raise
+            self.tool.clear()
+            self.write('STOP', check=False)
+            return False
+        finally:
+            self.tool.timeout = old
+
+    def read_waveform(self, channel: int, timeout: float = 30.0):
+        """The full record of `channel` of the last (stopped) acquisition: (t [s] relative to the trigger, v [V]) as
+        numpy arrays, at the sample rate of the acquisition (DMAX: every sample in memory)."""
+        import numpy as np  # only for waveform readout
+
+        channel = self._validate_channel(channel)
+        self.write('FORM REAL,32')
+        self.write('FORM:BORD LSBF')
+        self.write(f'CHAN{channel}:DATA:POIN DMAX')
+        x_start, x_stop, n = [float(v) for v in self.query(f'CHAN{channel}:DATA:HEAD?').split(',')[:3]]
+        old = self.tool.timeout
+        self.tool.timeout = int(timeout * 1000)
+        try:
+            v = self.tool.query_binary_values(f'CHAN{channel}:DATA?', datatype='f', is_big_endian=False,
+                                              container=np.array)
+        finally:
+            self.tool.timeout = old
+        if len(v) != int(n):
+            logger.warning(f"{self.info.name}: CH{channel} header says {int(n)} samples, received {len(v)}")
+        t = x_start + (x_stop - x_start) * np.arange(len(v)) / len(v)
+        return t, np.asarray(v, dtype=float)
+
     def run(self):
         """Start continuous acquisition."""
         self.write('RUN')
