@@ -33,6 +33,9 @@
 # Results (results/pll/):
 #   pll_lock_time_<sample>_<stamp>.csv          one row per point and slope (up / down step)
 #   pll_lock_time_<sample>_<stamp>_traces.csv   the averaged f_vco(t) per point and slope (t, mean, std, n)
+#   pll_lock_time_<sample>_<stamp>_waveforms/<point>_<slope>.npz
+#       every triggered capture of the pad as the scope sent it, before any processing (no pickup correction), for
+#       offline processing: load_waveforms(path). The file per point and slope is in the CSV column waveform_file.
 #
 # Tests:
 #   lock_time_sweep(supply, points)    # every point of `points` (LOCK_POINTS, QUICK_POINTS), one CSV
@@ -176,7 +179,7 @@ LOCK_COLUMNS = (["time", "label", "vdd_set", "f_ref", "f_hop", "step_rel", "fsk_
                    "record_points", "window", "pre", "bin_s", "f_before", "f_after", "step_meas", "step_expected",
                    "noise_ppm", "t_rise_10_90", "overshoot_pct", "t_peak"] + ["t_settle_" + b for b in SETTLE_BANDS]
                 + ["t_settle_10pct_capt_median", "t_settle_10pct_capt_std", "t_settle_10pct_capt", "t50_capt_median",
-                   "t50_capt_std", "t50_capt", "status"]
+                   "t50_capt_std", "t50_capt", "status", "waveform_file"]
                 + list(pll_setup.SUPPLY_COLUMNS))
 TRACE_COLUMNS = ["label", "vdd_set", "f_vco", "slope", "direction", "t", "f_vco_mean", "f_vco_std", "n"]
 
@@ -349,9 +352,25 @@ class MxrLockScope:
         self.scope.stop()
         return False
 
+    def read_waveform_raw(self, channel):
+        """The last acquisition of `channel` as the scope sends it: (codes: int16 array, x_org [s], x_inc [s], y_org [V],
+        y_inc [V]); time = x_org + x_inc x index (0 at the trigger), voltage = y_org + y_inc x code. The same transfer
+        as the driver's get_waveform, which returns only the scaled arrays."""
+        self.scope.write(":WAVeform:SOURce CHANnel{}".format(int(channel)))
+        self.scope.write(":WAVeform:FORMat WORD")
+        self.scope.write(":WAVeform:BYTeorder LSBFirst")
+        self.scope.write(":WAVeform:STReaming OFF")
+        x_inc = float(self.scope.query(":WAVeform:XINCrement?"))
+        x_org = float(self.scope.query(":WAVeform:XORigin?"))
+        y_inc = float(self.scope.query(":WAVeform:YINCrement?"))
+        y_org = float(self.scope.query(":WAVeform:YORigin?"))
+        codes = self.scope.tool.query_binary_values(":WAVeform:DATA?", datatype="h", is_big_endian=False,
+                                                    container=np.array).astype(np.int16)
+        return codes, x_org, x_inc, y_org, y_inc
+
     def read_waveform(self, channel):
         """(time [s], voltage [V]) of the last acquisition of `channel`, time 0 at the trigger."""
-        return self.scope.get_waveform(channel)
+        return scale_waveform(*self.read_waveform_raw(channel))
 
     def read_valid(self, channel, query, timeout=3.0):
         """Measurement `query` (CLOCK_MEASUREMENTS) on `channel`, repeated for up to `timeout` [s] until the scope has a
@@ -476,17 +495,61 @@ def save_pad_record():
     np.savez_compressed(RESULTS_DIR / PAD_RECORD_FILE, **PAD_RECORD)
 
 
+def scale_waveform(codes, x_org, x_inc, y_org, y_inc):
+    """(time [s], voltage [V]) of a raw record (MxrLockScope.read_waveform_raw)."""
+    return x_org + x_inc * np.arange(len(codes)), y_org + y_inc * codes.astype(float)
+
+
+def save_waveforms(path, raw, **meta):
+    """The raw captures `raw` of capture_slope to `path` (.npz, compressed): codes [n_captures x max length] (int16,
+    records shorter than the longest padded with -32768, their lengths in `lengths`), per capture x_org, x_inc, y_org,
+    y_inc and `capture` (its index among the n_captures, so the untriggered ones are missing), and `meta` (scalars
+    and arrays: point, slope, bins, ...). Nothing written without captures."""
+    if not raw["codes"]:
+        return
+    lengths = np.array([len(c) for c in raw["codes"]])
+    codes = np.full((len(lengths), lengths.max()), np.iinfo(np.int16).min, dtype=np.int16)
+    for k, c in enumerate(raw["codes"]):
+        codes[k, :len(c)] = c
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, codes=codes, lengths=lengths,
+                        **{k: np.array(raw[k]) for k in ("capture", "x_org", "x_inc", "y_org", "y_inc")},
+                        **{k: np.asarray(v) for k, v in meta.items()})
+    logging.info("Raw waveforms: %d captures of up to %d samples -> %s (%.1f MB)", len(lengths), lengths.max(), path,
+                 path.stat().st_size / 1e6)
+
+
+def load_waveforms(path):
+    """(meta: dict of the stored point / slope fields, captures: list of (time [s], voltage [V]) per capture, time 0
+    at the Sync edge) of a file of save_waveforms. Process them as capture_slope does: crossing_times, optionally
+    remove_pickup(tc, int(meta["pickup_periods"])), frequency_curve(tc, meta["edges"], meta["total_div"])."""
+    with np.load(path) as f:
+        data = {k: f[k] for k in f.files}
+    per_capture = ("codes", "lengths", "capture", "x_org", "x_inc", "y_org", "y_inc")
+    captures = [scale_waveform(data["codes"][k, :n], data["x_org"][k], data["x_inc"][k], data["y_org"][k],
+                               data["y_inc"][k]) for k, n in enumerate(data["lengths"])]
+    meta = {k: (v.item() if v.ndim == 0 else v) for k, v in data.items() if k not in per_capture}
+    meta["capture"] = data["capture"]
+    return meta, captures
+
+
 def capture_slope(scope, slope, n_captures, total_div, edges):
     """`n_captures` single acquisitions triggered on the Sync edge `slope` ("POS" / "NEG"), each turned into f_vco
-    per bin (frequency_curve). Returns (curves: list of arrays, record points of the last capture)."""
+    per bin (frequency_curve). Returns (curves: list of arrays, record points of the last capture, raw: every
+    triggered capture as the scope sent it, for save_waveforms)."""
     scope.set_trigger(SYNC_CH, SYNC_LEVEL, slope=slope, mode="NORM")
     curves, n_points = [], 0
+    raw = dict(codes=[], capture=[], x_org=[], x_inc=[], y_org=[], y_inc=[])
     for i in range(n_captures):
         if not scope.single(timeout=TRIGGER_TIMEOUT):
             logging.warning("Capture %d/%d (%s): no trigger on the Sync output within %.1f s", i + 1, n_captures,
                             slope, TRIGGER_TIMEOUT)
             continue
-        t, v = scope.read_waveform(PAD_CH)
+        record = scope.read_waveform_raw(PAD_CH)
+        for key, value in zip(("codes", "x_org", "x_inc", "y_org", "y_inc"), record):
+            raw[key].append(value)
+        raw["capture"].append(i)
+        t, v = scale_waveform(*record)
         n_points = len(t)
         tc = crossing_times(t, v)
         if len(tc) < 3:
@@ -495,7 +558,7 @@ def capture_slope(scope, slope, n_captures, total_div, edges):
         if PICKUP_CORRECTION:
             tc = remove_pickup(tc, pickup_periods(total_div))
         curves.append(frequency_curve(tc, edges, total_div))
-    return curves, n_points
+    return curves, n_points, raw
 
 
 # ---------------------------------------------------------------------------------------------
@@ -639,7 +702,20 @@ def lock_time_point(pll, fg, scope, lut, point, csv_path, supply=None, label="")
                      f_ref / 1e6, f_hop / 1e6, fsk_rate, FB_DIV * (f_hop - f_ref) / 1e6, base["locked_fsk"])
         for slope, step_expected in (("POS", FB_DIV * (f_hop - f_ref)), ("NEG", FB_DIV * (f_ref - f_hop))):
             row = dict(base, slope=slope, status="no_capture", n_valid=0)
-            curves, row["record_points"] = capture_slope(scope, slope, n_captures, base["total_div"], edges)
+            curves, row["record_points"], raw = capture_slope(scope, slope, n_captures, base["total_div"], edges)
+            wave_path = csv_path.with_name(csv_path.stem + "_waveforms") / "{}_{}.npz".format(
+                label.split()[0].replace("/", "of"), slope)
+            try:  # a failed save must not lose the analysed results of the slope
+                save_waveforms(wave_path, raw, label=label, slope=slope, channel=PAD_CH, f_vco=f_vco, f_ref=f_ref,
+                               f_hop=f_hop, step_rel=step_rel, fsk_rate=fsk_rate, window=window, pre=PRE,
+                               bin_s=bin_s, edges=edges, total_div=base["total_div"], f_pad=base["f_pad"],
+                               fb_div=FB_DIV, pickup_periods=pickup_periods(base["total_div"]),
+                               pickup_correction=PICKUP_CORRECTION, sample_rate=base["sample_rate"],
+                               n_captures=n_captures)
+                if raw["codes"]:
+                    row["waveform_file"] = "{}/{}".format(wave_path.parent.name, wave_path.name)
+            except Exception:
+                logging.exception("%s %s: raw waveforms not saved", label, slope)
             if curves:
                 fields, (mean, std, n) = summarize(curves, edges, step_expected,
                                                    f_vco if slope == "POS" else FB_DIV * f_hop)
