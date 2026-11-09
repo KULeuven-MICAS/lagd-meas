@@ -72,6 +72,11 @@ ICLAB_LOGIN = False
 # output on SYNC_CH (CH2, 1 MOhm input).
 PAD_CH = 1
 SYNC_CH = 2
+# The reference clock of the PLL (the 33622A output, tee'd to this input, 1 MOhm), recorded together with the pad in the
+# first REF_CAPTURES captures of each slope (raw waveforms file): to see the reference pickup in the pad edge times
+# against the reference itself. None: not connected / not recorded. Few captures: the records are as long as the pad's.
+REF_CH = 3
+REF_CAPTURES = 100
 SYNC_LEVEL = 1.0  # [V] trigger level on the Sync output (~0 -> 3 V into 1 MOhm)
 # Pad frequency on the scope: VCO / total_div ~ SCOPE_PAD_F through the external divider (scope_divider), but not at
 # the reference frequency (f_vco / FB_DIV): its pickup would then look like the pad (point_cfg warns). The time
@@ -397,7 +402,7 @@ def setup_capture(scope, f_pad, window, pre):
     No autoscale: on 2026-11-09 it left CH1 at a few mV/div, the 1.8 V pad clipped (read as 23 mV) and the Sync output
     on CH4 (37.5 MHz, 3 V, while not hopping) coupled in."""
     for ch in range(1, 9):
-        if ch not in (PAD_CH, SYNC_CH):
+        if ch not in (PAD_CH, SYNC_CH, REF_CH):
             scope.channel_off(ch)
     scale, offset = PAD_VIEW
     scope.set_channel(PAD_CH, scale=scale, offset=offset, impedance=50)
@@ -414,6 +419,14 @@ def setup_capture(scope, f_pad, window, pre):
     if PAD_RECORD_S:
         long_pad_record(scope)  # on its own timebase: before the capture window is set
     scope.set_channel(SYNC_CH, scale=1.0, offset=1.5, impedance=1e6)
+    if REF_CH:  # the reference runs (PLL locked, no FSK yet): scale / offset to it
+        scope.set_channel(REF_CH, scale=1.0, offset=1.0, impedance=1e6)  # 1 MOhm: up to ~3.6 Vpp (50 Ohm programmed)
+        if scope.fit_to_signal(REF_CH, n_periods=5, min_vpp=0.05):
+            logging.info("Reference on CH%d: %.4f MHz, %.3f Vpp", REF_CH,
+                         scope.read_valid(REF_CH, CLOCK_MEASUREMENTS["freq"]) / 1e6,
+                         scope.read_valid(REF_CH, CLOCK_MEASUREMENTS["vpp"]))
+        else:
+            logging.warning("No reference clock on CH%d: it is recorded with the fixed view", REF_CH)
     scope.set_timebase(window / 10)
     scope.set_horizontal_position(window / 2 - pre * window)  # the trigger at `pre` of the window
     # sample rate and record length: the scope's automatic ones (16 GSa/s, window x rate samples), read back below
@@ -501,22 +514,26 @@ def scale_waveform(codes, x_org, x_inc, y_org, y_inc):
 
 
 def save_waveforms(path, raw, **meta):
-    """The raw captures `raw` of capture_slope to `path` (.npz, compressed): codes [n_captures x max length] (int16,
-    records shorter than the longest padded with -32768, their lengths in `lengths`), per capture x_org, x_inc, y_org,
-    y_inc and `capture` (its index among the n_captures, so the untriggered ones are missing), and `meta` (scalars
-    and arrays: point, slope, bins, ...). Nothing written without captures."""
+    """The raw captures `raw` of capture_slope to `path` (.npz, compressed): one int16 array `c0000`, `c0001`, ... per
+    capture (as long as that record, no padding: a padded matrix would need a second copy of all records in memory),
+    per capture x_org, x_inc, y_org, y_inc and `capture` (its index among the n_captures, so the untriggered ones are
+    missing), and `meta` (scalars and arrays: point, slope, bins, ...). The reference records (raw["ref"], REF_CH) as
+    r0000, ... and ref_capture / ref_x_org / ... Nothing written without captures."""
     if not raw["codes"]:
         return
-    lengths = np.array([len(c) for c in raw["codes"]])
-    codes = np.full((len(lengths), lengths.max()), np.iinfo(np.int16).min, dtype=np.int16)
-    for k, c in enumerate(raw["codes"]):
-        codes[k, :len(c)] = c
+    n = len(raw["codes"])
+    records = {"c%04d" % k: np.asarray(c, dtype=np.int16) for k, c in enumerate(raw["codes"])}
+    raw["codes"] = None  # the arrays are in `records` now
+    ref = raw.get("ref", {})
+    if ref.get("codes"):  # the reference records: r0000, ... and their scaling (ref_capture: index among the captures)
+        records.update({"r%04d" % k: np.asarray(c, dtype=np.int16) for k, c in enumerate(ref["codes"])})
+        records.update({"ref_" + k: np.array(ref[k]) for k in ("capture", "x_org", "x_inc", "y_org", "y_inc")})
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(path, codes=codes, lengths=lengths,
+    np.savez_compressed(path, **records,
                         **{k: np.array(raw[k]) for k in ("capture", "x_org", "x_inc", "y_org", "y_inc")},
                         **{k: np.asarray(v) for k, v in meta.items()})
-    logging.info("Raw waveforms: %d captures of up to %d samples -> %s (%.1f MB)", len(lengths), lengths.max(), path,
-                 path.stat().st_size / 1e6)
+    logging.info("Raw waveforms: %d captures of up to %d samples -> %s (%.1f MB)", n,
+                 max(len(c) for c in records.values()), path, path.stat().st_size / 1e6)
 
 
 def load_waveforms(path):
@@ -524,13 +541,26 @@ def load_waveforms(path):
     at the Sync edge) of a file of save_waveforms. Process them as capture_slope does: crossing_times, optionally
     remove_pickup(tc, int(meta["pickup_periods"])), frequency_curve(tc, meta["edges"], meta["total_div"])."""
     with np.load(path) as f:
-        data = {k: f[k] for k in f.files}
-    per_capture = ("codes", "lengths", "capture", "x_org", "x_inc", "y_org", "y_inc")
-    captures = [scale_waveform(data["codes"][k, :n], data["x_org"][k], data["x_inc"][k], data["y_org"][k],
-                               data["y_inc"][k]) for k, n in enumerate(data["lengths"])]
+        per_capture = ("capture", "x_org", "x_inc", "y_org", "y_inc")
+        is_record = lambda k: len(k) == 5 and k[0] in "cr" and k[1:].isdigit()  # c0000: pad, r0000: reference
+        names = sorted(k for k in f.files if k[0] == "c" and is_record(k))
+        data = {k: f[k] for k in f.files if not is_record(k) and not k.startswith("ref_")}
+        captures = [scale_waveform(f[name], data["x_org"][k], data["x_inc"][k], data["y_org"][k], data["y_inc"][k])
+                    for k, name in enumerate(names)]
     meta = {k: (v.item() if v.ndim == 0 else v) for k, v in data.items() if k not in per_capture}
     meta["capture"] = data["capture"]
     return meta, captures
+
+
+def load_reference(path):
+    """{capture index (among the n_captures, as meta["capture"] of load_waveforms lists them): (time [s], voltage [V])}
+    of the reference records (REF_CH) of a file of save_waveforms, time 0 at the Sync edge as for the pad; empty when the
+    file has none."""
+    with np.load(path) as f:
+        names = sorted(k for k in f.files if k[0] == "r" and len(k) == 5 and k[1:].isdigit())
+        return {int(f["ref_capture"][k]): scale_waveform(f[name], f["ref_x_org"][k], f["ref_x_inc"][k],
+                                                         f["ref_y_org"][k], f["ref_y_inc"][k])
+                for k, name in enumerate(names)}
 
 
 def capture_slope(scope, slope, n_captures, total_div, edges):
@@ -540,6 +570,7 @@ def capture_slope(scope, slope, n_captures, total_div, edges):
     scope.set_trigger(SYNC_CH, SYNC_LEVEL, slope=slope, mode="NORM")
     curves, n_points = [], 0
     raw = dict(codes=[], capture=[], x_org=[], x_inc=[], y_org=[], y_inc=[])
+    raw["ref"] = dict(codes=[], capture=[], x_org=[], x_inc=[], y_org=[], y_inc=[])  # REF_CH, the first REF_CAPTURES
     for i in range(n_captures):
         if not scope.single(timeout=TRIGGER_TIMEOUT):
             logging.warning("Capture %d/%d (%s): no trigger on the Sync output within %.1f s", i + 1, n_captures,
@@ -549,6 +580,10 @@ def capture_slope(scope, slope, n_captures, total_div, edges):
         for key, value in zip(("codes", "x_org", "x_inc", "y_org", "y_inc"), record):
             raw[key].append(value)
         raw["capture"].append(i)
+        if REF_CH and len(raw["ref"]["capture"]) < REF_CAPTURES:
+            for key, value in zip(("codes", "x_org", "x_inc", "y_org", "y_inc"), scope.read_waveform_raw(REF_CH)):
+                raw["ref"][key].append(value)
+            raw["ref"]["capture"].append(i)
         t, v = scale_waveform(*record)
         n_points = len(t)
         tc = crossing_times(t, v)
@@ -712,7 +747,7 @@ def lock_time_point(pll, fg, scope, lut, point, csv_path, supply=None, label="")
                                fb_div=FB_DIV, pickup_periods=pickup_periods(base["total_div"]),
                                pickup_correction=PICKUP_CORRECTION, sample_rate=base["sample_rate"],
                                n_captures=n_captures)
-                if raw["codes"]:
+                if wave_path.exists():
                     row["waveform_file"] = "{}/{}".format(wave_path.parent.name, wave_path.name)
             except Exception:
                 logging.exception("%s %s: raw waveforms not saved", label, slope)
