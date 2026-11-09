@@ -139,9 +139,10 @@ def open_reference_generator():
     return KeysightFG33600(inst.BaseInstrumentData.from_mapping(config["function_generator"]))
 
 
-def start_reference(freq, vpp=1.8, channel=1, load=50, duty=50.0, fg=None):
+def start_reference(freq, vpp=1.8, channel=1, load=50, duty=50.0, fg=None, shape="square"):
     """Reference clock for the PLL from the Keysight 33600A (meas_setup.yaml `function_generator`): a 0 -> `vpp`
     square wave at `freq` [Hz], `duty` [%], amplitude programmed for a `load` [Ohm] termination. Output on.
+    `shape`: "square" (default) or "sine" (same 0 -> `vpp` swing, `duty` unused; slower edges, less coupling).
 
     `fg`: an already open generator (open_reference_generator); None opens one.
     Returns the generator: keep it open while the PLL runs, close() turns the output off. Needs the lab
@@ -149,10 +150,15 @@ def start_reference(freq, vpp=1.8, channel=1, load=50, duty=50.0, fg=None):
     """
     fg = fg or open_reference_generator()
     fg.set_load(channel, load)
-    fg.set_square(channel, freq, vpp, offset=vpp / 2, duty=duty)
+    if shape == "sine":
+        fg.set_sine(channel, freq, vpp, offset=vpp / 2)
+    elif shape == "square":
+        fg.set_square(channel, freq, vpp, offset=vpp / 2, duty=duty)
+    else:
+        raise ValueError(f"Unknown reference shape {shape!r}: 'square' or 'sine'")
     fg.output_on(channel)
-    logger.info("Reference on FG ch%d: %.4f MHz square, 0 -> %.2f V (%.3f Vpp, offset %.3f V), %.0f %% duty, "
-                "%s Ohm load", channel, fg.get_frequency(channel) / 1e6, vpp, fg.get_amplitude(channel),
+    logger.info("Reference on FG ch%d: %.4f MHz %s, 0 -> %.2f V (%.3f Vpp, offset %.3f V), %.0f %% duty, "
+                "%s Ohm load", channel, fg.get_frequency(channel) / 1e6, shape, vpp, fg.get_amplitude(channel),
                 fg.get_offset(channel), duty, load)
     return fg
 
@@ -285,7 +291,7 @@ class PllSupplyChannel:
     is switched on or off here. Remembers the voltage it found (`nominal`); close() programs it again, then releases
     the connection. Use it with measure_pll_supply (measure_stats, in_compliance). Needs the lab network."""
 
-    V_LIMITS = (0.50, 0.90)  # [V] set() refuses anything outside: the PLL is a 0.75 V design
+    V_LIMITS = (0.50, 0.90)  # [V] set() refuses anything outside: the PLL is a 0.75 V design (0.50: edge search)
 
     def __init__(self, channel=2, cfg_key="power_supply_pll"):
         import yaml  # instrument imports only when the supply is used

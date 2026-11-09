@@ -61,6 +61,15 @@ class KeysightFG33600(inst.BaseInstrument):
         self.write(f'SOUR{channel}:VOLT:OFFS {offset}')
         self.write(f'SOUR{channel}:FUNC:SQU:DCYC {duty}')
 
+    def set_sine(self, channel: int, freq: float, vpp: float, offset: float = 0.0):
+        """Configure a sine wave: frequency [Hz], amplitude [Vpp], offset [V]."""
+        channel = self._validate_channel(channel)
+        self.write(f'SOUR{channel}:FUNC SIN')
+        self.write(f'SOUR{channel}:VOLT:UNIT VPP')
+        self.write(f'SOUR{channel}:FREQ {freq}')
+        self.write(f'SOUR{channel}:VOLT {vpp}')
+        self.write(f'SOUR{channel}:VOLT:OFFS {offset}')
+
     def set_frequency(self, channel: int, freq: float):
         channel = self._validate_channel(channel)
         self.write(f'SOUR{channel}:FREQ {freq}')
@@ -82,6 +91,27 @@ class KeysightFG33600(inst.BaseInstrument):
     def get_offset(self, channel: int) -> float:
         channel = self._validate_channel(channel)
         return float(self.query(f'SOUR{channel}:VOLT:OFFS?'))
+
+    def set_fsk(self, channel: int, hop_freq: float, rate: float):
+        """Frequency-shift keying from the internal source: the output alternates between its programmed frequency
+        (the carrier) and `hop_freq` [Hz] at `rate` [Hz] (the carrier for one half of each 1 / `rate` period, the hop
+        frequency for the other). Phase continuous. fsk_off() returns to the carrier."""
+        channel = self._validate_channel(channel)
+        self.write(f'SOUR{channel}:FSK:SOUR INT')
+        self.write(f'SOUR{channel}:FSK:FREQ {hop_freq}')
+        self.write(f'SOUR{channel}:FSK:INT:RATE {rate}')
+        self.write(f'SOUR{channel}:FSK:STAT ON')
+
+    def fsk_off(self, channel: int):
+        channel = self._validate_channel(channel)
+        self.write(f'SOUR{channel}:FSK:STAT OFF')
+
+    def set_sync(self, channel: int, on: bool = True):
+        """Sync output (front panel) from `channel`, on or off. With FSK on it marks the hops: high on the hop
+        frequency, low on the carrier."""
+        channel = self._validate_channel(channel)
+        self.write(f'OUTP:SYNC:SOUR CH{channel}')
+        self.write(f'OUTP:SYNC {"ON" if on else "OFF"}')
 
     def output_on(self, channel: int):
         channel = self._validate_channel(channel)

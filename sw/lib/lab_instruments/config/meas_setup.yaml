@@ -61,7 +61,7 @@ smu_vdd_pll:
 # Triple supply for the PLL measurements (sw/tests/psu_test.py); voltage [V], current limit [A] per channel
 power_supply_pll:
   name: "KeySight E36312A PS - PLL"
-  IP: "10.91.16.86"
+  IP: "10.88.18.149" # private network (10.88.18.x, lanrouter) since 2026-11-09 (K-E36312A-04324; IC-LAB network: 10.91.16.86)
   channels:
     -
       name: "CH1" # powers something else on the PCB: keep on, never touched by the PLL scripts
@@ -79,7 +79,7 @@ power_supply_pll:
 # Waveform generator, test clocks / reference for the PLL
 function_generator:
   name: "Keysight 33600A FG"
-  IP: "10.88.18.83"
+  IP: "10.88.18.83" # private network (10.88.18.x, lanrouter) since 2026-11-09 (A-33622A-02851; IC-LAB network: 10.91.16.6)
   args:
     channels: 2
 
@@ -119,6 +119,10 @@ spectrum_analyzer_fsv:
 # time-domain jitter: sw/tests/pll_td.py)
 scope_mxr:
   name: "Keysight MXR058A Scope"
-  IP: "10.88.18.54"
+  IP: "10.88.18.54" # private network (10.88.18.x, lanrouter) since 2026-11-09 (KEYSIGH-34NDKQL); USB from the board timed out
   args:
     channels: 8
+    # VISA resource instead of TCPIP::<IP>: the full string (pyvisa.ResourceManager().list_resources(), pyvisa-py writes
+    # the USB ids in decimal: 10893 = 0x2A8D Keysight), or "usb" = the first Keysight instrument on USB
+    # USB device port on the back of the scope to the board (2026-11-09)
+    # resource: "USB0::10893::36871::MY61190114::0::INSTR"  # USB: pyvisa-py 0.5.2 on the board times out (2026-11-09)

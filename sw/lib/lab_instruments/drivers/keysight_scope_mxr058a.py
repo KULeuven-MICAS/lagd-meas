@@ -87,8 +87,18 @@ class KeysightScopeMXR058A(inst.BaseInstrument):
         Open the resource for the Keysight MXR058A oscilloscope.
         """
         rm = pyvisa.ResourceManager()
-        logger.info(f"Reaching {self.info.name} at: TCPIP::{self.info.IP}::inst0::INSTR")
-        tool = rm.open_resource(f"TCPIP::{self.info.IP}::inst0::INSTR")
+        resource = self.info.args.get("resource")
+        if resource == "usb":  # the first Keysight (USB vendor 0x2A8D) instrument on USB
+            # the vendor id in hex (NI / Keysight VISA) or decimal (pyvisa-py: USB0::10893::...)
+            found = [r for r in rm.list_resources("USB?*::INSTR")
+                     if r.split("::")[1].upper() in ("0X2A8D", str(0x2A8D))]
+            if not found:
+                raise RuntimeError(f"{self.info.name}: no Keysight instrument on USB (VISA sees "
+                                   f"{rm.list_resources()}); check the cable and the VISA backend's USB support")
+            resource = found[0]
+        resource = resource or f"TCPIP::{self.info.IP}::inst0::INSTR"
+        logger.info(f"Reaching {self.info.name} at: {resource}")
+        tool = rm.open_resource(resource)
         tool.timeout = 20000  # ms, *RST and long acquisitions take a while
         return tool
 
