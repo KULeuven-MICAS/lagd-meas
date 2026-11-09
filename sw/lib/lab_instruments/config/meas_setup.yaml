@@ -79,7 +79,7 @@ power_supply_pll:
 # Waveform generator, test clocks / reference for the PLL
 function_generator:
   name: "Keysight 33600A FG"
-  IP: "10.91.16.6"
+  IP: "10.88.18.83"
   args:
     channels: 2
 
@@ -119,6 +119,6 @@ spectrum_analyzer_fsv:
 # time-domain jitter: sw/tests/pll_td.py)
 scope_mxr:
   name: "Keysight MXR058A Scope"
-  IP: "0.0.0.0" # TODO: the scope's IP address
+  IP: "10.88.18.54"
   args:
     channels: 8

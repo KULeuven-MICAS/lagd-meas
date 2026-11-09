@@ -141,7 +141,7 @@ def send_chip(
     data_folder: Path,
     nb_cores: int,
     interface: str,
-    host: str = "root@10.88.18.26",
+    host: str = "root@10.88.18.11",
     uart_device: str = DEFAULT_UART_DEVICE,
     uart_baud: int = DEFAULT_UART_BAUD,
     uart_timeout: float = 3600.0,
