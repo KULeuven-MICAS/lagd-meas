@@ -286,6 +286,7 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
             self.set_rbw(rbw)
             if vbw is None:
                 vbw = self.snap_bandwidth(VBW_RBW_RATIO * rbw)
+            self.set_sweep_points(min(max(101, math.ceil(POINTS_PER_RBW * span / rbw) + 1), 32001))
         if vbw is not None:
             self.set_vbw(vbw)
         if detector is not None:
@@ -330,6 +331,65 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
                                               detector=detector, average_type=average_type,
                                               video_filter=video_filter))
         return traces
+
+    def measure_peak_around(self, target_freq: float, span: float = 10e3, rbw: float = 10.0,
+                            averages: int = 5, search_tol_hz: float = 500.0,
+                            detector: str = 'RMS', average_type: str = 'POWer',
+                            video_filter: str = 'LINear') -> Dict:
+        """
+        Measure the peak tone power around `target_freq` (Hz) in standard Spectrum mode.
+
+        Configures a zoomed span around `target_freq` with `POINTS_PER_RBW` sweep points per RBW (avoiding scalloping
+        loss on narrow CW spurs), runs an averaged sweep, locates the maximum within `target_freq +- search_tol_hz`
+        (or across the whole span when `search_tol_hz` is None), places Marker 1 on that peak, and estimates the local
+        noise floor from trace points outside the search window.
+
+        Returns:
+            Dictionary with 'target_freq', 'peak_freq' (Hz), 'peak_dbm' (dBm), 'marker_dbm' (dBm),
+            'noise_floor_dbm' (dBm), 'above_floor_db' (dB), 'rbw' (Hz), 'span' (Hz), and 'trace' (averaged_trace dict).
+        """
+        rbw_snapped = self.snap_bandwidth(rbw)
+        vbw_snapped = self.snap_bandwidth(VBW_RBW_RATIO * rbw_snapped)
+        points = min(max(101, math.ceil(POINTS_PER_RBW * span / rbw_snapped) + 1), 32001)
+        self.set_sweep_points(points)
+        trace = self.averaged_trace(target_freq, span, averages=averages, rbw=rbw_snapped, vbw=vbw_snapped,
+                                    detector=detector, average_type=average_type, video_filter=video_filter)
+        freqs = trace['freq']
+        levels = trace['level']
+        if search_tol_hz is not None:
+            candidates = [i for i, f in enumerate(freqs) if abs(f - target_freq) <= search_tol_hz]
+        else:
+            candidates = list(range(len(freqs)))
+        if not candidates:
+            candidates = [min(range(len(freqs)), key=lambda i: abs(freqs[i] - target_freq))]
+        peak_idx = max(candidates, key=lambda i: levels[i])
+        peak_freq = float(freqs[peak_idx])
+        peak_dbm = float(levels[peak_idx])
+
+        self.set_marker_state(1, True)
+        self.set_marker_frequency(1, peak_freq)
+        marker_dbm = self.get_marker_y_value(1)
+
+        guard_hz = max(search_tol_hz or 0.0, 3.0 * trace['rbw'])
+        outer = sorted(levels[i] for i, f in enumerate(freqs) if abs(f - peak_freq) > guard_hz)
+        if outer:
+            mid = len(outer) // 2
+            noise_floor_dbm = float(outer[mid] if len(outer) % 2 == 1 else 0.5 * (outer[mid - 1] + outer[mid]))
+        else:
+            noise_floor_dbm = float('nan')
+        above_floor_db = peak_dbm - noise_floor_dbm if not math.isnan(noise_floor_dbm) else float('nan')
+
+        return {
+            'target_freq': target_freq,
+            'peak_freq': peak_freq,
+            'peak_dbm': peak_dbm,
+            'marker_dbm': marker_dbm,
+            'noise_floor_dbm': noise_floor_dbm,
+            'above_floor_db': above_floor_db,
+            'rbw': trace['rbw'],
+            'span': trace['span'],
+            'trace': trace,
+        }
 
     # --- Phase Noise application (FSW option K40) ---
     # A separate measurement channel: the analyzer finds the carrier, sweeps the offset range in half decades with an

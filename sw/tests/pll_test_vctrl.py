@@ -115,7 +115,8 @@ def measure_pll_vctrl(f_vco=1e9, vctrl=0.55, kvco=None, sample=None, lut=None, c
                       vctrl_pad="read", scope_ch=SCOPE_CH, probe_att=PROBE_ATT, supply=None, span=5e6,
                       spectrum_averages=20, n_averages=10, offset_span_map=None, lock_timeout=3.0,
                       skip_unlocked=True, common_band=COMMON_BAND, phase_noise_mode=False, fixed=None,
-                      lock_only=False, codes=None, loop_filter=None, fpga=None):
+                      lock_only=False, codes=None, loop_filter=None, fpga=None,
+                      spectrum_rbw=None, ref_spur_span=None, ref_spur_rbw=None, ref_spur_averages=None):
     """Lock the PLL at `f_vco` [Hz] with the VCO codes whose expected Vctrl is closest to `vctrl` [V]
     (VcoLUT.update_config_vctrl; among near-equal Vctrl the |Kvco| closest to `kvco` [Hz/V], None: any), read Vctrl on
     `scope` (pll_setup.open_rtb_scope, channel `scope_ch`; None: no Vctrl reading), measure the output pad with
@@ -204,7 +205,9 @@ def measure_pll_vctrl(f_vco=1e9, vctrl=0.55, kvco=None, sample=None, lut=None, c
         if fpga is not None:
             fpga.unplug()
         meas, traces = measure_output(f_vco, total_div, offset_span_map, n_averages=n_averages, span=span,
-                                      spectrum_averages=spectrum_averages, common_band=common_band)
+                                      spectrum_averages=spectrum_averages, common_band=common_band,
+                                      spectrum_rbw=spectrum_rbw, ref_spur_span=ref_spur_span,
+                                      ref_spur_rbw=ref_spur_rbw, ref_spur_averages=ref_spur_averages)
         row.update(meas)
 
         if phase_noise_mode and meas["status"] in ("ok", "overload"):

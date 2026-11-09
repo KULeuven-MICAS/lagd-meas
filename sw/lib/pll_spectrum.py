@@ -55,7 +55,7 @@ OUT_OFFSET_RATIO = 2.5
 # Usable pad frequencies (2026-10-20): the pad's bandwidth ends at PAD_F_MAX, and the DC blocker at the analyzer
 # input cuts the carrier below PAD_F_MIN. pad_divider picks the internal divider from PAD_F_MAX, which puts the pad
 # at PAD_F_MAX / 2 - PAD_F_MAX; the divider sweep skips settings outside the band.
-PAD_F_MIN, PAD_F_MAX = 20e6, 100e6
+PAD_F_MIN, PAD_F_MAX = 20e6, 130e6
 # RBW = span / RBW_SPAN_RATIO (1-2-3-5 steps), VBW = 3 RBW, 5 sweep points per RBW (driver set_bandwidths_for_span):
 # 21 kHz -> 30 Hz, 210 kHz -> 300 Hz, 2.1 MHz -> 3 kHz, 21 MHz -> 30 kHz, 42 MHz -> 50 kHz, 5 MHz spectrum -> 5 kHz.
 # The lowest offset of each span's band (1 kHz, 10 kHz, 100 kHz, 1 MHz, 10 MHz) is then >= ~33 RBW from the carrier.
@@ -73,24 +73,40 @@ SPUR_THRESHOLD_DB, SPUR_WINDOW_DECADES, SPUR_MIN_POINTS = 10.0, 0.2, 2
 # A carrier on the pad below this level is not measured (status "no_carrier"): no carrier at all (noise or a spur), or
 # a pad that does not drive this frequency (full swing is about -5..+1 dBm).
 MIN_CARRIER_DBM = -10.0
+# Reference spur capture at f_carrier +- f_ref (f_ref = f_carrier * total_div / FB_DIV) in Spectrum mode:
+# zoomed narrow 10 kHz span with 10 Hz RBW around each expected reference sideband so the analyzer noise floor stays
+# well below divided reference spurs and provides high-resolution zoomed spur traces.
+REF_SPUR_SPAN = 10e3
+REF_SPUR_RBW = 10.0
+REF_SPUR_AVERAGES = 5
+REF_SPUR_SEARCH_TOL = 500.0
+REF_SPUR_MIN_FREQ = 100e3
+
+REF_SPUR_COLUMNS = [
+    "ref_spur_offset", "ref_spur_rbw", "ref_spur_dbm", "ref_spur_dbc", "ref_spur_vco_dbc",
+    "ref_spur_upper_freq", "ref_spur_upper_dbm", "ref_spur_upper_dbc", "ref_spur_upper_above_floor_db",
+    "ref_spur_lower_freq", "ref_spur_lower_dbm", "ref_spur_lower_dbc", "ref_spur_lower_above_floor_db",
+]
 
 # Columns written by measure_output (the scripts add their own setting columns in front).
-#   on the pad:              f_out, f_out_meas, carrier_dbm, phase_jitter_trace_out_mrad, spurs;
+#   on the pad:              f_out, f_out_meas, carrier_dbm, phase_jitter_trace_out_mrad, spurs, ref_spur_dbm / _dbc;
 #   referred to the PLL output: f_pll_out, phase_jitter_trace_pll_mrad;
-#   referred to the VCO:     f_vco_meas, phase_jitter_trace_vco_mrad;
+#   referred to the VCO:     f_vco_meas, phase_jitter_trace_vco_mrad, ref_spur_vco_dbc;
 #   time_jitter_*:           the same at all three points.
 #   analyzer_name:           the analyzer measured on (meas_setup.yaml name).
 # L(f) itself is in the traces ("L_trace", on the pad; + 20 log10 N for the PLL output / VCO).
-OUTPUT_COLUMNS = ["analyzer_name", "f_out", "f_pll_out", "pll_div", "ext_div", "offset_max", "f_out_meas",
-                  "f_vco_meas", "n_meas", "divider_ok", "carrier_dbm", "n_averages", "time_jitter_trace_ps",
-                  "phase_jitter_trace_out_mrad", "phase_jitter_trace_pll_mrad", "phase_jitter_trace_vco_mrad",
-                  "time_jitter_noise_ps", "time_jitter_spur_ps", "n_spurs", "spurs", "common_band",
-                  "time_jitter_trace_common_ps", "detector", "average_type", "video_filter", "rf_overload",
-                  "if_overload", "status"]
-# Traces: one row per point. kind = "spectrum" (averaged wide trace) or "phase_noise" (one per span): freq [Hz],
-# level [dBm]; "L_trace": the full phase-noise curve, freq = offset from the carrier [Hz], level = L(f) on the pad
-# [dBc/Hz]; "L_noise": the same with the spurs replaced by the local noise floor; "spur": one row per spur,
-# freq = offset of its peak [Hz], level = spur power on the pad [dBc, single sideband].
+OUTPUT_COLUMNS = (["analyzer_name", "f_out", "f_pll_out", "pll_div", "ext_div", "offset_max", "f_out_meas",
+                   "f_vco_meas", "n_meas", "divider_ok", "carrier_dbm", "n_averages", "time_jitter_trace_ps",
+                   "phase_jitter_trace_out_mrad", "phase_jitter_trace_pll_mrad", "phase_jitter_trace_vco_mrad",
+                   "time_jitter_noise_ps", "time_jitter_spur_ps", "n_spurs", "spurs"]
+                  + REF_SPUR_COLUMNS
+                  + ["common_band", "time_jitter_trace_common_ps", "detector", "average_type", "video_filter",
+                     "rf_overload", "if_overload", "status"])
+# Traces: one row per point. kind = "spectrum" (averaged wide trace), "ref_spur" (zoomed spectrum at f_carrier +-
+# f_ref) or "phase_noise" (one per span): freq [Hz], level [dBm]; "L_trace": the full phase-noise curve, freq = offset
+# from the carrier [Hz], level = L(f) on the pad [dBc/Hz]; "L_noise": the same with the spurs replaced by the local
+# noise floor; "spur": one row per spur, freq = offset of its peak [Hz], level = spur power on the pad [dBc, single
+# sideband].
 TRACE_FIELDS = ["kind", "center", "span", "rbw", "vbw", "averages", "freq", "level_dbm"]
 
 # Phase-noise mode (FSW K40, measure_phase_noise_mode), for a comparison with the full-curve method above:
@@ -156,8 +172,93 @@ def kvco_target_for(lut, f_vco, kvco):
     return target, kvco_min, kvco_max
 
 
+def measure_reference_spur(f_vco, total_div, f_carrier=None, carrier_dbm=None, spectrum=None,
+                           fb_div=FB_DIV, span=REF_SPUR_SPAN, rbw=REF_SPUR_RBW,
+                           averages=REF_SPUR_AVERAGES, search_tol_hz=REF_SPUR_SEARCH_TOL,
+                           analyzer="spectrum_analyzer"):
+    """Measure the PLL reference spur on the output pad at f_carrier +- f_ref in Spectrum mode.
+
+    Because the PLL feedback divider `fb_div` and output divider `total_div` are exact integers, the exact reference
+    offset in the analyzer's own clock domain is `f_ref_meas = f_carrier * total_div / fb_div`. Both upper
+    (+f_ref_meas) and lower (-f_ref_meas) sidebands are captured using a zoomed narrow span (`span`, `rbw`) with
+    Marker 1 placed on the peak, avoiding the high noise floor and scalloping loss of a wide single-span sweep.
+    Sidebands below REF_SPUR_MIN_FREQ or colliding with a harmonic of `f_carrier` (e.g. total_div >= fb_div) are
+    skipped.
+
+    If `spectrum` is None, opens `analyzer`, finds the carrier (`center_on_fundamental`), and closes the analyzer when
+    done; otherwise reuses the open `spectrum` session (`measure_output`).
+
+    Returns (row, traces):
+      row: dict with measured REF_SPUR_COLUMNS values (spur power on the pad in dBm and dBc, VCO-referred dBc via
+           +20*log10(total_div), and individual upper/lower sideband metrics).
+      traces: list of trace dicts with kind="ref_spur" (for _traces.csv).
+    """
+    own_spectrum = spectrum is None
+    f_out = f_vco / total_div
+    row, traces = {}, []
+    if own_spectrum:
+        spectrum = open_spectrum(analyzer)
+    try:
+        if f_carrier is None or carrier_dbm is None:
+            carrier_dbm = spectrum.center_on_fundamental(center_freq=f_out, search_span=2.1e3)
+            f_carrier = float(spectrum.query("FREQ:CENT?").strip())
+            if carrier_dbm < MIN_CARRIER_DBM:
+                logger.warning("No carrier on the pad near %.4f MHz (%.1f dBm): reference spur skipped",
+                               f_out / 1e6, carrier_dbm)
+                return row, traces
+
+        f_ref_meas = f_carrier * total_div / fb_div
+        row["ref_spur_offset"] = f_ref_meas
+        row["ref_spur_rbw"] = spectrum.snap_bandwidth(rbw)
+
+        measured_dbm = []
+        for side_name, sign in (("upper", 1), ("lower", -1)):
+            f_target = f_carrier + sign * f_ref_meas
+            if f_target < REF_SPUR_MIN_FREQ:
+                logger.info("Reference spur %s sideband (%.4f MHz) below %.0f kHz: skipped",
+                            side_name, f_target / 1e6, REF_SPUR_MIN_FREQ / 1e3)
+                continue
+            harm_idx = int(round(f_target / f_carrier))
+            if harm_idx >= 1 and abs(f_target - harm_idx * f_carrier) < span:
+                logger.warning("Reference spur %s sideband (%.4f MHz) coincides with %dx pad harmonic: skipped",
+                               side_name, f_target / 1e6, harm_idx)
+                continue
+
+            res = spectrum.measure_peak_around(
+                f_target, span=span, rbw=rbw, averages=averages, search_tol_hz=search_tol_hz,
+                detector=DETECTOR, average_type=AVERAGE_TYPE, video_filter=VIDEO_FILTER,
+            )
+            spur_dbm = res["peak_dbm"]
+            spur_dbc = spur_dbm - carrier_dbm
+            row["ref_spur_%s_freq" % side_name] = res["peak_freq"]
+            row["ref_spur_%s_dbm" % side_name] = spur_dbm
+            row["ref_spur_%s_dbc" % side_name] = spur_dbc
+            row["ref_spur_%s_above_floor_db" % side_name] = res["above_floor_db"]
+            measured_dbm.append(spur_dbm)
+            traces.append(dict(res["trace"], kind="ref_spur"))
+            logger.info("  reference spur (%s, %+.4f MHz -> %.6f MHz, RBW %g Hz): %.1f dBm = %.1f dBc on pad "
+                        "(%.1f dB above noise floor)",
+                        side_name, sign * f_ref_meas / 1e6, res["peak_freq"] / 1e6, res["rbw"],
+                        spur_dbm, spur_dbc, res["above_floor_db"])
+
+        if measured_dbm:
+            worst_dbm = max(measured_dbm)
+            worst_dbc = worst_dbm - carrier_dbm
+            vco_dbc = worst_dbc + 20.0 * math.log10(total_div) if total_div > 0 else worst_dbc
+            row.update(ref_spur_dbm=worst_dbm, ref_spur_dbc=worst_dbc, ref_spur_vco_dbc=vco_dbc)
+            logger.info("Reference spur (worst sideband): %.1f dBm = %.1f dBc on the pad "
+                        "(%.1f dBc referred to VCO, /%g)",
+                        worst_dbm, worst_dbc, vco_dbc, total_div)
+    finally:
+        if own_spectrum:
+            spectrum.set_sweep_mode(continuous=True)
+            spectrum.close()
+    return row, traces
+
+
 def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, spectrum_averages=20,
-                   common_band=None, pll_div=None, analyzer="spectrum_analyzer"):
+                   common_band=None, pll_div=None, analyzer="spectrum_analyzer", ref_spur=True,
+                   spectrum_rbw=None, ref_spur_span=None, ref_spur_rbw=None, ref_spur_averages=None):
     """Measure the locked PLL's output pad at f_vco / total_div on the analyzer `analyzer` (meas_setup.yaml key, see
     open_spectrum; default: the analyzer set in meas_setup.yaml). Returns (row, traces).
 
@@ -168,6 +269,7 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
     2. One averaged trace per span of `offset_span_map`, RMS detector + power averaging, `n_averages` sweeps per
        span: the full curve L(f) from these traces, integrated with the spurs split off (pll_util.split_jitter).
     3. An averaged spectrum over `span` (`spectrum_averages` sweeps), same detector and averaging.
+    4. Reference spur peak capture at f_carrier +- f_ref (`measure_reference_spur`, enabled by `ref_spur`).
     detector / average_type in the row: as the analyzer reports them after the sweeps.
     `common_band` (lo, hi) [Hz]: also integrate the full curve over only that band, to compare settings whose bands
     differ (e.g. dividers: the band is limited by the pad frequency).
@@ -206,9 +308,19 @@ def measure_output(f_vco, total_div, offset_span_map, n_averages=10, span=5e6, s
                    video_filter=spectrum.get_video_filter_type())
         traces += [dict(t, kind="phase_noise") for t in pn_traces]
         # Averaged wide spectrum around the carrier
-        t = spectrum.averaged_trace(f_meas, span, averages=spectrum_averages, rbw_span_ratio=RBW_SPAN_RATIO,
+        t = spectrum.averaged_trace(f_meas, span, averages=spectrum_averages, rbw=spectrum_rbw,
+                                    rbw_span_ratio=None if spectrum_rbw is not None else RBW_SPAN_RATIO,
                                     detector=DETECTOR, average_type=AVERAGE_TYPE, video_filter=VIDEO_FILTER)
         traces.append(dict(t, kind="spectrum"))
+        if ref_spur:
+            spur_row, spur_traces = measure_reference_spur(
+                f_vco, total_div, f_carrier=f_meas, carrier_dbm=carrier_dbm, spectrum=spectrum,
+                span=ref_spur_span if ref_spur_span is not None else REF_SPUR_SPAN,
+                rbw=ref_spur_rbw if ref_spur_rbw is not None else REF_SPUR_RBW,
+                averages=ref_spur_averages if ref_spur_averages is not None else REF_SPUR_AVERAGES,
+            )
+            row.update(spur_row)
+            traces += spur_traces
         overload = spectrum.read_overload()  # any overload during the sweeps above (the carrier search included)
         row.update(rf_overload=int(overload["rf_overload"]), if_overload=int(overload["if_overload"]))
     finally:
