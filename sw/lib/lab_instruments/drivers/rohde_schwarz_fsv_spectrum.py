@@ -31,9 +31,10 @@ REF_LEVEL_MARGIN_DB = 10.0
 STAT_POW_RF_OVERLOAD = 1 << 0
 STAT_POW_IF_OVERLOAD = 1 << 2
 # Phase Noise application (FSW option K40): name of the channel start_phase_noise_mode creates, and how many user
-# spot-noise markers it has.
+# spot-noise markers and user residual-noise evaluation ranges it has.
 PNO_CHANNEL_NAME = 'Phase Noise'
 PNO_MAX_SPOT_MARKERS = 5
+PNO_MAX_USER_RANGES = 3
 
 
 def _numbers(response: str) -> List[float]:
@@ -400,6 +401,25 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         options = self.query('*OPT?').strip().upper().split(',')
         return any('K40' in o for o in options)
 
+    @staticmethod
+    def snap_half_decade(offset_hz: float, up: bool = True) -> float:
+        """Snap `offset_hz` to an FSW-K40 half-decade boundary (1, 3, 10, 30, 100, ... Hz; Table 8-4 of the K40
+        manual). When `up=True`, returns the smallest half-decade >= offset_hz; when `up=False`, returns the largest
+        half-decade <= offset_hz."""
+        if offset_hz <= 1.0:
+            return 1.0
+        steps = [float(m * 10 ** exp) for exp in range(0, 12) for m in (1, 3)]
+        tol = 1e-6 * offset_hz
+        if up:
+            for s in steps:
+                if s >= offset_hz - tol:
+                    return s
+            return steps[-1]
+        for s in reversed(steps):
+            if s <= offset_hz + tol:
+                return s
+        return 1.0
+
     def start_phase_noise_mode(self, f_carrier: float, offset_start: float, offset_stop: float,
                                carrier_level_dbm: float = 0.0, freq_tolerance_hz: float = 10e3,
                                level_tolerance_db: float = 10.0, tracking: bool = True,
@@ -447,9 +467,14 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         self.write(f'POW:RLEV:VER:TOL {level_tolerance_db}')
         self.write(f'FREQ:TRAC {"ON" if tracking else "OFF"}')
         self.write(f'POW:TRAC {"ON" if tracking else "OFF"}')
-        # Offset range and RBW
+        # Offset range and RBW: snap stop offset up to the next half-decade boundary when <= f_carrier (e.g., 50/60 MHz
+        # at f_carrier=100/150 MHz snaps up to 100 MHz), otherwise cap below f_carrier (e.g., div=64 at 50/75 MHz) so
+        # the sweep never exceeds the carrier frequency.
+        stop_up = self.snap_half_decade(offset_stop, up=True)
+        stop_hw = stop_up if stop_up <= f_carrier else self.snap_half_decade(offset_stop, up=False)
         self.write(f'FREQ:STAR {offset_start}')
-        self.write(f'FREQ:STOP {offset_stop}')
+        self.write(f'FREQ:STOP {stop_hw}')
+        actual_stop = float(self.query('FREQ:STOP?').strip())
         self.write(f'LIST:BWID:RAT {rbw_percent}')
         # Averaging: preset per half decade, optionally trace averaging over sweeps
         self.write(f'SWE:MODE {preset}')
@@ -464,7 +489,8 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         spurs = f"on, threshold {self.query('SPUR:THR?').strip()} dB" if spur_removal else "off"
         logger.info(f"[{self.info.name}] Phase noise mode: carrier {f_carrier / 1e6:.4f} MHz +- {freq_tolerance_hz:g} "
                     f"Hz, {carrier_level_dbm:g} dBm +- {level_tolerance_db:g} dB, tracking "
-                    f"{'on' if tracking else 'off'}; offsets {offset_start:g}-{offset_stop:g} Hz, RBW "
+                    f"{'on' if tracking else 'off'}; offsets {offset_start:g}-{actual_stop:g} Hz "
+                    f"(requested stop {offset_stop:g} Hz), RBW "
                     f"{rbw_percent:g} % of the offset, preset {preset}, trace averages "
                     f"{self.query('SWE:COUN?').strip()}; spur removal {spurs}; "
                     f"{'continuous' if continuous else 'single'} sweep")
@@ -487,13 +513,16 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
             else:
                 self.write(f'CALC:SNO{m}:STAT OFF')
 
-    def read_phase_noise(self, offsets: List[float], band: List[float] = None) -> Dict:
+    def read_phase_noise(self, offsets: List[float], band: List[float] = None,
+                         extra_bands: List[tuple] = None) -> Dict:
         """
         Results of the last phase-noise sweep (run trigger_single_sweep first in single-sweep mode).
 
         Args:
             offsets: The offsets of set_phase_noise_spot_offsets, in the same order (Hz).
             band: (start, stop) integration range of the residual noise (Hz); None: the whole measurement range.
+            extra_bands: Optional list of up to PNO_MAX_USER_RANGES (start, stop) integration ranges (Hz)
+                         evaluated simultaneously using FSW-K40 User Ranges USER1..USER3 on TRACE1.
 
         Returns:
             Dictionary with
@@ -504,6 +533,9 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
                                 (sqrt(2 x 10^(dBc/10)), double sideband);
               'jitter_s': residual RMS jitter over the band (s), as the analyzer computes it;
               'residual_pm', 'residual_fm_hz': residual PM (as the analyzer reports it) and FM (Hz);
+              'extra_bands': {(start, stop): {'band', 'integrated_dbc', 'rms_phase_rad', 'jitter_s',
+                                              'residual_pm', 'residual_fm_hz', 'jitter_discrete_s',
+                                              'jitter_random_s'}} for each user range;
               'spurs': the analyzer's spur list, [(offset [Hz], level [dBc]), ...];
               'jitter_discrete_s': RMS of the spurs' jitter (s), 'jitter_random_s': sqrt(jitter^2 - discrete^2) (s);
               'offset' (Hz) / 'level' (dBc/Hz): the L(f) curve of trace 1 (spur-free with spur removal on).
@@ -524,10 +556,57 @@ class RohdeSchwarzFSVSpectrum(inst.BaseSpectrumAnalyzer):
         result['jitter_s'] = float(self.query('FETC:PNO:RMS?').strip())
         result['residual_pm'] = float(self.query('FETC:PNO:RPM?').strip())
         result['residual_fm_hz'] = float(self.query('FETC:PNO:RFM?').strip())
-        spurs = _numbers(self.query('FETC:PNO:SPUR?'))  # "No Spurs Found" when there are none
-        result['spurs'] = list(zip(spurs[0::2], spurs[1::2]))  # offset / level pairs
+        extra_bands = list(extra_bands or [])
+        if len(extra_bands) > PNO_MAX_USER_RANGES:
+            raise ValueError(f"At most {PNO_MAX_USER_RANGES} user evaluation ranges, got {len(extra_bands)}")
+        spurs_raw = _numbers(self.query('FETC:PNO:SPUR?'))  # "No Spurs Found" when there are none
+        spurs = list(zip(spurs_raw[0::2], spurs_raw[1::2]))  # offset / level pairs
+        result['spurs'] = spurs
+        f_carrier = result['f_carrier']
+
+        def _band_spur_split(b_start: float, b_stop: float, total_jitter_s: float):
+            if f_carrier <= 0 or not spurs:
+                return 0.0, total_jitter_s
+            in_band_rad2 = sum(
+                2.0 * (10.0 ** (p_dbc / 10.0))
+                for f_hz, p_dbc in spurs
+                if b_start <= f_hz <= b_stop
+            )
+            disc_s = math.sqrt(in_band_rad2) / (2.0 * math.pi * f_carrier)
+            rand_s = math.sqrt(max(total_jitter_s ** 2 - disc_s ** 2, 0.0))
+            return disc_s, rand_s
+
+        result['extra_bands'] = {}
+        for idx in range(1, PNO_MAX_USER_RANGES + 1):
+            if idx <= len(extra_bands):
+                b_start, b_stop = extra_bands[idx - 1]
+                self.write(f'CALC:EVAL:USER{idx}:TRAC TRACE1')
+                self.write(f'CALC:EVAL:USER{idx}:STAR {b_start}')
+                self.write(f'CALC:EVAL:USER{idx}:STOP {b_stop}')
+                ipn_dbc = float(self.query(f'FETC:PNO:USER{idx}:IPN?').strip())
+                rms_phase_rad = math.sqrt(2 * 10 ** (ipn_dbc / 10))
+                jitter_s = float(self.query(f'FETC:PNO:USER{idx}:RMS?').strip())
+                residual_pm = float(self.query(f'FETC:PNO:USER{idx}:RPM?').strip())
+                residual_fm_hz = float(self.query(f'FETC:PNO:USER{idx}:RFM?').strip())
+                eb_disc_s, eb_rand_s = _band_spur_split(float(b_start), float(b_stop), jitter_s)
+                result['extra_bands'][(float(b_start), float(b_stop))] = {
+                    'band': (float(b_start), float(b_stop)),
+                    'integrated_dbc': ipn_dbc,
+                    'rms_phase_rad': rms_phase_rad,
+                    'jitter_s': jitter_s,
+                    'residual_pm': residual_pm,
+                    'residual_fm_hz': residual_fm_hz,
+                    'jitter_discrete_s': eb_disc_s,
+                    'jitter_random_s': eb_rand_s,
+                }
+            else:
+                self.write(f'CALC:EVAL:USER{idx}:TRAC NONE')
         result['jitter_discrete_s'] = (_numbers(self.query('FETC:PNO:SPUR:DISC?')) or [0.0])[0]
         result['jitter_random_s'] = (_numbers(self.query('FETC:PNO:SPUR:RAND?')) or [math.nan])[0]
+        if band is not None and spurs and any(f < band[0] or f > band[1] for f, _ in spurs):
+            result['jitter_discrete_s'], result['jitter_random_s'] = _band_spur_split(
+                float(band[0]), float(band[1]), result['jitter_s']
+            )
         self.write('FORM ASC')
         xy = [float(v) for v in self.query('TRAC:DATA? TRACE1').strip().split(',')]
         result['offset'], result['level'] = xy[0::2], xy[1::2]  # offset / level pairs

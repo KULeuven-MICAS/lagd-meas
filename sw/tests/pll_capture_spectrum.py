@@ -12,14 +12,15 @@
 #      including spot phase noise at key frequency offsets (10 kHz, 100 kHz, 1 MHz)
 #      and integrated RMS jitter via FSW K40 Phase Noise Mode.
 #   2. Full wideband output RF spectrum with the fundamental carrier dead-center and a 100 MHz
-#      span at 10 kHz RBW, revealing both lower and upper reference spurs at f_carrier +- f_ref (37.5 MHz),
-#      along with high-resolution zoomed reference spur measurements (10 kHz span, 10 Hz RBW).
+#      span at 10 kHz RBW, revealing both negative (-f_ref: 112.5 MHz) and positive (+f_ref: 187.5 MHz)
+#      reference spurs at f_carrier +- f_ref (37.5 MHz), along with high-resolution zoomed reference
+#      spur measurements (10 kHz span, 10 Hz RBW) at both offsets for direct comparison.
 #
 # Target configuration:
 #   - f_vco = 4.8 GHz
 #   - Loop filter: current=7, r1=7, c1=7, c2=0
 #   - VCO codes: coarse=0, min=8, max=8 (Vctrl ~0.51 V)
-#   - Output divider: total_div = 64 (f_carrier = 75.0 MHz on the pad)
+#   - Output divider: total_div = 32 (set_div_freq = 5, f_carrier = 150.0 MHz on the pad)
 #   - Feedback divider: FB_DIV = 128 (f_ref = 37.5 MHz)
 #   - Core supply: nominal 0.75 V (E36312A CH2)
 #
@@ -50,17 +51,17 @@ SUPPLY_CHANNEL = 2
 NOMINAL_VDD = 0.75
 SUPPLY_SETTLE_S = 1.0
 
-# Target operating configuration: 4.8 GHz with optimal loop filter
+# Target operating configuration: 4.8 GHz with optimal loop filter and div=32 (150 MHz on pad)
 TARGET_CONFIG = {
     "label": "4.8GHz_opt",
     "f_vco": 4.8e9,
     "codes": dict(vco_tune_coarse=0, vco_current_min=8, vco_current_max=8),
     "loop_filter": dict(set_current=7, set_r1=7, set_c1=7, set_c2=0),
-    "total_div": 64,
+    "total_div": 32,
 }
 
-# Wide RF spectrum settings: 100 MHz span centered on 75 MHz carrier
-# (captures lower spur at 37.5 MHz and upper spur at 112.5 MHz) at 10 kHz RBW
+# Wide RF spectrum settings: 100 MHz span centered on 150 MHz carrier
+# (captures negative offset spur at 112.5 MHz and positive offset spur at 187.5 MHz) at 10 kHz RBW
 # to avoid scalloping loss / filter sweep compression.
 WIDE_SPECTRUM_SPAN = 100e6
 WIDE_SPECTRUM_RBW = 10e3
@@ -96,7 +97,7 @@ def run_pll_capture_spectrum(f_vco=TARGET_CONFIG["f_vco"],
         f_vco: Target VCO frequency in Hz (default: 4.8 GHz).
         codes: Dict with {vco_tune_coarse, vco_current_min, vco_current_max}.
         loop_filter: Dict with {set_current, set_r1, set_c1, set_c2}.
-        total_div: Output divider ratio (default: 64 -> 75 MHz pad carrier).
+        total_div: Output divider ratio (default: 32 -> 150 MHz pad carrier).
         sample: Chip sample identifier (default: 'S5').
         span: Span in Hz for the wide output RF spectrum (default: 100 MHz).
         spectrum_rbw: Resolution bandwidth in Hz for the wideband sweep (default: 10 kHz).
@@ -126,15 +127,25 @@ def run_pll_capture_spectrum(f_vco=TARGET_CONFIG["f_vco"],
     lut = vco_lut.VcoLUT(sample=sample)
     supply = pll_setup.PllSupplyChannel(channel=supply_channel)
 
+    lf = dict(loop_filter) if loop_filter else {}
+    if total_div is not None and "set_div_freq" not in lf:
+        lf["set_div_freq"] = int(round(math.log2(total_div)))
+
     f_carrier = f_vco / total_div
     f_ref = f_vco / FB_DIV
+    f_spur_neg = f_carrier - f_ref
+    f_spur_pos = f_carrier + f_ref
 
     logging.info("=" * 80)
     logging.info("  STARTING PLL PHASE NOISE & WIDE SPECTRUM CAPTURE")
     logging.info("  Target Frequency:    f_vco = %.2f GHz (Carrier = %.4f MHz, f_ref = %.4f MHz)",
                  f_vco / 1e9, f_carrier / 1e6, f_ref / 1e6)
+    logging.info("  Output Divider:      total_div = %d (set_div_freq = %d)",
+                 total_div, lf.get("set_div_freq", -1))
+    logging.info("  Expected Ref Spurs:  -f_ref @ %.4f MHz | +f_ref @ %.4f MHz",
+                 f_spur_neg / 1e6, f_spur_pos / 1e6)
     logging.info("  VCO Codes:           %s", codes)
-    logging.info("  Loop Filter:         %s", loop_filter)
+    logging.info("  Loop Filter:         %s", lf)
     logging.info("  Wide Spectrum Span:  %.1f MHz (centered at %.1f MHz, RBW = %.0f Hz, averages = %d)",
                  span / 1e6, f_carrier / 1e6, spectrum_rbw, spectrum_averages)
     logging.info("  Zoomed Ref Spur:     %.1f kHz span, RBW = %.0f Hz (averages = %d)",
@@ -157,7 +168,7 @@ def run_pll_capture_spectrum(f_vco=TARGET_CONFIG["f_vco"],
             vctrl_pad="off",
             supply=supply,
             codes=codes,
-            loop_filter=loop_filter,
+            loop_filter=lf,
             phase_noise_mode=phase_noise_mode,
             span=span,
             spectrum_rbw=spectrum_rbw,
@@ -174,6 +185,15 @@ def run_pll_capture_spectrum(f_vco=TARGET_CONFIG["f_vco"],
         trace_jitter_ps = row.get("time_jitter_trace_ps", float("nan"))
         ref_spur_dbc = row.get("ref_spur_dbc", float("nan"))
         ref_spur_dbm = row.get("ref_spur_dbm", float("nan"))
+        ref_spur_vco_dbc = row.get("ref_spur_vco_dbc", float("nan"))
+        ref_spur_lower_dbc = row.get("ref_spur_lower_dbc", float("nan"))
+        ref_spur_lower_dbm = row.get("ref_spur_lower_dbm", float("nan"))
+        ref_spur_lower_freq = row.get("ref_spur_lower_freq", float("nan"))
+        ref_spur_lower_above = row.get("ref_spur_lower_above_floor_db", float("nan"))
+        ref_spur_upper_dbc = row.get("ref_spur_upper_dbc", float("nan"))
+        ref_spur_upper_dbm = row.get("ref_spur_upper_dbm", float("nan"))
+        ref_spur_upper_freq = row.get("ref_spur_upper_freq", float("nan"))
+        ref_spur_upper_above = row.get("ref_spur_upper_above_floor_db", float("nan"))
         l_10k = row.get("L_pnm_10000", float("nan"))
         l_100k = row.get("L_pnm_100000", float("nan"))
         l_1m = row.get("L_pnm_1000000", float("nan"))
@@ -183,14 +203,25 @@ def run_pll_capture_spectrum(f_vco=TARGET_CONFIG["f_vco"],
         logging.info("  PLL SPECTRUM CAPTURE RESULTS SUMMARY")
         logging.info("=" * 80)
         logging.info("  Lock Status:               %s", "LOCKED" if locked else "NOT LOCKED")
-        logging.info("  Carrier Output Power:      %.2f dBm @ %.4f MHz", carrier_dbm, row.get("f_out_meas", f_carrier) / 1e6)
-        logging.info("  Reference Spur Level:      %.2f dBc (%.2f dBm) @ offset %.4f MHz",
-                     ref_spur_dbc, ref_spur_dbm, row.get("ref_spur_offset", f_ref) / 1e6)
+        logging.info("  Carrier Output Power:      %.2f dBm @ %.4f MHz (div = %d)",
+                     carrier_dbm, row.get("f_out_meas", f_carrier) / 1e6, row.get("total_div", total_div))
+        logging.info("  Reference Spur (Worst):    %.2f dBc (%.2f dBm, %.2f dBc @ VCO) @ offset %.4f MHz",
+                     ref_spur_dbc, ref_spur_dbm, ref_spur_vco_dbc, row.get("ref_spur_offset", f_ref) / 1e6)
+        logging.info("    - Negative (-f_ref):     %.2f dBc (%.2f dBm) @ %.6f MHz (%.1f dB above floor)",
+                     ref_spur_lower_dbc, ref_spur_lower_dbm, ref_spur_lower_freq / 1e6, ref_spur_lower_above)
+        logging.info("    - Positive (+f_ref):     %.2f dBc (%.2f dBm) @ %.6f MHz (%.1f dB above floor)",
+                     ref_spur_upper_dbc, ref_spur_upper_dbm, ref_spur_upper_freq / 1e6, ref_spur_upper_above)
+        if not math.isnan(ref_spur_upper_dbc) and not math.isnan(ref_spur_lower_dbc):
+            logging.info("    - Sideband Delta (+ - -): %+.2f dB", ref_spur_upper_dbc - ref_spur_lower_dbc)
         logging.info("  Phase Noise @ 10 kHz:      %.2f dBc/Hz", l_10k)
         logging.info("  Phase Noise @ 100 kHz:     %.2f dBc/Hz", l_100k)
         logging.info("  Phase Noise @ 1 MHz:       %.2f dBc/Hz", l_1m)
-        logging.info("  Integrated Jitter (PNM):   %.2f ps", pnm_jitter_ps)
-        logging.info("  Integrated Jitter (Trace): %.2f ps", trace_jitter_ps)
+        logging.info("  Integrated Jitter (PNM, 1 kHz - 20 MHz): %.3f ps", pnm_jitter_ps)
+        for mhz in (30, 40, 50):
+            j_val = row.get("time_jitter_pnm_{}MHz_ps".format(mhz), float("nan"))
+            jt_val = row.get("time_jitter_pnm_trace_{}MHz_ps".format(mhz), float("nan"))
+            logging.info("  Integrated Jitter (PNM, 1 kHz - %d MHz): %.3f ps (trace: %.3f ps)", mhz, j_val, jt_val)
+        logging.info("  Integrated Jitter (Trace):               %.3f ps", trace_jitter_ps)
         logging.info("=" * 80)
 
     finally:

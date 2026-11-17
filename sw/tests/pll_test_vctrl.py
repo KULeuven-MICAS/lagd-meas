@@ -82,8 +82,8 @@ RESULT_COLUMNS = (["time", "lut_csv", "f_vco", "vctrl_target", "kvco_request"] +
                   + list(FILTER_FIELDS) + ["vctrl_pred", "kvco_pred", "f_ref", "set_div_freq", "vctrl_pad",
                                            "set_v_ctrl", "total_div", "locked_peek", "locked"]
                   + VCTRL_COLUMNS + OUTPUT_COLUMNS + list(pll_setup.SUPPLY_COLUMNS) + PNM_COLUMNS)
-TRACE_COLUMNS = (["f_vco", "vctrl_target"] + list(vco_lut.LUT_FIELDS) + list(FILTER_FIELDS) + ["pll_vdd"]
-                 + TRACE_FIELDS)  # codes, filter and measured supply: unique per measured setting
+TRACE_COLUMNS = (["f_vco", "vctrl_target"] + list(vco_lut.LUT_FIELDS) + list(FILTER_FIELDS)
+                 + ["set_div_freq", "total_div", "pll_vdd"] + TRACE_FIELDS)  # codes, filter and measured supply: unique per measured setting
 
 
 def loop_cfg(f_vco, pad_on=False, loop_filter=None):
@@ -237,6 +237,8 @@ def measure_pll_vctrl(f_vco=1e9, vctrl=0.55, kvco=None, sample=None, lut=None, c
         append_rows(trace_csv_path(csv_path), TRACE_COLUMNS, trace_rows(traces, f_vco=f_vco, vctrl_target=vctrl,
                                                                                **vco_lut.vco_codes(cfg),
                                                                                **{k: cfg[k] for k in FILTER_FIELDS},
+                                                                               set_div_freq=cfg["set_div_freq"],
+                                                                               total_div=total_div,
                                                                                pll_vdd=row.get("pll_vdd")))
         logging.info("Results written to %s (traces: %s)", csv_path, trace_csv_path(csv_path).name)
     return row
